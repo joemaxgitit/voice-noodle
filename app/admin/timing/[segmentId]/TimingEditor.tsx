@@ -7,6 +7,7 @@ import {
   marksToPhrases,
   wordsToPhrases,
   splitIntoPhrases,
+  stateFor,
   type Phrase,
 } from "@/lib/useKaraoke";
 
@@ -56,7 +57,7 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
 
   // duration comes from the hook, which listens for loadedmetadata itself
   const [phrases, setPhrases] = useState<Phrase[]>([]);
-  const { audio, setAudioEl, duration, playing, activeIndex } =
+  const { audio, setAudioEl, duration, playing, time, activeIndex } =
     useKaraoke(phrases);
 
   useEffect(() => {
@@ -381,12 +382,7 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
       <h2>4 &middot; Preview and publish</h2>
       <div className="script">
         {phrases.map((p, i) => (
-          <span
-            key={i}
-            className={`phrase ${
-              i < activeIndex ? "spoken" : i === activeIndex ? "current" : ""
-            }`}
-          >
+          <span key={i} className={`phrase ${stateFor(p, time)}`}>
             {p.text}{" "}
           </span>
         ))}

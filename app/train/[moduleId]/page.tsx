@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { useKaraoke, type Phrase } from "@/lib/useKaraoke";
+import { useKaraoke, stateFor, type Phrase } from "@/lib/useKaraoke";
 
 type Segment = {
   id: string;
@@ -42,7 +42,7 @@ export default function Train() {
   // available for reps who want to drill exact pronunciation.
   const units: Phrase[] = byWord && words.length ? words : phrases;
 
-  const { audio, setAudioEl, playing, activeIndex } = useKaraoke(units);
+  const { audio, setAudioEl, playing, time } = useKaraoke(units);
 
   useEffect(() => {
     let cancelled = false;
@@ -174,12 +174,7 @@ export default function Train() {
       <div className="script" aria-live="polite">
         {units.length ? (
           units.map((p, i) => (
-            <span
-              key={i}
-              className={`phrase ${
-                i < activeIndex ? "spoken" : i === activeIndex ? "current" : ""
-              }`}
-            >
+            <span key={i} className={`phrase ${stateFor(p, time)}`}>
               {p.text}{" "}
             </span>
           ))

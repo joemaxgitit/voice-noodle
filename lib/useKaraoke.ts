@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type Phrase = { start: number; end: number; text: string };
 
@@ -85,9 +85,55 @@ export function useKaraoke(phrases: Phrase[]) {
     };
   }, [el]);
 
-  const activeIndex = phrases.findIndex((p) => time >= p.start && time < p.end);
+  /*
+   * Which unit is lit right now.
+   *
+   * Word-level alignment has real silence between words -- one ends at 2.10,
+   * the next starts at 2.24. A plain findIndex returns -1 during those gaps,
+   * which un-dims every already-spoken word and reads as a blink between
+   * every word. So when the playhead is in a gap we hold the most recent
+   * unit instead of dropping to nothing.
+   *
+   * This also does the right thing on a deliberate pause: the last words
+   * before the silence stay lit while the speaker holds, which is exactly
+   * the delivery being taught.
+   */
+  const activeIndex = useMemo(() => {
+    if (phrases.length === 0) return -1;
+
+    const exact = phrases.findIndex((p) => time >= p.start && time < p.end);
+    if (exact !== -1) return exact;
+
+    // Before the first unit starts, nothing is lit.
+    if (time < phrases[0].start) return -1;
+
+    // In a gap, or past the end: hold the most recent unit.
+    let last = -1;
+    for (let i = 0; i < phrases.length; i++) {
+      if (phrases[i].start <= time) last = i;
+      else break;
+    }
+    return last;
+  }, [phrases, time]);
 
   return { audio: el, setAudioEl, time, duration, playing, activeIndex };
+}
+
+/**
+ * Which visual state a unit is in at the current playback time.
+ *
+ * Derived from TIME, not from comparing against an active index. Words have
+ * silence between them, so during every gap no unit contains the playhead and
+ * an index-based comparison flips already-spoken units back to unread -- which
+ * reads as a blink on every word boundary.
+ *
+ * "spoken" is sticky: once the playhead passes a unit it stays lit for the
+ * rest of the segment, so the highlight fills in the way karaoke should.
+ */
+export function stateFor(p: Phrase, time: number): "spoken" | "current" | "" {
+  if (time >= p.end) return "spoken";
+  if (time >= p.start) return "current";
+  return "";
 }
 
 /** Turn tapped start-marks into the stored phrase array. */
