@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -22,7 +22,6 @@ type Segment = {
 export default function Train() {
   const supabase = createClient();
   const params = useParams<{ moduleId: string }>();
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const [moduleTitle, setModuleTitle] = useState("");
   const [segments, setSegments] = useState<Segment[]>([]);
@@ -35,7 +34,8 @@ export default function Train() {
 
   const segment = segments[index];
   const phrases: Phrase[] = segment?.timings?.length ? segment.timings : [];
-  const { activeIndex } = useKaraoke(audioRef, phrases);
+
+  const { audio, setAudioEl, playing, activeIndex } = useKaraoke(phrases);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,8 +91,8 @@ export default function Train() {
   }, [segment?.id, segment?.audio_path, supabase]);
 
   useEffect(() => {
-    if (audioRef.current) audioRef.current.playbackRate = speed;
-  }, [speed, audioUrl]);
+    if (audio) audio.playbackRate = speed;
+  }, [speed, audio, audioUrl]);
 
   async function complete() {
     const {
@@ -114,7 +114,7 @@ export default function Train() {
   if (loading) {
     return (
       <main className="shell">
-        <p className="muted">Loading…</p>
+        <p className="muted">Loading&hellip;</p>
       </main>
     );
   }
@@ -124,14 +124,14 @@ export default function Train() {
       <main className="shell">
         <div className="topbar">
           <Link className="btn" href="/" style={{ textDecoration: "none" }}>
-            ← Sections
+            &larr; Sections
           </Link>
         </div>
         <div className="card">
           <h1>Nothing to practice yet</h1>
           <p className="muted">
-            This section has no published segments. An admin can add them from the
-            admin area.
+            This section has no published segments. An admin can add them from
+            the admin area.
           </p>
           {error && <div className="error">{error}</div>}
         </div>
@@ -145,10 +145,10 @@ export default function Train() {
     <main className="shell">
       <div className="topbar">
         <Link className="btn" href="/" style={{ textDecoration: "none" }}>
-          ← Sections
+          &larr; Sections
         </Link>
         <div className="brand">
-          {moduleTitle} · {index + 1} of {segments.length}
+          {moduleTitle} &middot; {index + 1} of {segments.length}
         </div>
       </div>
 
@@ -184,7 +184,7 @@ export default function Train() {
       {audioUrl ? (
         <>
           <audio
-            ref={audioRef}
+            ref={setAudioEl}
             className="player"
             src={audioUrl}
             loop={loop}
@@ -194,19 +194,18 @@ export default function Train() {
           <div className="row">
             <button
               onClick={() => {
-                const el = audioRef.current;
-                if (!el) return;
-                el.currentTime = 0;
-                el.play();
+                if (!audio) return;
+                audio.currentTime = 0;
+                void audio.play();
               }}
             >
-              ▶ Play master
+              {playing ? "Playing\u2026" : "\u25b6 Play master"}
             </button>
             <button onClick={() => setLoop(!loop)}>
-              ↻ Loop {loop ? "on" : "off"}
+              &#8635; Loop {loop ? "on" : "off"}
             </button>
             <button onClick={() => setSpeed(speed === 1 ? 0.75 : 1)}>
-              {speed}× speed
+              {speed}&times; speed
             </button>
           </div>
         </>
@@ -217,11 +216,11 @@ export default function Train() {
       <div className="coaching">
         <div>
           <div className="label">Delivery</div>
-          <div className="value">{segment.coaching || "—"}</div>
+          <div className="value">{segment.coaching || "\u2014"}</div>
         </div>
         <div>
           <div className="label">Client should feel</div>
-          <div className="value">{segment.client_should_feel || "—"}</div>
+          <div className="value">{segment.client_should_feel || "\u2014"}</div>
         </div>
       </div>
 
@@ -229,10 +228,10 @@ export default function Train() {
 
       <div className="nav">
         <button disabled={index === 0} onClick={() => setIndex(index - 1)}>
-          ← Previous
+          &larr; Previous
         </button>
         <button className="primary" onClick={complete}>
-          {index === segments.length - 1 ? "Mark complete" : "Got it → next"}
+          {index === segments.length - 1 ? "Mark complete" : "Got it \u2192 next"}
         </button>
       </div>
     </main>

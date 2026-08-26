@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   useKaraoke,
@@ -27,11 +27,9 @@ export type EditorSegment = {
  */
 export default function TimingEditor({ segment }: { segment: EditorSegment }) {
   const supabase = createClient();
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [duration, setDuration] = useState(0);
 
   const [raw, setRaw] = useState(
     segment.timings?.length
@@ -52,12 +50,14 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
     [raw]
   );
 
-  const phrases = useMemo(
-    () => marksToPhrases(lines, marks, duration),
-    [lines, marks, duration]
-  );
+  // duration comes from the hook, which listens for loadedmetadata itself
+  const [phrases, setPhrases] = useState<Phrase[]>([]);
+  const { audio, setAudioEl, duration, playing, activeIndex } =
+    useKaraoke(phrases);
 
-  const { activeIndex, playing } = useKaraoke(audioRef, phrases);
+  useEffect(() => {
+    setPhrases(marksToPhrases(lines, marks, duration));
+  }, [lines, marks, duration]);
 
   // A newly chosen local file wins over the stored recording.
   useEffect(() => {
@@ -85,36 +85,34 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
   }, [file, segment.audio_path, supabase]);
 
   useEffect(() => {
-    if (!armed) return;
+    if (!armed || !audio) return;
 
     const onKey = (e: KeyboardEvent) => {
-      const el = audioRef.current;
-      if (!el) return;
-
       if (e.code === "Space") {
         e.preventDefault();
-        setMarks((m) => (m.length >= lines.length ? m : [...m, el.currentTime]));
+        setMarks((m) =>
+          m.length >= lines.length ? m : [...m, audio.currentTime]
+        );
       } else if (e.code === "Backspace") {
         e.preventDefault();
         setMarks((m) => (m.length > 1 ? m.slice(0, -1) : m));
       } else if (e.code === "Escape") {
         e.preventDefault();
         setArmed(false);
-        el.pause();
+        audio.pause();
       }
     };
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [armed, lines.length]);
+  }, [armed, lines.length, audio]);
 
   function startTapping() {
-    const el = audioRef.current;
-    if (!el) return;
-    el.currentTime = 0;
+    if (!audio) return;
+    audio.currentTime = 0;
     setMarks([0]);
     setArmed(true);
-    void el.play();
+    void audio.play();
   }
 
   function nudge(i: number, delta: number) {
@@ -127,10 +125,15 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
   }
 
   function playFrom(i: number) {
-    const el = audioRef.current;
-    if (!el || marks[i] === undefined) return;
-    el.currentTime = marks[i];
-    void el.play();
+    if (!audio || marks[i] === undefined) return;
+    audio.currentTime = marks[i];
+    void audio.play();
+  }
+
+  function previewFromStart() {
+    if (!audio) return;
+    audio.currentTime = 0;
+    void audio.play();
   }
 
   async function save() {
@@ -204,9 +207,12 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
     <div>
       <div className="code">{segment.segment_code}</div>
       <h1>{segment.title || "Untitled segment"}</h1>
-      <p className="muted">Currently v{segment.version}</p>
+      <p className="muted">
+        Currently v{segment.version}
+        {duration > 0 && ` \u00b7 ${duration.toFixed(1)}s of audio`}
+      </p>
 
-      <h2>1 · Recording</h2>
+      <h2>1 &middot; Recording</h2>
       <input
         type="file"
         accept="audio/*"
@@ -214,13 +220,12 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
       />
       {audioUrl ? (
         <audio
-          ref={audioRef}
+          ref={setAudioEl}
           className="player"
           src={audioUrl}
           controls
           preload="metadata"
           style={{ marginTop: 12 }}
-          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
         />
       ) : (
         <p className="hint" style={{ marginTop: 12 }}>
@@ -228,10 +233,10 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
         </p>
       )}
 
-      <h2>2 · Phrasing</h2>
+      <h2>2 &middot; Phrasing</h2>
       <p className="hint">
-        One phrase per line. Break on thought groups, not sentences — this is
-        exactly what the rep will watch illuminate.
+        One phrase per line. Break on thought groups, not sentences &mdash; this
+        is exactly what the rep will watch illuminate.
       </p>
       <textarea
         rows={Math.max(4, lines.length + 2)}
@@ -240,14 +245,15 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
         disabled={armed}
       />
 
-      <h2>3 · Tap the timing</h2>
+      <h2>3 &middot; Tap the timing</h2>
       <p className="hint">
-        Press start, then hit <kbd>Space</kbd> the instant each new phrase begins.{" "}
-        <kbd>Backspace</kbd> undoes the last tap. <kbd>Esc</kbd> stops.
+        Press start, then hit <kbd>Space</kbd> the instant each new phrase
+        begins. The first line is marked for you. <kbd>Backspace</kbd> undoes
+        the last tap. <kbd>Esc</kbd> stops.
       </p>
 
       <div className="row">
-        <button onClick={startTapping} disabled={!audioUrl || armed}>
+        <button onClick={startTapping} disabled={!audio || armed}>
           Start tapping
         </button>
         <button onClick={() => setMarks([])} disabled={armed}>
@@ -257,7 +263,7 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
           <span className="live-count">
             {remaining > 0
               ? `${remaining} phrase${remaining === 1 ? "" : "s"} to go`
-              : "All marked — press Esc"}
+              : "All marked \u2014 press Esc"}
           </span>
         )}
       </div>
@@ -267,15 +273,11 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
           <li
             key={i}
             className={
-              i === activeIndex
-                ? "current"
-                : marks[i] !== undefined
-                ? "set"
-                : ""
+              i === activeIndex ? "current" : marks[i] !== undefined ? "set" : ""
             }
           >
             <button className="ts" onClick={() => playFrom(i)}>
-              {marks[i] !== undefined ? `${marks[i].toFixed(2)}s` : "—"}
+              {marks[i] !== undefined ? `${marks[i].toFixed(2)}s` : "\u2014"}
             </button>
             <span className="text">{text}</span>
             <span className="nudges">
@@ -284,7 +286,7 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
                 disabled={marks[i] === undefined}
                 aria-label="Move earlier"
               >
-                −
+                &minus;
               </button>
               <button
                 onClick={() => nudge(i, 0.05)}
@@ -298,7 +300,7 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
         ))}
       </ol>
 
-      <h2>4 · Preview and publish</h2>
+      <h2>4 &middot; Preview and publish</h2>
       <div className="script">
         {phrases.map((p, i) => (
           <span
@@ -313,23 +315,15 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
       </div>
 
       <div className="row">
-        <button
-          onClick={() => {
-            const el = audioRef.current;
-            if (!el) return;
-            el.currentTime = 0;
-            void el.play();
-          }}
-          disabled={!audioUrl}
-        >
-          {playing ? "Playing…" : "▶ Preview karaoke"}
+        <button onClick={previewFromStart} disabled={!audio}>
+          {playing ? "Playing\u2026" : "\u25b6 Preview karaoke"}
         </button>
         <button
           className="primary"
           onClick={save}
           disabled={saving || lines.length === 0 || marks.length !== lines.length}
         >
-          {saving ? "Saving…" : file ? "Upload and publish" : "Save timings"}
+          {saving ? "Saving\u2026" : file ? "Upload and publish" : "Save timings"}
         </button>
       </div>
 
