@@ -11,6 +11,7 @@ type ModuleRow = {
   sort_order: number;
   script_id: string;
   kind: string;
+  language: string;
   segments: { id: string }[];
 };
 
@@ -29,6 +30,7 @@ export default function Home() {
   const [modules, setModules] = useState<ModuleRow[]>([]);
   const [done, setDone] = useState<Set<string>>(new Set());
   const [role, setRole] = useState<string>("rep");
+  const [lang, setLang] = useState<"en" | "es">("en");
   const [name, setName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -47,7 +49,7 @@ export default function Home() {
         supabase.from("scripts").select("id, title, sort_order, logo_url"),
         supabase
           .from("modules")
-          .select("id, title, sort_order, script_id, kind, segments(id)"),
+          .select("id, title, sort_order, script_id, kind, language, segments(id)"),
         supabase.from("progress").select("segment_id").eq("completed", true),
       ]);
 
@@ -132,8 +134,10 @@ export default function Home() {
         const mine = modules.filter((m) => m.script_id === script.id);
         if (mine.length === 0) return null;
 
-        const sequence = mine.filter((m) => m.kind !== "loop");
-        const loops = mine.filter((m) => m.kind === "loop");
+        const hasSpanish = mine.some((m) => m.language === "es");
+        const inLang = mine.filter((m) => (m.language || "en") === lang);
+        const sequence = inLang.filter((m) => m.kind !== "loop");
+        const loops = inLang.filter((m) => m.kind === "loop");
 
         const renderList = (list: ModuleRow[]) => (
           <ul className="list">
@@ -160,6 +164,23 @@ export default function Home() {
         return (
           <section key={script.id}>
             {scripts.length > 1 && <h2 className="script-title">{script.title}</h2>}
+
+            {hasSpanish && (
+              <div className="lang-switch">
+                <button
+                  aria-pressed={lang === "en"}
+                  onClick={() => setLang("en")}
+                >
+                  English
+                </button>
+                <button
+                  aria-pressed={lang === "es"}
+                  onClick={() => setLang("es")}
+                >
+                  Espa&ntilde;ol
+                </button>
+              </div>
+            )}
 
             {sequence.length > 0 && (
               <>

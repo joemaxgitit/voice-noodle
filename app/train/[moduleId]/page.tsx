@@ -18,6 +18,7 @@ type Segment = {
   audio_path: string | null;
   timings: Phrase[];
   words: Phrase[] | null;
+  verbatim: boolean;
   sort_order: number;
 };
 
@@ -54,7 +55,7 @@ export default function Train() {
         supabase
           .from("segments")
           .select(
-            "id, segment_code, title, script_text, tones, coaching, client_should_feel, audio_path, timings, words, sort_order"
+            "id, segment_code, title, script_text, tones, coaching, client_should_feel, audio_path, timings, words, verbatim, sort_order"
           )
           .eq("module_id", params.moduleId),
       ]);
@@ -180,6 +181,16 @@ export default function Train() {
           );
         })}
       </div>
+
+      {/*
+        Compliance lines cannot be paraphrased. This has to be visible at the
+        moment of delivery, not buried in the coaching notes underneath.
+      */}
+      {segment.verbatim && (
+        <div className="verbatim-flag">
+          Say this word for word &mdash; required for compliance
+        </div>
+      )}
 
       <div className="script" aria-live="polite">
         {units.length ? (
