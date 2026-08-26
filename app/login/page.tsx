@@ -38,22 +38,12 @@ function LoginForm() {
   return (
     <main className="shell">
       <div className="card" style={{ marginTop: "12vh" }}>
-        {/*
-          ProEdge is the company, Lionside and Bolton are the two sides of the
-          operation. Whoever signs in sees only their own script afterwards,
-          so this is the one place all three belong together.
-        */}
-        <div className="login-logos">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/proedge-logo.png" alt="ProEdge Solutions" className="ll-pro" />
-          <span className="ll-rule" aria-hidden="true" />
-          <div className="ll-pair">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/lionside-logo.png" alt="Lionside Financial" className="ll-lion" />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/bolton-logo.png" alt="Bolton Service Group" className="ll-bolton" />
-          </div>
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/proedge-logo.png"
+          alt="ProEdge Solutions"
+          className="login-logo"
+        />
 
         <div className="eyebrow">Sales script training</div>
         <h1>Voice Noodle</h1>

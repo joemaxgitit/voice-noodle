@@ -19,10 +19,10 @@ export const TONES: Tone[] = [
   {
     code: "AC",
     name: "Absolute Certainty",
-    short: "Firm and unwavering. You already know.",
+    short: "Hard and definitive. You are just absolutely certain.",
     body:
-      "Firm and unwavering. You are not hoping they agree \u2014 you already know. " +
-      "Certainty transfers: whatever you feel, they feel.",
+      "A hard, definitive tone when you are implying something and are just " +
+      "absolutely certain about it.",
   },
   {
     code: "I CARE",
@@ -67,10 +67,10 @@ export const TONES: Tone[] = [
   {
     code: "Preacher",
     name: "The Preacher",
-    short: "Certainty with a righteous edge. Indignant on their behalf.",
+    short: "Absolute Certainty plus annoyance. Pulpit energy.",
     body:
-      "A Lionside tone, not a Straight Line one. Absolute Certainty with a " +
-      "righteous edge \u2014 indignant on their behalf, in the spirit of the pulpit.",
+      "Tone of Absolute Certainty with the added layer of annoyance and in " +
+      "the spirit of the pulpit.",
   },
 ];
 
