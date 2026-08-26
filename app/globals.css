@@ -528,3 +528,93 @@ select {
     height: 76px;
   }
 }
+
+/* ---------- tone key footer ---------- */
+
+.site-footer {
+  border-top: 1px solid var(--line);
+  margin-top: 56px;
+  padding: 0 0 40px;
+}
+
+.tone-key {
+  padding-top: 20px;
+}
+
+.tone-key summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 8px 0;
+}
+
+.tone-key summary::-webkit-details-marker {
+  display: none;
+}
+
+.tone-key summary::before {
+  content: "+";
+  font-size: 15px;
+  line-height: 1;
+  color: var(--live);
+}
+
+.tone-key[open] summary::before {
+  content: "\2212";
+}
+
+.tone-key summary:hover {
+  color: var(--text);
+}
+
+.tone-key-hint {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: none;
+  color: #55524c;
+}
+
+.tone-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 18px 28px;
+  margin: 18px 0 0;
+}
+
+.tone-item dt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.tone-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.tone-item dd {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.tone-note {
+  margin: 22px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 60ch;
+}

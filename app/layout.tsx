@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import ToneKey from "./ToneKey";
 
 export const metadata: Metadata = {
   title: "Voice Noodle",
@@ -19,7 +20,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <ToneKey />
+      </body>
     </html>
   );
 }
