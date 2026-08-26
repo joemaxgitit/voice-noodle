@@ -55,7 +55,9 @@ export default function Admin() {
         <Link className="btn" href="/" style={{ textDecoration: "none" }}>
           ← Training
         </Link>
-        <div className="brand">Admin</div>
+        <Link className="btn" href="/admin/people" style={{ textDecoration: "none" }}>
+          People
+        </Link>
       </div>
 
       <div className="eyebrow">

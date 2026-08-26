@@ -409,3 +409,40 @@ kbd {
     transition: none !important;
   }
 }
+
+/* ---------- people ---------- */
+
+.list li {
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.list li:has(a) {
+  padding: 0;
+  background: none;
+  border: none;
+}
+
+.person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.person input[type="text"] {
+  font-size: 15px;
+  padding: 9px 10px;
+}
+
+select {
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
