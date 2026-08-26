@@ -239,9 +239,8 @@ textarea {
 }
 
 .tones {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  display: grid;
+  gap: 7px;
   margin-bottom: 18px;
 }
 
@@ -617,4 +616,23 @@ select {
   line-height: 1.6;
   color: var(--muted);
   max-width: 60ch;
+}
+
+/*
+  Tone definitions sit on the card, beside the chip they explain. Putting them
+  in the footer instead would make a rep look away from the script mid-playback
+  to decode a tone -- the split-attention effect, which spends working memory
+  on hunting rather than on the delivery.
+*/
+.tone-line {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.tone-gloss {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
 }

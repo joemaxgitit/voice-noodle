@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useKaraoke, stateFor, type Phrase } from "@/lib/useKaraoke";
+import { findTone } from "@/lib/tones";
 
 type Segment = {
   id: string;
@@ -163,12 +164,21 @@ export default function Train() {
         <div style={{ width: `${pct}%` }} />
       </div>
 
+      {/*
+        Definitions sit beside the chips rather than in the footer. Making a
+        rep look away mid-playback to decode a tone splits their attention and
+        spends working memory on hunting instead of on the delivery.
+      */}
       <div className="tones">
-        {segment.tones?.map((t) => (
-          <span className="tone" key={t}>
-            {t}
-          </span>
-        ))}
+        {segment.tones?.map((t) => {
+          const info = findTone(t);
+          return (
+            <span className="tone-line" key={t}>
+              <span className="tone">{t}</span>
+              {info && <span className="tone-gloss">{info.short}</span>}
+            </span>
+          );
+        })}
       </div>
 
       <div className="script" aria-live="polite">
