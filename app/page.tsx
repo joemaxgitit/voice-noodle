@@ -10,6 +10,7 @@ type ModuleRow = {
   title: string;
   sort_order: number;
   script_id: string;
+  kind: string;
   segments: { id: string }[];
 };
 
@@ -17,6 +18,7 @@ type ScriptRow = {
   id: string;
   title: string;
   sort_order: number;
+  logo_url: string | null;
 };
 
 export default function Home() {
@@ -42,10 +44,10 @@ export default function Home() {
 
       const [profileRes, scriptRes, moduleRes, progressRes] = await Promise.all([
         supabase.from("profiles").select("full_name, role").eq("id", user.id).single(),
-        supabase.from("scripts").select("id, title, sort_order"),
+        supabase.from("scripts").select("id, title, sort_order, logo_url"),
         supabase
           .from("modules")
-          .select("id, title, sort_order, script_id, segments(id)"),
+          .select("id, title, sort_order, script_id, kind, segments(id)"),
         supabase.from("progress").select("segment_id").eq("completed", true),
       ]);
 
@@ -78,6 +80,11 @@ export default function Home() {
     router.refresh();
   }
 
+  // Row level security already limits scripts to this person's team, so when
+  // exactly one comes back it is theirs. Admins see several; fall back to the
+  // product mark rather than picking a client's logo arbitrarily.
+  const headerLogo = scripts.length === 1 ? scripts[0].logo_url : null;
+
   if (loading) {
     return (
       <main className="shell">
@@ -90,12 +97,12 @@ export default function Home() {
     <main className="shell">
       <header className="site-header">
         <span className="site-header-spacer" aria-hidden="true" />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          className="header-logo"
-          src="/lionside-logo.png"
-          alt="Lionside Financial"
-        />
+        {headerLogo ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img className="header-logo" src={headerLogo} alt="" />
+        ) : (
+          <span className="brand">Voice Noodle</span>
+        )}
         <div className="site-header-actions">
           {["admin", "manager"].includes(role) && (
             <Link className="btn" href="/admin" style={{ textDecoration: "none" }}>
@@ -125,28 +132,59 @@ export default function Home() {
         const mine = modules.filter((m) => m.script_id === script.id);
         if (mine.length === 0) return null;
 
+        const sequence = mine.filter((m) => m.kind !== "loop");
+        const loops = mine.filter((m) => m.kind === "loop");
+
+        const renderList = (list: ModuleRow[]) => (
+          <ul className="list">
+            {list.map((m) => {
+              const total = m.segments?.length ?? 0;
+              const complete = (m.segments || []).filter((sg) =>
+                done.has(sg.id)
+              ).length;
+
+              return (
+                <li key={m.id}>
+                  <Link href={`/train/${m.id}`}>
+                    <span>{m.title}</span>
+                    <span className="count">
+                      {total === 0 ? "empty" : `${complete} / ${total}`}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        );
+
         return (
           <section key={script.id}>
-            <h2>{script.title}</h2>
-            <ul className="list">
-              {mine.map((m) => {
-                const total = m.segments?.length ?? 0;
-                const complete = (m.segments || []).filter((s) =>
-                  done.has(s.id)
-                ).length;
+            {scripts.length > 1 && <h2 className="script-title">{script.title}</h2>}
 
-                return (
-                  <li key={m.id}>
-                    <Link href={`/train/${m.id}`}>
-                      <span>{m.title}</span>
-                      <span className="count">
-                        {total === 0 ? "empty" : `${complete} / ${total}`}
-                      </span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
+            {sequence.length > 0 && (
+              <>
+                <h2>The call, in order</h2>
+                {renderList(sequence)}
+              </>
+            )}
+
+            {/*
+              Loops are conditional, not sequential. Listing them inside the
+              numbered flow would teach reps to run all three every time. The
+              point is to reach for the one matching whatever the client is
+              actually uncertain about.
+            */}
+            {loops.length > 0 && (
+              <>
+                <h2>When they object</h2>
+                <p className="muted group-note">
+                  An objection is uncertainty about one of three things: the
+                  program, you, or the company. Pick the loop that rebuilds
+                  the one that slipped.
+                </p>
+                {renderList(loops)}
+              </>
+            )}
           </section>
         );
       })}

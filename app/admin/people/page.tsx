@@ -9,6 +9,7 @@ type Person = {
   email: string | null;
   full_name: string | null;
   role: string;
+  team: string | null;
   active: boolean;
   org_id: string | null;
 };
@@ -17,6 +18,14 @@ const ROLES = [
   { value: "rep", label: "Rep" },
   { value: "manager", label: "Manager" },
   { value: "admin", label: "Admin" },
+];
+
+// Team decides which script someone can reach. Enforced by row level
+// security, not just hidden in the interface.
+const TEAMS = [
+  { value: "", label: "No team" },
+  { value: "closers", label: "Closers" },
+  { value: "ams", label: "Account Managers" },
 ];
 
 export default function People() {
@@ -38,7 +47,7 @@ export default function People() {
 
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, email, full_name, role, active, org_id");
+      .select("id, email, full_name, role, team, active, org_id");
 
     if (error) {
       setError(error.message);
@@ -106,7 +115,8 @@ export default function People() {
       <h1>People</h1>
       <p className="muted">
         Create the account in Supabase first, then claim it here and set the
-        name and role.
+        name, team, and role. Team decides which script they can reach &mdash;
+        closers and account managers cannot see each other&rsquo;s.
       </p>
 
       {error && <div className="error">{error}</div>}
@@ -157,6 +167,19 @@ export default function People() {
                   {p.id === me && " \u00b7 you"}
                 </div>
               </div>
+
+              <select
+                value={p.team || ""}
+                onChange={(e) =>
+                  patch(p.id, { team: e.target.value || null })
+                }
+              >
+                {TEAMS.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
 
               <select
                 value={p.role}
