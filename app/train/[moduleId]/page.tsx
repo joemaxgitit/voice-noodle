@@ -16,6 +16,7 @@ type Segment = {
   client_should_feel: string | null;
   audio_path: string | null;
   timings: Phrase[];
+  words: Phrase[] | null;
   sort_order: number;
 };
 
@@ -29,13 +30,19 @@ export default function Train() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [loop, setLoop] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [byWord, setByWord] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const segment = segments[index];
   const phrases: Phrase[] = segment?.timings?.length ? segment.timings : [];
+  const words: Phrase[] = segment?.words?.length ? segment.words : [];
 
-  const { audio, setAudioEl, playing, activeIndex } = useKaraoke(phrases);
+  // Phrase is the default: thought groups are what carry tone. Word-level is
+  // available for reps who want to drill exact pronunciation.
+  const units: Phrase[] = byWord && words.length ? words : phrases;
+
+  const { audio, setAudioEl, playing, activeIndex } = useKaraoke(units);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +53,7 @@ export default function Train() {
         supabase
           .from("segments")
           .select(
-            "id, segment_code, title, script_text, tones, coaching, client_should_feel, audio_path, timings, sort_order"
+            "id, segment_code, title, script_text, tones, coaching, client_should_feel, audio_path, timings, words, sort_order"
           )
           .eq("module_id", params.moduleId),
       ]);
@@ -165,8 +172,8 @@ export default function Train() {
       </div>
 
       <div className="script" aria-live="polite">
-        {phrases.length ? (
-          phrases.map((p, i) => (
+        {units.length ? (
+          units.map((p, i) => (
             <span
               key={i}
               className={`phrase ${
@@ -207,6 +214,11 @@ export default function Train() {
             <button onClick={() => setSpeed(speed === 1 ? 0.75 : 1)}>
               {speed}&times; speed
             </button>
+            {words.length > 0 && (
+              <button onClick={() => setByWord(!byWord)}>
+                {byWord ? "Word by word" : "Phrase by phrase"}
+              </button>
+            )}
           </div>
         </>
       ) : (

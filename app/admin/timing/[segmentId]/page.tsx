@@ -18,7 +18,7 @@ export default function TimingPage() {
     supabase
       .from("segments")
       .select(
-        "id, segment_code, title, script_text, audio_path, timings, version"
+        "id, segment_code, title, script_text, audio_path, timings, words, version"
       )
       .eq("id", params.segmentId)
       .single()

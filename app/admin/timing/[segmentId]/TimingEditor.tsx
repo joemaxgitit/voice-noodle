@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   useKaraoke,
   marksToPhrases,
+  wordsToPhrases,
   splitIntoPhrases,
   type Phrase,
 } from "@/lib/useKaraoke";
@@ -16,6 +17,7 @@ export type EditorSegment = {
   script_text: string;
   audio_path: string | null;
   timings: Phrase[];
+  words: Phrase[] | null;
   version: number;
 };
 
@@ -41,6 +43,8 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
     (segment.timings || []).map((p) => p.start)
   );
   const [armed, setArmed] = useState(false);
+  const [words, setWords] = useState<Phrase[]>(segment.words || []);
+  const [aligning, setAligning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -56,8 +60,13 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
     useKaraoke(phrases);
 
   useEffect(() => {
-    setPhrases(marksToPhrases(lines, marks, duration));
-  }, [lines, marks, duration]);
+    // Aligned words win. Tapped marks are the fallback.
+    setPhrases(
+      words.length
+        ? wordsToPhrases(lines, words)
+        : marksToPhrases(lines, marks, duration)
+    );
+  }, [lines, marks, duration, words]);
 
   // A newly chosen local file wins over the stored recording.
   useEffect(() => {
@@ -65,6 +74,7 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
     const url = URL.createObjectURL(file);
     setAudioUrl(url);
     setMarks([]);
+    setWords([]);
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
@@ -106,6 +116,46 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [armed, lines.length, audio]);
+
+  async function autoAlign() {
+    if (!file) {
+      setError("Choose an audio file first. Alignment runs on the new upload.");
+      return;
+    }
+
+    setAligning(true);
+    setError("");
+    setStatus("");
+
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      // Must match the phrase lines exactly, so the returned word sequence
+      // lines up one-to-one with them.
+      form.append("text", lines.join(" "));
+
+      const res = await fetch("/api/align", { method: "POST", body: form });
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || "Alignment failed.");
+
+      const aligned: Phrase[] = data.words;
+      const expected = lines.join(" ").split(/\s+/).filter(Boolean).length;
+
+      setWords(aligned);
+      setMarks(wordsToPhrases(lines, aligned).map((p) => p.start));
+
+      setStatus(
+        aligned.length === expected
+          ? `Aligned ${aligned.length} words. Check the preview, then publish.`
+          : `Aligned ${aligned.length} words but expected ${expected}. Check the boundaries carefully.`
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Alignment failed.");
+    } finally {
+      setAligning(false);
+    }
+  }
 
   function startTapping() {
     if (!audio) return;
@@ -185,6 +235,7 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
         .update({
           audio_path: audioPath,
           timings: phrases,
+          words: words.length ? words : null,
           version,
           status: "published",
           updated_at: new Date().toISOString(),
@@ -245,7 +296,24 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
         disabled={armed}
       />
 
-      <h2>3 &middot; Tap the timing</h2>
+      <h2>3 &middot; Timing</h2>
+      <p className="hint">
+        Alignment listens to your recording and finds every word for you. Tap
+        by hand only if it gets something wrong.
+      </p>
+
+      <div className="row">
+        <button className="primary" onClick={autoAlign} disabled={!file || aligning}>
+          {aligning ? "Aligning\u2026" : "\u2728 Auto-align to my voice"}
+        </button>
+        {words.length > 0 && (
+          <span className="live-count">{words.length} words aligned</span>
+        )}
+      </div>
+
+      <p className="hint" style={{ marginTop: 16 }}>
+        Or tap it manually:
+      </p>
       <p className="hint">
         Press start, then hit <kbd>Space</kbd> the instant each new phrase
         begins. The first line is marked for you. <kbd>Backspace</kbd> undoes

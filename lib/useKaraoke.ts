@@ -106,6 +106,45 @@ export function marksToPhrases(
   });
 }
 
+/**
+ * Collapse word-level alignment into phrase timings.
+ *
+ * The text sent to the aligner is exactly lines.join(" "), so the returned
+ * word sequence lines up one-to-one with the words in those lines. We walk
+ * both in step and take each phrase's start from its first word and its end
+ * from its last.
+ */
+export function wordsToPhrases(lines: string[], words: Phrase[]): Phrase[] {
+  const out: Phrase[] = [];
+  let i = 0;
+
+  for (const line of lines) {
+    const count = line.split(/\s+/).filter(Boolean).length;
+    const slice = words.slice(i, i + count);
+    i += count;
+
+    if (slice.length === 0) {
+      const prev = out[out.length - 1];
+      const at = prev ? prev.end : 0;
+      out.push({ text: line, start: at, end: at });
+      continue;
+    }
+
+    out.push({
+      text: line,
+      start: slice[0].start,
+      end: slice[slice.length - 1].end,
+    });
+  }
+
+  // Close any gap between phrases so highlighting never blanks out mid-pause.
+  for (let k = 0; k < out.length - 1; k++) {
+    out[k].end = out[k + 1].start;
+  }
+
+  return out;
+}
+
 /** First-pass phrase split on thought groups. A human always adjusts it. */
 export function splitIntoPhrases(text: string): string[] {
   return text
