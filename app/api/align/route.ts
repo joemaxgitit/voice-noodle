@@ -86,16 +86,41 @@ export async function POST(request: Request) {
   }
 
   if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    return NextResponse.json(
-      {
-        error:
-          res.status === 401
-            ? "ElevenLabs rejected the API key."
-            : `Alignment failed (${res.status}). ${detail.slice(0, 300)}`,
-      },
-      { status: 502 }
-    );
+    const raw = await res.text().catch(() => "");
+
+    // ElevenLabs returns 401 for BOTH a bad key and a key that is missing
+    // permissions. The status code alone cannot tell them apart, so surface
+    // the body rather than collapsing it into a generic message.
+    let status = "";
+    let message = "";
+
+    try {
+      const parsed = JSON.parse(raw);
+      status = parsed?.detail?.status || "";
+      message = parsed?.detail?.message || "";
+    } catch {
+      // non-JSON body; fall through to the raw text
+    }
+
+    let error: string;
+
+    if (status === "missing_permissions") {
+      error =
+        "Your ElevenLabs key is missing a permission. In ElevenLabs go to " +
+        "Developers > API Keys > Edit, and either turn Restrict Key off or " +
+        "grant Speech to Text access. " +
+        message;
+    } else if (status === "invalid_api_key") {
+      error =
+        "ElevenLabs did not recognise the key. Make sure the value starts " +
+        "with sk_ and was copied in full.";
+    } else if (status === "quota_exceeded") {
+      error = "Your ElevenLabs account is out of credits.";
+    } else {
+      error = `Alignment failed (${res.status}). ${message || raw.slice(0, 300)}`;
+    }
+
+    return NextResponse.json({ error }, { status: 502 });
   }
 
   const data = (await res.json()) as {
