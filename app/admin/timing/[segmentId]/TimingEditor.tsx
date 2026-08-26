@@ -151,7 +151,7 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
           : `Aligned ${aligned.length} words but expected ${expected}. Check the boundaries carefully.`
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Alignment failed.");
+      setError(describe(e, "Alignment failed."));
     } finally {
       setAligning(false);
     }
@@ -246,7 +246,7 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
 
       setStatus(`Published as v${version}. Reps get it on their next load.`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed.");
+      setError(describe(e, "Save failed."));
     } finally {
       setSaving(false);
     }
@@ -404,4 +404,24 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
       {error && <div className="error">{error}</div>}
     </div>
   );
+}
+
+/**
+ * Supabase returns plain objects ({ message, details, hint, code }), not Error
+ * instances -- so `e instanceof Error` is false and the real reason gets
+ * thrown away. Pull the message out of whatever shape actually arrived.
+ */
+function describe(e: unknown, fallback: string): string {
+  if (e instanceof Error) return e.message;
+
+  if (e && typeof e === "object") {
+    const o = e as Record<string, unknown>;
+    const parts = [o.message, o.details, o.hint]
+      .filter((x): x is string => typeof x === "string" && x.length > 0);
+    const code = typeof o.code === "string" ? ` (${o.code})` : "";
+    if (parts.length) return parts.join(" \u2014 ") + code;
+  }
+
+  if (typeof e === "string" && e) return e;
+  return fallback;
 }
