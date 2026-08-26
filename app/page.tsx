@@ -88,8 +88,15 @@ export default function Home() {
 
   return (
     <main className="shell">
-      <div className="topbar topbar-branded">
-        <div className="row">
+      <header className="site-header">
+        <span className="site-header-spacer" aria-hidden="true" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          className="header-logo"
+          src="/lionside-logo.png"
+          alt="Lionside Financial"
+        />
+        <div className="site-header-actions">
           {["admin", "manager"].includes(role) && (
             <Link className="btn" href="/admin" style={{ textDecoration: "none" }}>
               Admin
@@ -97,13 +104,7 @@ export default function Home() {
           )}
           <button onClick={signOut}>Sign out</button>
         </div>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          className="corner-logo"
-          src="/lionside-logo.png"
-          alt="Lionside Financial"
-        />
-      </div>
+      </header>
 
       <div className="eyebrow">{name ? `Welcome back, ${name}` : "Training"}</div>
       <h1>Pick a section</h1>
