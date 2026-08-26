@@ -481,13 +481,24 @@ select {
   margin: 0 auto 22px;
 }
 
-.brand-mark {
-  display: flex;
-  align-items: center;
-  gap: 9px;
+/*
+  Home header: account controls on the left, client logo owning the top-right
+  corner. The stacked lockup needs real height to keep FINANCIAL legible, so
+  it sets the header height rather than squeezing into a bar.
+*/
+.topbar-branded {
+  align-items: flex-start;
+  padding-bottom: 28px;
 }
 
-.brand-mark img {
-  height: 26px;
+.corner-logo {
+  height: 92px;
   width: auto;
+  flex-shrink: 0;
+}
+
+@media (max-width: 520px) {
+  .corner-logo {
+    height: 68px;
+  }
 }

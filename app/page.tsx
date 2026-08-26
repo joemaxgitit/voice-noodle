@@ -88,11 +88,7 @@ export default function Home() {
 
   return (
     <main className="shell">
-      <div className="topbar">
-        <span className="brand-mark">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/lionside-mark.png" alt="Lionside Financial" />
-        </span>
+      <div className="topbar topbar-branded">
         <div className="row">
           {["admin", "manager"].includes(role) && (
             <Link className="btn" href="/admin" style={{ textDecoration: "none" }}>
@@ -101,6 +97,12 @@ export default function Home() {
           )}
           <button onClick={signOut}>Sign out</button>
         </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          className="corner-logo"
+          src="/lionside-logo.png"
+          alt="Lionside Financial"
+        />
       </div>
 
       <div className="eyebrow">{name ? `Welcome back, ${name}` : "Training"}</div>
