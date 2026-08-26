@@ -196,9 +196,19 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
       let version = segment.version;
 
       if (file) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) throw new Error("You are signed out. Sign in and try again.");
+
+        // Must filter to the current user. Admins can see every profile in
+        // their org, so an unfiltered .single() returns multiple rows and
+        // Postgrest answers 406 as soon as a second person exists.
         const { data: profile, error: profileErr } = await supabase
           .from("profiles")
           .select("org_id")
+          .eq("id", user.id)
           .single();
 
         if (profileErr) throw profileErr;
