@@ -85,7 +85,10 @@ export default function Home() {
   // Row level security already limits scripts to this person's team, so when
   // exactly one comes back it is theirs. Admins see several; fall back to the
   // product mark rather than picking a client's logo arbitrarily.
-  const headerLogo = scripts.length === 1 ? scripts[0].logo_url : null;
+  // One script means one client, so show theirs. Admins see every script and
+  // get the parent company mark instead of an arbitrary client's.
+  const headerLogo =
+    (scripts.length === 1 ? scripts[0].logo_url : null) ?? "/proedge-logo.png";
 
   if (loading) {
     return (
@@ -99,12 +102,14 @@ export default function Home() {
     <main className="shell">
       <header className="site-header">
         <span className="site-header-spacer" aria-hidden="true" />
-        {headerLogo ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img className="header-logo" src={headerLogo} alt="" />
-        ) : (
-          <span className="brand">Voice Noodle</span>
-        )}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          className={`header-logo ${
+            headerLogo === "/proedge-logo.png" ? "header-logo-wide" : ""
+          }`}
+          src={headerLogo}
+          alt=""
+        />
         <div className="site-header-actions">
           {["admin", "manager"].includes(role) && (
             <Link className="btn" href="/admin" style={{ textDecoration: "none" }}>

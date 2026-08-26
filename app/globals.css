@@ -683,3 +683,57 @@ select {
   border-color: var(--live);
   color: #191308;
 }
+
+/* ---------- login lockup ---------- */
+
+.login-logos {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.ll-pro {
+  width: 190px;
+  height: auto;
+}
+
+.ll-rule {
+  width: 46px;
+  height: 1px;
+  background: var(--line);
+}
+
+/* The two client logos sit as a pair, smaller than the parent mark. */
+.ll-pair {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+
+.ll-lion {
+  height: 62px;
+  width: auto;
+}
+
+.ll-bolton {
+  height: 30px;
+  width: auto;
+  opacity: 0.92;
+}
+
+/* The ProEdge lockup is wide and short, so it needs different bounds
+   from the stacked Lionside one. */
+.header-logo-wide {
+  height: auto;
+  width: 200px;
+}
+
+@media (max-width: 560px) {
+  .header-logo-wide {
+    width: 160px;
+  }
+}
