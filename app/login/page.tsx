@@ -38,7 +38,14 @@ function LoginForm() {
   return (
     <main className="shell">
       <div className="card" style={{ marginTop: "12vh" }}>
-        <div className="eyebrow">Private training</div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/lionside-logo.png"
+          alt="Lionside Financial"
+          className="login-logo"
+        />
+
+        <div className="eyebrow">Sales script training</div>
         <h1>Voice Noodle</h1>
         <p className="muted">Sign in with your work account.</p>
 

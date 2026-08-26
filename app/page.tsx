@@ -89,7 +89,10 @@ export default function Home() {
   return (
     <main className="shell">
       <div className="topbar">
-        <div className="brand">Voice Noodle</div>
+        <span className="brand-mark">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/lionside-mark.png" alt="Lionside Financial" />
+        </span>
         <div className="row">
           {["admin", "manager"].includes(role) && (
             <Link className="btn" href="/admin" style={{ textDecoration: "none" }}>
