@@ -1045,6 +1045,57 @@ select {
 
 /* Print is always light regardless of the chosen theme. */
 
+/* ---------- footer legal ---------- */
+
+/*
+  The script belongs to ProEdge; the confidentiality legend is the line that
+  actually does work here, since trade-secret protection depends on showing
+  reasonable measures to keep it secret. The Voice Noodle mark is attribution
+  only -- it deliberately makes no ownership claim on the platform.
+*/
+.footer-legal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-top: 30px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.footer-rights {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #55524c;
+  max-width: 62ch;
+}
+
+/* Mirrors the sign-in card's attribution so the two read as one voice. */
+.footer-mark {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+}
+
+.footer-mark img {
+  width: 22px;
+  height: auto;
+  flex: none;
+  opacity: 0.85;
+}
+
+.footer-mark span {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #55524c;
+  white-space: nowrap;
+}
+
 /* Print-only furniture; the print block below turns it on. */
 .print-header {
   display: none;

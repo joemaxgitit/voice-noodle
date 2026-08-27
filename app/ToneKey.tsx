@@ -38,6 +38,18 @@ export default function ToneKey() {
             what they actually respond to.
           </p>
         </details>
+
+        <div className="footer-legal">
+          <p className="footer-rights">
+            Script content &copy; 2026 ProEdge Solutions.
+            Confidential &mdash; internal training use only.
+          </p>
+          <p className="footer-mark">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/voicenoodle-mark-sm.png" alt="" />
+            <span>Powered by Voice Noodle</span>
+          </p>
+        </div>
       </div>
     </footer>
   );
