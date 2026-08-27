@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import ToneKey from "./ToneKey";
+import ThemeToggle from "./ThemeToggle";
 
 /*
   Link previews. The absolute URL matters -- scrapers cannot resolve a
@@ -51,10 +52,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/*
+          Applies the saved theme before first paint. Without it the page
+          renders dark and then snaps to light, which reads as a bug.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('vn-theme');if(!t){t=window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();`,
+          }}
+        />
+      </head>
       <body>
         {children}
         <ToneKey />
+        <ThemeToggle />
       </body>
     </html>
   );

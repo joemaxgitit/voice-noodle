@@ -42,7 +42,13 @@ function LoginForm() {
         <img
           src="/proedge-logo.png"
           alt="ProEdge Solutions"
-          className="login-logo"
+          className="login-logo dark-only"
+        />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/proedge-logo-light.png"
+          alt="ProEdge Solutions"
+          className="login-logo light-only"
         />
 
         <div className="eyebrow">Sales script training</div>

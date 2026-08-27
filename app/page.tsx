@@ -104,10 +104,21 @@ export default function Home() {
         <span className="site-header-spacer" aria-hidden="true" />
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          className={`header-logo ${
+          className={`header-logo dark-only ${
             headerLogo === "/proedge-logo.png" ? "header-logo-wide" : ""
           }`}
           src={headerLogo}
+          alt=""
+        />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          className={`header-logo light-only ${
+            headerLogo === "/proedge-logo.png" ? "header-logo-wide" : ""
+          }`}
+          src={headerLogo.replace(/\.png$/, "-light.png").replace(
+            "/lionside-logo-light.png",
+            "/lionside-logo-print.png"
+          )}
           alt=""
         />
         <div className="site-header-actions">

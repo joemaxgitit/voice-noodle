@@ -16,6 +16,25 @@
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
+/*
+  Light mode. Only the variables change -- every component reads from these,
+  so nothing else needs a light-specific rule. The accent darkens because
+  #f0a63c on white does not carry enough contrast for text.
+*/
+[data-theme="light"] {
+  --ink: #faf9f7;
+  --ink-2: #ffffff;
+  --ink-3: #f0eee9;
+  --line: #ddd9d1;
+  --text: #1c1c20;
+  --muted: #6d6960;
+  --live: #b4700c;
+  --live-dim: rgba(180, 112, 12, 0.13);
+  --tone: #3d6285;
+  --bad: #b3352c;
+  --ok: #2f7a4d;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -1085,4 +1104,51 @@ select {
 /* Print masthead. Hidden on screen; the app already shows the logo up top. */
 .print-header {
   display: none;
+}
+
+/* ---------- theme ---------- */
+
+/*
+  Logos come in two versions: white-on-transparent for dark, and the client's
+  own colours for light. Swapped in CSS so there is no flicker while React
+  works out which to render.
+*/
+.light-only { display: none; }
+[data-theme="light"] .dark-only { display: none; }
+[data-theme="light"] .light-only { display: block; }
+
+.theme-toggle {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 40;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+}
+
+.theme-toggle:hover:not(:disabled) {
+  color: var(--live);
+  border-color: var(--live);
+}
+
+@media (max-width: 560px) {
+  .theme-toggle {
+    right: 12px;
+    bottom: 12px;
+  }
+}
+
+/* Print is always light regardless of the chosen theme. */
+@media print {
+  .light-only { display: block !important; }
+  .dark-only { display: none !important; }
 }
