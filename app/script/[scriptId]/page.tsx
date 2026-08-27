@@ -122,13 +122,22 @@ function ScriptView() {
       <div className="print-header">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/lionside-logo-print.png" alt="Lionside Financial" />
-        <span>{title}</span>
+        <span>
+          {title}
+          <br />
+          Confidential &mdash; internal training use only
+        </span>
+      </div>
+
+      <div className="print-footer">
+        {title} &middot; Lionside Financial &middot; voicenoodle.com
       </div>
 
       <h1>{title}</h1>
       <p className="muted no-print">
         The full script. Section names sit in the margin &mdash; click one to
-        practise that part.
+        practise that part. When printing, switch off &ldquo;Headers and
+        footers&rdquo; in the browser dialog for a clean page.
       </p>
 
       {hasSpanish && (
