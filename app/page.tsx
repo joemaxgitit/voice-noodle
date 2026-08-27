@@ -189,7 +189,12 @@ export default function Home() {
 
             {sequence.length > 0 && (
               <>
-                <h2>The call, in order</h2>
+                <h2>
+                  The call, in order
+                  <Link className="section-link" href={`/script/${script.id}`}>
+                    Full script
+                  </Link>
+                </h2>
                 {renderList(sequence)}
               </>
             )}

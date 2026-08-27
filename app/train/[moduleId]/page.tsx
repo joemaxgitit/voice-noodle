@@ -16,6 +16,7 @@ type Segment = {
   coaching: string | null;
   client_should_feel: string | null;
   verbatim: boolean;
+  section: string | null;
   sort_order: number;
   recordings: Recording[];
 };
@@ -34,6 +35,7 @@ export default function Train() {
   const params = useParams<{ moduleId: string }>();
 
   const [moduleTitle, setModuleTitle] = useState("");
+  const [scriptId, setScriptId] = useState<string | null>(null);
   const [segments, setSegments] = useState<Segment[]>([]);
   const [index, setIndex] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -42,10 +44,17 @@ export default function Train() {
   const [byWord, setByWord] = useState(false);
   const [narrators, setNarrators] = useState<Narrator[]>([]);
   const [narratorId, setNarratorId] = useState<string | null>(null);
+  const [done, setDone] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const segment = segments[index];
+
+  // Named sections within this call, in script order.
+  const sections = Array.from(
+    new Set(segments.map((sg) => sg.section).filter(Boolean) as string[])
+  );
+  const currentSection = segment?.section || "";
 
   // Narrators vary in voice, not in tone. The tone chips and coaching below
   // belong to the segment, so every voice is performing the same map.
@@ -67,16 +76,29 @@ export default function Train() {
 
     (async () => {
       const [modRes, segRes, narRes, meRes] = await Promise.all([
-        supabase.from("modules").select("title").eq("id", params.moduleId).single(),
+        supabase
+          .from("modules")
+          .select("title, script_id")
+          .eq("id", params.moduleId)
+          .single(),
         supabase
           .from("segments")
           .select(
-            "id, segment_code, title, script_text, tones, coaching, client_should_feel, verbatim, sort_order, recordings(narrator_id, audio_path, timings, words)"
+            "id, segment_code, title, script_text, tones, coaching, client_should_feel, verbatim, section, sort_order, recordings(narrator_id, audio_path, timings, words)"
           )
           .eq("module_id", params.moduleId),
         supabase.from("narrators").select("id, name, sort_order"),
         supabase.auth.getUser(),
       ]);
+
+      const { data: prog } = await supabase
+        .from("progress")
+        .select("segment_id")
+        .eq("completed", true);
+
+      if (!cancelled) {
+        setDone(new Set((prog || []).map((r) => r.segment_id)));
+      }
 
       if (cancelled) return;
 
@@ -97,6 +119,7 @@ export default function Train() {
       }
 
       setModuleTitle(modRes.data?.title || "Training");
+      setScriptId((modRes.data as { script_id?: string })?.script_id ?? null);
       setSegments(
         ((segRes.data || []) as unknown as Segment[]).sort(
           (a, b) => a.sort_order - b.sort_order
@@ -160,6 +183,7 @@ export default function Train() {
       });
     }
 
+    if (segment) setDone((d) => new Set(d).add(segment.id));
     if (index < segments.length - 1) setIndex(index + 1);
   }
 
@@ -203,6 +227,37 @@ export default function Train() {
           {moduleTitle} &middot; {index + 1} of {segments.length}
         </div>
       </div>
+
+      {/*
+        A long call broken into its own named parts. Mayer's segmenting work
+        found this helps most exactly where it applies here: complex material,
+        fast pace, inexperienced learner.
+      */}
+      {sections.length > 1 && (
+        <div className="section-tabs">
+          {sections.map((sec) => {
+            const inSec = segments.filter((sg) => (sg.section || "") === sec);
+            const doneN = inSec.filter((sg) => done.has(sg.id)).length;
+            return (
+              <button
+                key={sec}
+                aria-pressed={sec === currentSection}
+                onClick={() => {
+                  const first = segments.findIndex(
+                    (sg) => (sg.section || "") === sec
+                  );
+                  if (first >= 0) setIndex(first);
+                }}
+              >
+                {sec}
+                <span className="section-count">
+                  {doneN}/{inSec.length}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="progressbar">
         <div style={{ width: `${pct}%` }} />
@@ -304,6 +359,18 @@ export default function Train() {
         </>
       ) : (
         <p className="muted">No master recording uploaded for this one yet.</p>
+      )}
+
+      {scriptId && segment && (
+        <div className="row" style={{ marginTop: 18 }}>
+          <Link
+            className="btn"
+            href={`/script/${scriptId}?segment=${segment.id}`}
+            style={{ textDecoration: "none" }}
+          >
+            Show in full script
+          </Link>
+        </div>
       )}
 
       <div className="coaching">
