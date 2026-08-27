@@ -46,8 +46,8 @@ function LoginForm() {
         />
 
         <div className="eyebrow">Sales script training</div>
-        <h1>Voice Noodle</h1>
-        <p className="muted">Sign in with your work account.</p>
+        <h1>Sign in</h1>
+        <p className="muted">Use your work account.</p>
 
         <form onSubmit={signIn} style={{ marginTop: 22 }}>
           <label className="field">
