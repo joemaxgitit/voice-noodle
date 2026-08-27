@@ -8,8 +8,7 @@ type Row = {
   id: string;
   segment_code: string;
   title: string | null;
-  audio_path: string | null;
-  version: number;
+  recordings: { audio_path: string | null }[];
   status: string;
   sort_order: number;
   modules: { title: string; sort_order: number } | null;
@@ -25,7 +24,7 @@ export default function Admin() {
     supabase
       .from("segments")
       .select(
-        "id, segment_code, title, audio_path, version, status, sort_order, modules(title, sort_order)"
+        "id, segment_code, title, status, sort_order, modules(title, sort_order), recordings(audio_path)"
       )
       .then(({ data, error }) => {
         if (error) setError(error.message);
@@ -39,7 +38,10 @@ export default function Admin() {
       });
   }, [supabase]);
 
-  const timed = rows.filter((r) => r.audio_path).length;
+  const voiceCount = (r: Row) =>
+    (r.recordings || []).filter((x) => x.audio_path).length;
+
+  const timed = rows.filter((r) => voiceCount(r) > 0).length;
 
   if (loading) {
     return (
@@ -80,8 +82,10 @@ export default function Admin() {
                 {r.title || "Untitled"}
               </span>
               <span className="count">
-                {r.audio_path ? `v${r.version}` : "no audio"}
-                {r.status === "draft" ? " · draft" : ""}
+                {voiceCount(r) > 0
+                  ? `${voiceCount(r)} ${voiceCount(r) === 1 ? "voice" : "voices"}`
+                  : "no audio"}
+                {r.status === "draft" ? " \u00b7 draft" : ""}
               </span>
             </Link>
           </li>

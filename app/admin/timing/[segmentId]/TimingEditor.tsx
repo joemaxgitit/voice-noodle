@@ -16,6 +16,13 @@ export type EditorSegment = {
   segment_code: string;
   title: string | null;
   script_text: string;
+  recordings: Recording[];
+};
+
+export type Narrator = { id: string; name: string; sort_order: number };
+
+export type Recording = {
+  narrator_id: string;
   audio_path: string | null;
   timings: Phrase[];
   words: Phrase[] | null;
@@ -28,23 +35,35 @@ export type EditorSegment = {
  * Split the script into phrases, play the recording, tap the spacebar as each
  * phrase begins. A 15-second clip is timed in 15 seconds.
  */
-export default function TimingEditor({ segment }: { segment: EditorSegment }) {
+export default function TimingEditor({
+  segment,
+  narrators,
+}: {
+  segment: EditorSegment;
+  narrators: Narrator[];
+}) {
   const supabase = createClient();
+
+  const [narratorId, setNarratorId] = useState<string>(
+    narrators[0]?.id ?? ""
+  );
+
+  const current = segment.recordings.find((r) => r.narrator_id === narratorId);
 
   const [file, setFile] = useState<File | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
 
   const [raw, setRaw] = useState(
-    segment.timings?.length
-      ? segment.timings.map((p) => p.text).join("\n")
+    current?.timings?.length
+      ? current.timings.map((p) => p.text).join("\n")
       : splitIntoPhrases(segment.script_text).join("\n")
   );
 
   const [marks, setMarks] = useState<number[]>(
-    (segment.timings || []).map((p) => p.start)
+    (current?.timings || []).map((p) => p.start)
   );
   const [armed, setArmed] = useState(false);
-  const [words, setWords] = useState<Phrase[]>(segment.words || []);
+  const [words, setWords] = useState<Phrase[]>(current?.words || []);
   const [aligning, setAligning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
@@ -69,6 +88,23 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
     );
   }, [lines, marks, duration, words]);
 
+  // Switching voice loads that narrator's take, or a blank slate if they
+  // have not recorded this segment yet.
+  useEffect(() => {
+    const rec = segment.recordings.find((r) => r.narrator_id === narratorId);
+    setFile(null);
+    setAudioUrl(null);
+    setWords(rec?.words || []);
+    setMarks((rec?.timings || []).map((p) => p.start));
+    setRaw(
+      rec?.timings?.length
+        ? rec.timings.map((p) => p.text).join("\n")
+        : splitIntoPhrases(segment.script_text).join("\n")
+    );
+    setStatus("");
+    setError("");
+  }, [narratorId, segment.recordings, segment.script_text]);
+
   // A newly chosen local file wins over the stored recording.
   useEffect(() => {
     if (!file) return;
@@ -80,12 +116,12 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
   }, [file]);
 
   useEffect(() => {
-    if (file || !segment.audio_path) return;
+    if (file || !current?.audio_path) return;
     let cancelled = false;
 
     supabase.storage
       .from("master-audio")
-      .createSignedUrl(segment.audio_path, 3600)
+      .createSignedUrl(current.audio_path, 3600)
       .then(({ data }) => {
         if (!cancelled && data) setAudioUrl(data.signedUrl);
       });
@@ -93,7 +129,7 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
     return () => {
       cancelled = true;
     };
-  }, [file, segment.audio_path, supabase]);
+  }, [file, current?.audio_path, supabase]);
 
   useEffect(() => {
     if (!armed || !audio) return;
@@ -193,8 +229,10 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
     setError("");
 
     try {
-      let audioPath = segment.audio_path;
-      let version = segment.version;
+      if (!narratorId) throw new Error("Pick a voice first.");
+
+      let audioPath = current?.audio_path ?? null;
+      let version = current?.version ?? 0;
 
       if (file) {
         const {
@@ -203,9 +241,9 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
 
         if (!user) throw new Error("You are signed out. Sign in and try again.");
 
-        // Must filter to the current user. Admins can see every profile in
-        // their org, so an unfiltered .single() returns multiple rows and
-        // Postgrest answers 406 as soon as a second person exists.
+        // Filter to the current user. Admins can see every profile in their
+        // org, so an unfiltered .single() returns several rows and Postgrest
+        // answers 406 as soon as a second person exists.
         const { data: profile, error: profileErr } = await supabase
           .from("profiles")
           .select("org_id")
@@ -217,8 +255,13 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
           throw new Error("Your profile has no organization set.");
         }
 
-        version = segment.version + 1;
-        audioPath = `${profile.org_id}/${segment.segment_code}-v${version}.mp3`;
+        version = version + 1;
+
+        // Narrator id in the path keeps each voice's takes separate in
+        // storage, so re-recording one never overwrites another.
+        audioPath =
+          `${profile.org_id}/${segment.segment_code}` +
+          `-${narratorId.slice(0, 8)}-v${version}.mp3`;
 
         const { error: upErr } = await supabase.storage
           .from("master-audio")
@@ -228,34 +271,33 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
           });
 
         if (upErr) throw upErr;
-
-        // Snapshot what we are replacing so it can be restored later.
-        if (segment.audio_path) {
-          await supabase.from("segment_versions").insert({
-            segment_id: segment.id,
-            version: segment.version,
-            audio_path: segment.audio_path,
-            timings: segment.timings,
-            script_text: segment.script_text,
-          });
-        }
       }
 
-      const { error: updErr } = await supabase
-        .from("segments")
-        .update({
+      if (!audioPath) throw new Error("Choose an audio file for this voice.");
+
+      const { error: upsertErr } = await supabase.from("recordings").upsert(
+        {
+          segment_id: segment.id,
+          narrator_id: narratorId,
           audio_path: audioPath,
           timings: phrases,
           words: words.length ? words : null,
           version,
-          status: "published",
           updated_at: new Date().toISOString(),
-        })
+        },
+        { onConflict: "segment_id,narrator_id" }
+      );
+
+      if (upsertErr) throw upsertErr;
+
+      await supabase
+        .from("segments")
+        .update({ status: "published" })
         .eq("id", segment.id);
 
-      if (updErr) throw updErr;
-
-      setStatus(`Published as v${version}. Reps get it on their next load.`);
+      const who =
+        narrators.find((n) => n.id === narratorId)?.name ?? "this voice";
+      setStatus(`Saved ${who} as v${version}. Reps get it on their next load.`);
     } catch (e) {
       setError(describe(e, "Save failed."));
     } finally {
@@ -270,9 +312,33 @@ export default function TimingEditor({ segment }: { segment: EditorSegment }) {
       <div className="code">{segment.segment_code}</div>
       <h1>{segment.title || "Untitled segment"}</h1>
       <p className="muted">
-        Currently v{segment.version}
+        {current?.audio_path ? `Currently v${current.version}` : "Not recorded yet"}
         {duration > 0 && ` \u00b7 ${duration.toFixed(1)}s of audio`}
       </p>
+
+      {/*
+        Every voice performs the same tone map. Only the delivery differs,
+        which is the point -- one model teaches imitation of that person,
+        several teach the pattern underneath.
+      */}
+      <h2>Voice</h2>
+      <div className="narrators">
+        {narrators.map((n) => {
+          const has = segment.recordings.some(
+            (r) => r.narrator_id === n.id && r.audio_path
+          );
+          return (
+            <button
+              key={n.id}
+              aria-pressed={narratorId === n.id}
+              onClick={() => setNarratorId(n.id)}
+            >
+              {n.name}
+              {has ? " \u2713" : ""}
+            </button>
+          );
+        })}
+      </div>
 
       <h2>1 &middot; Recording</h2>
       <input

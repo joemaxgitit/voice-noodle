@@ -15,11 +15,18 @@ type Segment = {
   tones: string[];
   coaching: string | null;
   client_should_feel: string | null;
+  verbatim: boolean;
+  sort_order: number;
+  recordings: Recording[];
+};
+
+type Narrator = { id: string; name: string; sort_order: number };
+
+type Recording = {
+  narrator_id: string;
   audio_path: string | null;
   timings: Phrase[];
   words: Phrase[] | null;
-  verbatim: boolean;
-  sort_order: number;
 };
 
 export default function Train() {
@@ -33,12 +40,21 @@ export default function Train() {
   const [loop, setLoop] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [byWord, setByWord] = useState(false);
+  const [narrators, setNarrators] = useState<Narrator[]>([]);
+  const [narratorId, setNarratorId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const segment = segments[index];
-  const phrases: Phrase[] = segment?.timings?.length ? segment.timings : [];
-  const words: Phrase[] = segment?.words?.length ? segment.words : [];
+
+  // Narrators vary in voice, not in tone. The tone chips and coaching below
+  // belong to the segment, so every voice is performing the same map.
+  const available = (segment?.recordings || []).filter((r) => r.audio_path);
+  const chosen =
+    available.find((r) => r.narrator_id === narratorId) || available[0] || null;
+
+  const phrases: Phrase[] = chosen?.timings?.length ? chosen.timings : [];
+  const words: Phrase[] = chosen?.words?.length ? chosen.words : [];
 
   // Phrase is the default: thought groups are what carry tone. Word-level is
   // available for reps who want to drill exact pronunciation.
@@ -50,19 +66,36 @@ export default function Train() {
     let cancelled = false;
 
     (async () => {
-      const [modRes, segRes] = await Promise.all([
+      const [modRes, segRes, narRes, meRes] = await Promise.all([
         supabase.from("modules").select("title").eq("id", params.moduleId).single(),
         supabase
           .from("segments")
           .select(
-            "id, segment_code, title, script_text, tones, coaching, client_should_feel, audio_path, timings, words, verbatim, sort_order"
+            "id, segment_code, title, script_text, tones, coaching, client_should_feel, verbatim, sort_order, recordings(narrator_id, audio_path, timings, words)"
           )
           .eq("module_id", params.moduleId),
+        supabase.from("narrators").select("id, name, sort_order"),
+        supabase.auth.getUser(),
       ]);
 
       if (cancelled) return;
 
       if (segRes.error) setError(segRes.error.message);
+      const nar = ((narRes.data || []) as Narrator[]).sort(
+        (a, b) => a.sort_order - b.sort_order
+      );
+      setNarrators(nar);
+
+      const uid = meRes.data.user?.id;
+      if (uid) {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("narrator_id")
+          .eq("id", uid)
+          .single();
+        if (!cancelled && prof?.narrator_id) setNarratorId(prof.narrator_id);
+      }
+
       setModuleTitle(modRes.data?.title || "Training");
       setSegments(
         ((segRes.data || []) as unknown as Segment[]).sort(
@@ -79,7 +112,7 @@ export default function Train() {
 
   // Signed URL per segment. Never a permanent public MP3 link.
   useEffect(() => {
-    if (!segment?.audio_path) {
+    if (!chosen?.audio_path) {
       setAudioUrl(null);
       return;
     }
@@ -88,7 +121,7 @@ export default function Train() {
 
     supabase.storage
       .from("master-audio")
-      .createSignedUrl(segment.audio_path, 3600)
+      .createSignedUrl(chosen.audio_path, 3600)
       .then(({ data, error }) => {
         if (cancelled) return;
         setAudioUrl(error ? null : data.signedUrl);
@@ -97,11 +130,21 @@ export default function Train() {
     return () => {
       cancelled = true;
     };
-  }, [segment?.id, segment?.audio_path, supabase]);
+  }, [segment?.id, chosen?.audio_path, supabase]);
 
   useEffect(() => {
     if (audio) audio.playbackRate = speed;
   }, [speed, audio, audioUrl]);
+
+  async function pickNarrator(id: string) {
+    setNarratorId(id);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) {
+      await supabase.from("profiles").update({ narrator_id: id }).eq("id", user.id);
+    }
+  }
 
   async function complete() {
     const {
@@ -236,6 +279,28 @@ export default function Train() {
               </button>
             )}
           </div>
+
+          {/*
+            Only worth showing when there is a genuine choice. Hearing the same
+            tone map in more than one voice is what stops a rep copying a
+            particular person instead of learning the pattern.
+          */}
+          {available.length > 1 && (
+            <div className="narrators">
+              <span className="narrator-label">Voice</span>
+              {narrators
+                .filter((n) => available.some((r) => r.narrator_id === n.id))
+                .map((n) => (
+                  <button
+                    key={n.id}
+                    aria-pressed={chosen?.narrator_id === n.id}
+                    onClick={() => pickNarrator(n.id)}
+                  >
+                    {n.name}
+                  </button>
+                ))}
+            </div>
+          )}
         </>
       ) : (
         <p className="muted">No master recording uploaded for this one yet.</p>

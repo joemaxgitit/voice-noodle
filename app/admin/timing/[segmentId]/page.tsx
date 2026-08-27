@@ -4,29 +4,40 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import TimingEditor, { type EditorSegment } from "./TimingEditor";
+import TimingEditor, {
+  type EditorSegment,
+  type Narrator,
+} from "./TimingEditor";
 
 export default function TimingPage() {
   const supabase = createClient();
   const params = useParams<{ segmentId: string }>();
 
   const [segment, setSegment] = useState<EditorSegment | null>(null);
+  const [narrators, setNarrators] = useState<Narrator[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    supabase
-      .from("segments")
-      .select(
-        "id, segment_code, title, script_text, audio_path, timings, words, version"
-      )
-      .eq("id", params.segmentId)
-      .single()
-      .then(({ data, error }) => {
-        if (error) setError(error.message);
-        setSegment((data as unknown as EditorSegment) ?? null);
-        setLoading(false);
-      });
+    Promise.all([
+      supabase
+        .from("segments")
+        .select(
+          "id, segment_code, title, script_text, recordings(narrator_id, audio_path, timings, words, version)"
+        )
+        .eq("id", params.segmentId)
+        .single(),
+      supabase.from("narrators").select("id, name, sort_order"),
+    ]).then(([segRes, narRes]) => {
+      if (segRes.error) setError(segRes.error.message);
+      setSegment((segRes.data as unknown as EditorSegment) ?? null);
+      setNarrators(
+        ((narRes.data || []) as Narrator[]).sort(
+          (a, b) => a.sort_order - b.sort_order
+        )
+      );
+      setLoading(false);
+    });
   }, [params.segmentId, supabase]);
 
   return (
@@ -39,7 +50,7 @@ export default function TimingPage() {
 
       {loading && <p className="muted">Loading…</p>}
       {error && <div className="error">{error}</div>}
-      {segment && <TimingEditor segment={segment} />}
+      {segment && <TimingEditor segment={segment} narrators={narrators} />}
     </main>
   );
 }
