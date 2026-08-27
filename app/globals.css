@@ -874,6 +874,28 @@ select {
 /* ---------- print ---------- */
 
 @media print {
+  /*
+    Rotate the margin labels upright. Horizontal labels need a 120px+ column,
+    which is a lot of a printed page given to furniture; vertical needs ~26px.
+  */
+  .script-block {
+    grid-template-columns: 34px 1fr;
+    gap: 0 14px;
+  }
+
+  .script-margin-label {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    text-align: center;
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    white-space: nowrap;
+  }
+
+  .margin-note {
+    display: none;
+  }
+
   :root {
     --text: #111;
     --muted: #666;
@@ -919,4 +941,12 @@ select {
 
 .section-link:hover {
   text-decoration: underline;
+}
+
+/* Tone chip sitting inline in the script, at the point the tone shifts. */
+.inline-tone {
+  margin-right: 6px;
+  padding: 2px 7px;
+  font-size: 10px;
+  vertical-align: 3px;
 }

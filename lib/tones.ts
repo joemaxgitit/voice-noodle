@@ -79,3 +79,41 @@ export function findTone(code: string): Tone | undefined {
   const key = code.trim().toUpperCase().replace(/\s+/g, " ");
   return TONES.find((t) => t.code.toUpperCase() === key);
 }
+
+export type ToneSpan = { tone: string; text: string };
+
+/**
+ * Which tone covers each phrase of a segment.
+ *
+ * The script marks tones inline — "AC We specialize... I CARE Today we will
+ * go over... RM Sound good?" — so a tone belongs to a stretch of words, not
+ * to the whole segment. Phrases come from the recording's timing data and do
+ * not necessarily align with the tone boundaries, so we walk both by
+ * character offset and report the tone in force at each phrase's start.
+ *
+ * Returns one entry per phrase: the tone covering it, or "" where the script
+ * marks none.
+ */
+export function tonesForPhrases(
+  toneMap: ToneSpan[] | null,
+  phraseTexts: string[]
+): string[] {
+  if (!toneMap || toneMap.length === 0) return phraseTexts.map(() => "");
+
+  // character ranges of each tone span
+  const ranges: { tone: string; end: number }[] = [];
+  let at = 0;
+  for (const span of toneMap) {
+    at += span.text.length + 1; // the joining space
+    ranges.push({ tone: span.tone || "", end: at });
+  }
+
+  const out: string[] = [];
+  let cursor = 0;
+  for (const text of phraseTexts) {
+    const hit = ranges.find((r) => cursor < r.end);
+    out.push(hit ? hit.tone : "");
+    cursor += text.length + 1;
+  }
+  return out;
+}

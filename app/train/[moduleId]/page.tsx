@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useKaraoke, stateFor, type Phrase } from "@/lib/useKaraoke";
-import { findTone } from "@/lib/tones";
+import { findTone, tonesForPhrases, type ToneSpan } from "@/lib/tones";
 
 type Segment = {
   id: string;
@@ -16,6 +16,7 @@ type Segment = {
   coaching: string | null;
   client_should_feel: string | null;
   verbatim: boolean;
+  tone_map: ToneSpan[] | null;
   section: string | null;
   sort_order: number;
   recordings: Recording[];
@@ -71,6 +72,13 @@ export default function Train() {
 
   const { audio, setAudioEl, playing, time } = useKaraoke(units);
 
+  // Which tone is in force at each phrase, so the chip appears exactly where
+  // the script shifts rather than as a flat list at the top of the card.
+  const phraseTones = tonesForPhrases(
+    segment?.tone_map ?? null,
+    units.length ? units.map((u) => u.text) : [segment?.script_text ?? ""]
+  );
+
   useEffect(() => {
     let cancelled = false;
 
@@ -84,7 +92,7 @@ export default function Train() {
         supabase
           .from("segments")
           .select(
-            "id, segment_code, title, script_text, tones, coaching, client_should_feel, verbatim, section, sort_order, recordings(narrator_id, audio_path, timings, words)"
+            "id, segment_code, title, script_text, tones, tone_map, coaching, client_should_feel, verbatim, section, sort_order, recordings(narrator_id, audio_path, timings, words)"
           )
           .eq("module_id", params.moduleId),
         supabase.from("narrators").select("id, name, sort_order"),
@@ -293,8 +301,11 @@ export default function Train() {
       <div className="script" aria-live="polite">
         {units.length ? (
           units.map((p, i) => (
-            <span key={i} className={`phrase ${stateFor(p, time)}`}>
-              {p.text}{" "}
+            <span key={i}>
+              {phraseTones[i] && phraseTones[i] !== phraseTones[i - 1] && (
+                <span className="tone inline-tone">{phraseTones[i]}</span>
+              )}
+              <span className={`phrase ${stateFor(p, time)}`}>{p.text} </span>
             </span>
           ))
         ) : (
