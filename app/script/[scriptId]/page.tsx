@@ -14,6 +14,7 @@ type Seg = {
   tone_map: { tone: string; text: string }[] | null;
   verbatim: boolean;
   condition: string | null;
+  script_note: string | null;
   section: string | null;
   sort_order: number;
   module_id: string;
@@ -69,7 +70,7 @@ function ScriptView() {
       const { data: segData } = await supabase
         .from("segments")
         .select(
-          "id, segment_code, script_text, tones, tone_map, verbatim, condition, section, sort_order, module_id"
+          "id, segment_code, script_text, tones, tone_map, verbatim, condition, script_note, section, sort_order, module_id"
         )
         .in("module_id", modules.map((m) => m.id));
 
@@ -115,6 +116,13 @@ function ScriptView() {
           &larr; Sections
         </Link>
         <button onClick={() => window.print()}>Print</button>
+      </div>
+
+      {/* Print only: the paper leaves the building, so it carries the brand. */}
+      <div className="print-header">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/lionside-logo-print.png" alt="Lionside Financial" />
+        <span>{title}</span>
       </div>
 
       <h1>{title}</h1>
@@ -174,6 +182,9 @@ function ScriptView() {
                         </span>
                       ))
                     : sg.script_text}
+                  {sg.script_note && (
+                    <span className="script-note-inline">{sg.script_note}</span>
+                  )}
                 </p>
               ))}
             </div>

@@ -832,15 +832,21 @@ select {
   scroll-margin-top: 90px;
 }
 
+/* Tone markers carry a chip so they read as annotation, not as script. */
 .script-tones {
   display: inline-block;
-  margin-right: 8px;
+  margin: 0 7px 0 2px;
+  padding: 2px 8px;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--tone);
+  background: rgba(127, 163, 196, 0.14);
+  border: 1px solid rgba(127, 163, 196, 0.45);
+  border-radius: 999px;
   vertical-align: 2px;
+  white-space: nowrap;
 }
 
 .script-line-verbatim {
@@ -874,6 +880,44 @@ select {
 /* ---------- print ---------- */
 
 @media print {
+  .print-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding-bottom: 14px;
+    margin-bottom: 22px;
+    border-bottom: 1px solid #bbb;
+  }
+
+  .print-header img {
+    height: 46px;
+    width: auto;
+  }
+
+  .print-header span {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #555;
+  }
+
+  /* Repeat the masthead if the script runs to several sheets. */
+  .script-page h1 {
+    display: none;
+  }
+
+  .script-tones {
+    color: #1a3a52;
+    background: #e8eef4;
+    border-color: #9db4c8;
+  }
+
+  .script-note,
+  .script-note-inline {
+    color: #555;
+  }
+
   /*
     Rotate the margin labels upright. Horizontal labels need a 120px+ column,
     which is a lot of a printed page given to furniture; vertical needs ~26px.
@@ -1012,4 +1056,33 @@ select {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: #55524c;
+}
+
+/*
+  The script's own directions -- SLOW DOWN, REVIEW CREDIT REPORT, Collect ACH
+  info. Distinct from our coaching notes, which are advice; these are part of
+  the script and reproduce verbatim.
+*/
+.script-note {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border-left: 2px solid var(--line);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.script-note-inline {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Print masthead. Hidden on screen; the app already shows the logo up top. */
+.print-header {
+  display: none;
 }
