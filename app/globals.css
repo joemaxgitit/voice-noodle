@@ -985,3 +985,31 @@ select {
     color: #2a6b3f;
   }
 }
+
+/*
+  Attribution on the sign-in card. Small and low-contrast on purpose -- the
+  client's logo is the brand here, this is a footnote.
+*/
+.powered-by {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 30px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.powered-by img {
+  width: 26px;
+  height: auto;
+  opacity: 0.85;
+}
+
+.powered-by span {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #55524c;
+}

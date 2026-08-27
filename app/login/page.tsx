@@ -78,6 +78,17 @@ function LoginForm() {
         </form>
 
         {error && <div className="error">{error}</div>}
+
+        {/*
+          Attribution, deliberately small. The client's brand owns this screen;
+          this just says whose tool it is. Matters more once Voice Noodle runs
+          for a second organisation.
+        */}
+        <div className="powered-by">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/voicenoodle-mark-sm.png" alt="" />
+          <span>Powered by Voice Noodle</span>
+        </div>
       </div>
     </main>
   );
