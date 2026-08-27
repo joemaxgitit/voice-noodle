@@ -112,7 +112,7 @@ function ScriptView() {
   return (
     <main className="shell script-page">
       <div className="topbar no-print">
-        <Link className="btn" href="/" style={{ textDecoration: "none" }}>
+        <Link className="btn" href="/proedgesolutions" style={{ textDecoration: "none" }}>
           &larr; Sections
         </Link>
         <button onClick={() => window.print()}>Print</button>

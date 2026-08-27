@@ -54,7 +54,7 @@ export default function Admin() {
   return (
     <main className="shell">
       <div className="topbar">
-        <Link className="btn" href="/" style={{ textDecoration: "none" }}>
+        <Link className="btn" href="/proedgesolutions" style={{ textDecoration: "none" }}>
           ← Training
         </Link>
         <Link className="btn" href="/admin/people" style={{ textDecoration: "none" }}>

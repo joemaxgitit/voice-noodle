@@ -209,7 +209,7 @@ export default function Train() {
     return (
       <main className="shell">
         <div className="topbar">
-          <Link className="btn" href="/" style={{ textDecoration: "none" }}>
+          <Link className="btn" href="/proedgesolutions" style={{ textDecoration: "none" }}>
             &larr; Sections
           </Link>
         </div>
@@ -230,7 +230,7 @@ export default function Train() {
   return (
     <main className="shell">
       <div className="topbar">
-        <Link className="btn" href="/" style={{ textDecoration: "none" }}>
+        <Link className="btn" href="/proedgesolutions" style={{ textDecoration: "none" }}>
           &larr; Sections
         </Link>
         <div className="brand">
