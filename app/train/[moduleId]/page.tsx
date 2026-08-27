@@ -17,6 +17,7 @@ type Segment = {
   client_should_feel: string | null;
   verbatim: boolean;
   tone_map: ToneSpan[] | null;
+  condition: string | null;
   section: string | null;
   sort_order: number;
   recordings: Recording[];
@@ -92,7 +93,7 @@ export default function Train() {
         supabase
           .from("segments")
           .select(
-            "id, segment_code, title, script_text, tones, tone_map, coaching, client_should_feel, verbatim, section, sort_order, recordings(narrator_id, audio_path, timings, words)"
+            "id, segment_code, title, script_text, tones, tone_map, coaching, client_should_feel, verbatim, condition, section, sort_order, recordings(narrator_id, audio_path, timings, words)"
           )
           .eq("module_id", params.moduleId),
         supabase.from("narrators").select("id, name, sort_order"),
@@ -270,6 +271,15 @@ export default function Train() {
       <div className="progressbar">
         <div style={{ width: `${pct}%` }} />
       </div>
+
+      {/*
+        The branch condition. It belongs on the card and not in the script
+        text -- forced alignment would hunt for the word "YES" in audio where
+        nobody says it.
+      */}
+      {segment.condition && (
+        <div className="condition-flag">{segment.condition}</div>
+      )}
 
       {/*
         Definitions sit beside the chips rather than in the footer. Making a

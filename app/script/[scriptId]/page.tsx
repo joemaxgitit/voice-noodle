@@ -13,6 +13,7 @@ type Seg = {
   tones: string[];
   tone_map: { tone: string; text: string }[] | null;
   verbatim: boolean;
+  condition: string | null;
   section: string | null;
   sort_order: number;
   module_id: string;
@@ -68,7 +69,7 @@ function ScriptView() {
       const { data: segData } = await supabase
         .from("segments")
         .select(
-          "id, segment_code, script_text, tones, tone_map, verbatim, section, sort_order, module_id"
+          "id, segment_code, script_text, tones, tone_map, verbatim, condition, section, sort_order, module_id"
         )
         .in("module_id", modules.map((m) => m.id));
 
@@ -160,6 +161,9 @@ function ScriptView() {
                     focus === sg.id ? "script-line-focus" : ""
                   } ${sg.verbatim ? "script-line-verbatim" : ""}`}
                 >
+                  {sg.condition && (
+                    <span className="script-condition">{sg.condition}</span>
+                  )}
                   {sg.tone_map && sg.tone_map.length > 0
                     ? sg.tone_map.map((span, k) => (
                         <span key={k}>
