@@ -129,10 +129,6 @@ function ScriptView() {
         </span>
       </div>
 
-      <div className="print-footer">
-        {title} &middot; Lionside Financial &middot; voicenoodle.com
-      </div>
-
       <h1>{title}</h1>
       <p className="muted no-print">
         The full script. Section names sit in the margin &mdash; click one to

@@ -1045,9 +1045,8 @@ select {
 
 /* Print is always light regardless of the chosen theme. */
 
-/* Print-only furniture; the print block below turns these on. */
-.print-header,
-.print-footer {
+/* Print-only furniture; the print block below turns it on. */
+.print-header {
   display: none;
 }
 
@@ -1182,20 +1181,5 @@ select {
     background: none;
     padding: 0;
     margin-left: 0;
-  }
-
-  /* Repeats on every sheet in Chrome and Edge. */
-  .print-footer {
-    display: block;
-    position: fixed;
-    bottom: -13mm;
-    left: 0;
-    right: 0;
-    font-size: 7.5pt;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #8a8a8a;
-    border-top: 0.5pt solid #ddd;
-    padding-top: 5px;
   }
 }
