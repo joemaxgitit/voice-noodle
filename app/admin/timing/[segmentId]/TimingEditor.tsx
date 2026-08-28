@@ -34,19 +34,25 @@ export type Recording = {
  *
  * Split the script into phrases, play the recording, tap the spacebar as each
  * phrase begins. A 15-second clip is timed in 15 seconds.
+ *
+ * The voice is whoever is signed in -- not a choice. Three people recording
+ * against a shared picker kept overwriting each other, and the picker was the
+ * only thing deciding. Row-level security enforces the same rule, so this is
+ * the UI agreeing with the database rather than the other way round.
  */
 export default function TimingEditor({
   segment,
   narrators,
+  myNarratorId,
 }: {
   segment: EditorSegment;
   narrators: Narrator[];
+  myNarratorId: string | null;
 }) {
   const supabase = createClient();
 
-  const [narratorId, setNarratorId] = useState<string>(
-    narrators[0]?.id ?? ""
-  );
+  const narratorId = myNarratorId ?? "";
+  const me = narrators.find((n) => n.id === narratorId) ?? null;
 
   const current = segment.recordings.find((r) => r.narrator_id === narratorId);
 
@@ -88,8 +94,8 @@ export default function TimingEditor({
     );
   }, [lines, marks, duration, words]);
 
-  // Switching voice loads that narrator's take, or a blank slate if they
-  // have not recorded this segment yet.
+  // Load this person's existing take, or a blank slate if they have not
+  // recorded this segment yet.
   useEffect(() => {
     const rec = segment.recordings.find((r) => r.narrator_id === narratorId);
     setFile(null);
@@ -229,7 +235,11 @@ export default function TimingEditor({
     setError("");
 
     try {
-      if (!narratorId) throw new Error("Pick a voice first.");
+      if (!narratorId) {
+        throw new Error(
+          "Your account is not linked to a voice, so there is nothing to save it under."
+        );
+      }
 
       let audioPath = current?.audio_path ?? null;
       let version = current?.version ?? 0;
@@ -295,9 +305,9 @@ export default function TimingEditor({
         .update({ status: "published" })
         .eq("id", segment.id);
 
-      const who =
-        narrators.find((n) => n.id === narratorId)?.name ?? "this voice";
-      setStatus(`Saved ${who} as v${version}. Reps get it on their next load.`);
+      setStatus(
+        `Saved as v${version} under ${me?.name ?? "your voice"}. Reps get it on their next load.`
+      );
     } catch (e) {
       setError(describe(e, "Save failed."));
     } finally {
@@ -306,6 +316,27 @@ export default function TimingEditor({
   }
 
   const remaining = lines.length - marks.length;
+
+  // Not linked to a narrator: everything below would fail at the database, so
+  // say why here rather than letting them record and lose the take.
+  if (!narratorId) {
+    return (
+      <div>
+        <div className="code">{segment.segment_code}</div>
+        <h1>{segment.title || "Untitled segment"}</h1>
+        <div className="error" style={{ marginTop: 18 }}>
+          Your account is not linked to a voice, so you cannot upload
+          recordings. Ask Max to link your profile to a narrator.
+        </div>
+      </div>
+    );
+  }
+
+  const others = narrators.filter(
+    (n) =>
+      n.id !== narratorId &&
+      segment.recordings.some((r) => r.narrator_id === n.id && r.audio_path)
+  );
 
   return (
     <div>
@@ -323,22 +354,16 @@ export default function TimingEditor({
       */}
       <h2>Voice</h2>
       <div className="narrators">
-        {narrators.map((n) => {
-          const has = segment.recordings.some(
-            (r) => r.narrator_id === n.id && r.audio_path
-          );
-          return (
-            <button
-              key={n.id}
-              aria-pressed={narratorId === n.id}
-              onClick={() => setNarratorId(n.id)}
-            >
-              {n.name}
-              {has ? " \u2713" : ""}
-            </button>
-          );
-        })}
+        <span className="narrator-label">Recording as</span>
+        <button aria-pressed={true} disabled>
+          {me?.name ?? "You"}
+        </button>
       </div>
+      <p className="hint" style={{ marginTop: 8 }}>
+        {others.length > 0
+          ? `Also recorded by ${others.map((n) => n.name).join(", ")}. You can only change your own take.`
+          : "You can only change your own take."}
+      </p>
 
       <h2>1 &middot; Recording</h2>
       <input
