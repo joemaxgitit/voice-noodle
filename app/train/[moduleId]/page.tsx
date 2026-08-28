@@ -319,6 +319,20 @@ export default function Train() {
               <span className={`phrase ${stateFor(p, time)}`}>{p.text} </span>
             </span>
           ))
+        ) : segment.tone_map?.length ? (
+          /*
+            No recording yet, but the script is annotated. Render the tone
+            spans inline so a rep still sees which phrase carries which tone
+            rather than an unattached list of chips at the top of the card.
+          */
+          segment.tone_map.map((span, i) => (
+            <span key={i}>
+              {span.tone && (
+                <span className="tone inline-tone">{span.tone}</span>
+              )}
+              <span className="phrase">{span.text} </span>
+            </span>
+          ))
         ) : (
           <span className="phrase">{segment.script_text}</span>
         )}
