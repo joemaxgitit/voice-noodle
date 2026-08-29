@@ -6,5 +6,10 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|mp3|m4a|wav)$).*)"],
+  /*
+    api is excluded deliberately. Routes under it authenticate themselves,
+    and streaming a multipart audio upload through session middleware was
+    crashing the alignment call before its handler ever ran.
+  */
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|mp3|m4a|wav)$).*)"],
 };
