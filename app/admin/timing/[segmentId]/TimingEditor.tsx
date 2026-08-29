@@ -178,11 +178,37 @@ export default function TimingEditor({
       form.append("text", lines.join(" "));
 
       const res = await fetch("/api/align", { method: "POST", body: form });
-      const data = await res.json();
 
-      if (!res.ok) throw new Error(data.error || "Alignment failed.");
+      /*
+        Read as text first. Vercel answers a timeout or a crash with an HTML
+        page, and calling res.json() on that throws a parse error that buries
+        the real cause -- the rep sees "Unexpected token '<'" and learns
+        nothing.
+      */
+      const body = await res.text();
+      let data: { error?: string; words?: Phrase[] } = {};
 
-      const aligned: Phrase[] = data.words;
+      try {
+        data = JSON.parse(body);
+      } catch {
+        if (res.status === 504) {
+          throw new Error(
+            "Alignment timed out after 60 seconds, which is the most this " +
+              "plan allows. A WAV is around eight times the size of an MP3 " +
+              "of the same take -- export this one as MP3 and try again."
+          );
+        }
+        throw new Error(
+          `Alignment failed (${res.status}). The server returned a page ` +
+            "instead of a result, which means it crashed or timed out."
+        );
+      }
+
+      if (!res.ok) {
+        throw new Error(data.error || `Alignment failed (${res.status}).`);
+      }
+
+      const aligned: Phrase[] = data.words || [];
       const expected = lines.join(" ").split(/\s+/).filter(Boolean).length;
 
       setWords(aligned);
