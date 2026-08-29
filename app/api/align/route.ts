@@ -1,45 +1,63 @@
 import { NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createTokenSupabase, subjectOf } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 /*
-  Abort before the platform does. 60s is the function ceiling; stopping at 50
-  leaves room to answer with JSON. Past the ceiling Vercel returns an HTML
-  error page, which the browser cannot parse and the rep sees as gibberish.
+  Abort before the platform does. 60s is the function ceiling on this plan;
+  stopping at 45 leaves room to answer with JSON. Past the ceiling Vercel
+  returns an HTML error page, which the browser cannot parse.
 */
-const UPSTREAM_TIMEOUT_MS = 50_000;
+const UPSTREAM_TIMEOUT_MS = 45_000;
 
 type AlignedWord = { text: string; start: number; end: number };
+
+/*
+  These marks are permanent, not debugging leftovers.
+
+  This route has failed twice in ways that were impossible to diagnose from
+  Vercel's own trace, and both times a single instrumented deploy found the
+  cause immediately after hours of guessing without one. Three console lines
+  cost nothing and turn the next incident into one log read. Do not remove
+  them as tidying.
+*/
+const mark = (started: number, label: string) =>
+  console.log(`[align] ${label} @ ${Date.now() - started}ms`);
 
 /**
  * Forced alignment: audio + known script text in, word timestamps out.
  *
- * This runs server-side for two reasons. The ElevenLabs key never reaches the
- * browser, and we can verify the caller is an admin before spending credits --
- * otherwise any logged-in rep could run up the bill.
+ * WHY THERE IS NO getUser() CALL HERE.
  *
- * DEPLOYMENT NOTE, do not remove: this route depends on the Vercel
- * environment variable
+ * supabase.auth.getUser() hits /auth/v1, and from this function that endpoint
+ * is unreliable -- usually instant, intermittently never returning. When it
+ * hangs the runtime kills the invocation at ~31s with
+ * FUNCTION_INVOCATION_FAILED and "No outgoing requests", or at exactly 60s
+ * with a timeout. No exception is thrown, so try/catch cannot help. It struck
+ * on 29 August, appeared to be fixed by NODE_OPTIONS=--dns-result-order=
+ * ipv4first, then returned hours later on a healthy deployment.
  *
- *     NODE_OPTIONS = --dns-result-order=ipv4first
+ * So the call is gone. The caller sends its access token and the profiles
+ * query carries it, which touches /rest/v1 instead -- a different service
+ * that has never exhibited this. Security is unchanged: PostgREST verifies
+ * the JWT signature and row-level security still applies, so a forged or
+ * expired token is rejected by the database rather than trusted here.
  *
- * Without it every outbound HTTPS call from this function hangs -- Supabase
- * auth stalled for the full 60s and the runtime killed the invocation with
- * FUNCTION_INVOCATION_FAILED and no catchable error. The Node runtime was
- * resolving IPv6 first and the connection went nowhere. The browser and edge
- * middleware were unaffected, which made it look like a code fault for hours.
- * If alignment ever starts timing out again, check that variable still exists
- * before changing anything here.
+ * The role check still runs before ElevenLabs is called, so credits are never
+ * spent for a caller who is not an active admin.
  *
  * Every path returns JSON. An unhandled throw becomes a Vercel HTML 500 with
- * no message, which is unusable for diagnosis, so the handler is wrapped.
+ * no message, which is unusable, so the handler is wrapped.
  */
 export async function POST(request: Request) {
+  const started = Date.now();
+  mark(started, "entered");
+
   try {
-    return await align(request);
+    return await align(request, started);
   } catch (e) {
+    mark(started, "outer catch");
     return NextResponse.json(
       {
         error:
@@ -51,7 +69,7 @@ export async function POST(request: Request) {
   }
 }
 
-async function align(request: Request) {
+async function align(request: Request, started: number) {
   const key = process.env.ELEVENLABS_API_KEY;
 
   if (!key) {
@@ -61,28 +79,29 @@ async function align(request: Request) {
     );
   }
 
-  // --- authorize -------------------------------------------------------
-  const supabase = await createServerSupabase();
+  // Reading headers is free, so gate on the token before buffering an upload.
+  const token = (request.headers.get("authorization") || "").replace(
+    /^Bearer\s+/i,
+    ""
+  );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  if (!token) {
+    return NextResponse.json(
+      { error: "No session token was sent. Reload the page and sign in again." },
+      { status: 401 }
+    );
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, active")
-    .eq("id", user.id)
-    .single();
+  const userId = subjectOf(token);
 
-  if (!profile?.active || !["admin", "manager"].includes(profile.role)) {
-    return NextResponse.json({ error: "Admins only." }, { status: 403 });
+  if (!userId) {
+    return NextResponse.json(
+      { error: "Your session token could not be read. Sign in again." },
+      { status: 401 }
+    );
   }
 
-  // --- read the upload -------------------------------------------------
+  // --- read the upload ---------------------------------------------------
   let file: File | null = null;
   let text = "";
 
@@ -92,8 +111,7 @@ async function align(request: Request) {
     file = f instanceof File ? f : null;
     text = String(form.get("text") || "").trim();
   } catch (e) {
-    // A stalled or aborted upload lands here rather than surfacing as an
-    // unexplained crash.
+    mark(started, "formData threw");
     return NextResponse.json(
       {
         error:
@@ -112,7 +130,34 @@ async function align(request: Request) {
     return NextResponse.json({ error: "No text to align." }, { status: 400 });
   }
 
-  // --- call ElevenLabs -------------------------------------------------
+  mark(
+    started,
+    `body read: ${(file.size / (1024 * 1024)).toFixed(2)}MB ${file.type}`
+  );
+
+  // --- authorize, without /auth/v1 ---------------------------------------
+  const supabase = await createTokenSupabase(token);
+
+  const { data: profile, error: profileErr } = await supabase
+    .from("profiles")
+    .select("role, active")
+    .eq("id", userId)
+    .single();
+  mark(started, `profile checked${profileErr ? " (error)" : ""}`);
+
+  if (profileErr) {
+    // An expired or invalid token lands here, rejected by PostgREST.
+    return NextResponse.json(
+      { error: `Could not verify your account. ${profileErr.message}` },
+      { status: 401 }
+    );
+  }
+
+  if (!profile?.active || !["admin", "manager"].includes(profile.role)) {
+    return NextResponse.json({ error: "Admins only." }, { status: 403 });
+  }
+
+  // --- call ElevenLabs ---------------------------------------------------
   const outbound = new FormData();
   outbound.append("file", file, file.name || "audio.mp3");
   outbound.append("text", text); // plain string; must not be JSON-wrapped
@@ -126,7 +171,10 @@ async function align(request: Request) {
       body: outbound,
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
+    mark(started, `elevenlabs ${res.status}`);
   } catch (e) {
+    mark(started, "elevenlabs threw");
+
     const timedOut =
       e instanceof Error &&
       (e.name === "TimeoutError" || e.name === "AbortError");
@@ -135,8 +183,8 @@ async function align(request: Request) {
       return NextResponse.json(
         {
           error:
-            "The alignment service did not answer in time. Try again, and if " +
-            "it keeps happening the recording may be too long.",
+            "The alignment service did not answer within 45 seconds. This is " +
+            "the call out from our server, not your recording.",
         },
         { status: 504 }
       );
@@ -190,9 +238,6 @@ async function align(request: Request) {
     return NextResponse.json({ error }, { status: 502 });
   }
 
-  // Reading the body can fail on its own -- headers arrive, then the stream
-  // stalls or the payload is not JSON. Unwrapped, that throw became an HTML
-  // 500 with nothing in it.
   let data: { words?: { text: string; start: number; end: number }[] };
 
   try {
@@ -223,5 +268,6 @@ async function align(request: Request) {
     );
   }
 
+  mark(started, `done, ${words.length} words`);
   return NextResponse.json({ words });
 }

@@ -177,7 +177,21 @@ export default function TimingEditor({
       // lines up one-to-one with them.
       form.append("text", lines.join(" "));
 
-      const res = await fetch("/api/align", { method: "POST", body: form });
+      // The route authenticates with this rather than calling /auth/v1,
+      // which hangs from the server. getSession reads locally, no network.
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        throw new Error("You are signed out. Sign in and try again.");
+      }
+
+      const res = await fetch("/api/align", {
+        method: "POST",
+        body: form,
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
 
       /*
         Read as text first. Vercel answers a timeout or a crash with an HTML
