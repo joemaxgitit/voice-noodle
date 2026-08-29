@@ -292,11 +292,16 @@ export default function TimingEditor({
 
         version = version + 1;
 
+        // Keep the real extension. Anything odd falls back to mp3 rather
+        // than putting whatever the filename ended with into a storage key.
+        const ext = (file.name.split(".").pop() || "").toLowerCase();
+        const safeExt = /^[a-z0-9]{1,5}$/.test(ext) ? ext : "mp3";
+
         // Narrator id in the path keeps each voice's takes separate in
         // storage, so re-recording one never overwrites another.
         audioPath =
           `${profile.org_id}/${segment.segment_code}` +
-          `-${narratorId.slice(0, 8)}-v${version}.mp3`;
+          `-${narratorId.slice(0, 8)}-v${version}.${safeExt}`;
 
         const { error: upErr } = await supabase.storage
           .from("master-audio")
