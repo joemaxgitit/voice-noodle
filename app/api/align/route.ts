@@ -9,27 +9,36 @@ const UPSTREAM_TIMEOUT_MS = 50_000;
 type AlignedWord = { text: string; start: number; end: number };
 
 /*
-  Instrumentation, temporary.
-
-  /api/align dies at a fixed ~31s with FUNCTION_INVOCATION_FAILED and no
-  outgoing request, across three deployments (31.07s, 31.08s, 30.87s). The
-  outer try/catch never fires, so the runtime is terminating the invocation
-  rather than throwing something catchable. Excluding middleware changed
-  nothing, which ruled that out.
-
-  Between entry and the ElevenLabs call there are only the Supabase auth
-  queries and request.formData(). These marks show which one it reaches and
-  which one it never returns from. Whichever line has a "start" with no
-  matching "done" is the culprit.
-
-  Remove once the cause is known.
+  Marks stay until this is confirmed fixed across a few real uploads. They
+  cost nothing and they are the only reason the cause was found: the log
+  stopped dead after "supabase client built", which located the hang at
+  getUser() rather than anywhere it had been guessed.
 */
-const t0 = () => Date.now();
 const mark = (started: number, label: string) =>
   console.log(`[align] ${label} @ ${Date.now() - started}ms`);
 
+/**
+ * Forced alignment: audio + known script text in, word timestamps out.
+ *
+ * ORDER MATTERS HERE. The request body is read before anything else,
+ * including the auth check.
+ *
+ * With a 2.4MB upload still streaming in, supabase.auth.getUser() hung for
+ * ~31 seconds and the runtime killed the invocation -- FUNCTION_INVOCATION_
+ * FAILED, no outgoing request recorded, and no catchable exception, so the
+ * handler's own try/catch never fired. Smaller takes were fully buffered by
+ * the platform before the function started, which is why thirty shorter
+ * segments aligned fine and this one did not.
+ *
+ * Consuming the body first frees the connection before any outbound call.
+ *
+ * The cost: an unauthorized caller can make us buffer their upload. The
+ * authorization check still runs before ElevenLabs is called, which is the
+ * point that actually spends credits, so this trades a little wasted compute
+ * for a route that works.
+ */
 export async function POST(request: Request) {
-  const started = t0();
+  const started = Date.now();
   mark(started, "handler entered");
 
   try {
@@ -57,39 +66,12 @@ async function align(request: Request, started: number) {
     );
   }
 
-  mark(started, "key present");
+  console.log(
+    `[align] content-length: ${request.headers.get("content-length") ?? "absent"}`
+  );
 
-  // Content-Length tells us what the browser said it was sending, before we
-  // try to read any of it. If the parse stalls, this is the size it stalled
-  // on.
-  const declared = request.headers.get("content-length");
-  console.log(`[align] content-length: ${declared ?? "absent"}`);
-
-  // --- authorize -------------------------------------------------------
-  const supabase = await createServerSupabase();
-  mark(started, "supabase client built");
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  mark(started, `getUser done, user ${user ? "found" : "missing"}`);
-
-  if (!user) {
-    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, active")
-    .eq("id", user.id)
-    .single();
-  mark(started, "profile query done");
-
-  if (!profile?.active || !["admin", "manager"].includes(profile.role)) {
-    return NextResponse.json({ error: "Admins only." }, { status: 403 });
-  }
-
-  // --- read the upload -------------------------------------------------
+  // --- read the upload FIRST -------------------------------------------
+  // Nothing that touches the network may run before this. See the note above.
   let file: File | null = null;
   let text = "";
 
@@ -128,7 +110,33 @@ async function align(request: Request, started: number) {
       `text=${text.length} chars`
   );
 
-  // --- call ElevenLabs -------------------------------------------------
+  // --- authorize --------------------------------------------------------
+  // Now safe: the body is consumed, so outbound requests are not blocked
+  // behind an unread stream.
+  const supabase = await createServerSupabase();
+  mark(started, "supabase client built");
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  mark(started, `getUser done, user ${user ? "found" : "missing"}`);
+
+  if (!user) {
+    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role, active")
+    .eq("id", user.id)
+    .single();
+  mark(started, "profile query done");
+
+  if (!profile?.active || !["admin", "manager"].includes(profile.role)) {
+    return NextResponse.json({ error: "Admins only." }, { status: 403 });
+  }
+
+  // --- call ElevenLabs ---------------------------------------------------
   const outbound = new FormData();
   outbound.append("file", file, file.name || "audio.mp3");
   outbound.append("text", text); // plain string; must not be JSON-wrapped
