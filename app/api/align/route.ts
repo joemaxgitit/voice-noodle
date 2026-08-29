@@ -4,32 +4,38 @@ import { createServerSupabase } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-/*
-  Abort our own call before Vercel kills the function. 60s is the platform
-  ceiling on this plan; stopping at 50 leaves room to answer with JSON saying
-  what happened. Past the ceiling Vercel returns an HTML error page instead,
-  which the browser cannot parse and the rep sees as gibberish.
-*/
 const UPSTREAM_TIMEOUT_MS = 50_000;
 
 type AlignedWord = { text: string; start: number; end: number };
 
-/**
- * Forced alignment: audio + known script text in, word timestamps out.
- *
- * This runs server-side for two reasons. The ElevenLabs key never reaches the
- * browser, and we can verify the caller is an admin before spending credits --
- * otherwise any logged-in rep could run up the bill.
- *
- * Every path returns JSON. An unhandled throw here becomes a Vercel HTML 500
- * with no message at all, which is unusable for diagnosis -- so the whole
- * handler is wrapped and the outer catch reports the real error.
- */
+/*
+  Instrumentation, temporary.
+
+  /api/align dies at a fixed ~31s with FUNCTION_INVOCATION_FAILED and no
+  outgoing request, across three deployments (31.07s, 31.08s, 30.87s). The
+  outer try/catch never fires, so the runtime is terminating the invocation
+  rather than throwing something catchable. Excluding middleware changed
+  nothing, which ruled that out.
+
+  Between entry and the ElevenLabs call there are only the Supabase auth
+  queries and request.formData(). These marks show which one it reaches and
+  which one it never returns from. Whichever line has a "start" with no
+  matching "done" is the culprit.
+
+  Remove once the cause is known.
+*/
+const t0 = () => Date.now();
+const mark = (started: number, label: string) =>
+  console.log(`[align] ${label} @ ${Date.now() - started}ms`);
+
 export async function POST(request: Request) {
+  const started = t0();
+  mark(started, "handler entered");
+
   try {
-    return await align(request);
+    return await align(request, started);
   } catch (e) {
-    // Last resort. Something threw outside the specific guards below.
+    mark(started, "outer catch fired");
     return NextResponse.json(
       {
         error:
@@ -41,7 +47,7 @@ export async function POST(request: Request) {
   }
 }
 
-async function align(request: Request) {
+async function align(request: Request, started: number) {
   const key = process.env.ELEVENLABS_API_KEY;
 
   if (!key) {
@@ -51,12 +57,22 @@ async function align(request: Request) {
     );
   }
 
+  mark(started, "key present");
+
+  // Content-Length tells us what the browser said it was sending, before we
+  // try to read any of it. If the parse stalls, this is the size it stalled
+  // on.
+  const declared = request.headers.get("content-length");
+  console.log(`[align] content-length: ${declared ?? "absent"}`);
+
   // --- authorize -------------------------------------------------------
   const supabase = await createServerSupabase();
+  mark(started, "supabase client built");
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  mark(started, `getUser done, user ${user ? "found" : "missing"}`);
 
   if (!user) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
@@ -67,6 +83,7 @@ async function align(request: Request) {
     .select("role, active")
     .eq("id", user.id)
     .single();
+  mark(started, "profile query done");
 
   if (!profile?.active || !["admin", "manager"].includes(profile.role)) {
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
@@ -76,14 +93,17 @@ async function align(request: Request) {
   let file: File | null = null;
   let text = "";
 
+  mark(started, "formData START");
+
   try {
     const form = await request.formData();
+    mark(started, "formData done");
+
     const f = form.get("file");
     file = f instanceof File ? f : null;
     text = String(form.get("text") || "").trim();
   } catch (e) {
-    // A stalled or aborted upload lands here. Say so, rather than letting it
-    // surface as an unexplained crash.
+    mark(started, "formData threw");
     return NextResponse.json(
       {
         error:
@@ -103,11 +123,17 @@ async function align(request: Request) {
   }
 
   const sizeMb = file.size / (1024 * 1024);
+  console.log(
+    `[align] file ${file.name} ${sizeMb.toFixed(2)}MB type=${file.type} ` +
+      `text=${text.length} chars`
+  );
 
   // --- call ElevenLabs -------------------------------------------------
   const outbound = new FormData();
   outbound.append("file", file, file.name || "audio.mp3");
   outbound.append("text", text); // plain string; must not be JSON-wrapped
+
+  mark(started, "elevenlabs fetch START");
 
   let res: Response;
 
@@ -118,7 +144,10 @@ async function align(request: Request) {
       body: outbound,
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
+    mark(started, `elevenlabs responded ${res.status}`);
   } catch (e) {
+    mark(started, "elevenlabs fetch threw");
+
     const timedOut =
       e instanceof Error &&
       (e.name === "TimeoutError" || e.name === "AbortError");
@@ -128,8 +157,7 @@ async function align(request: Request) {
         {
           error:
             `Alignment gave up after 50 seconds on a ${sizeMb.toFixed(1)} MB ` +
-            "file. A WAV is roughly eight times the size of an MP3 of the " +
-            "same take -- export as MP3 and try again.",
+            "file. Try a shorter take or a smaller file.",
         },
         { status: 504 }
       );
@@ -183,14 +211,13 @@ async function align(request: Request) {
     return NextResponse.json({ error }, { status: 502 });
   }
 
-  // Reading the body can fail on its own -- headers arrive, then the stream
-  // stalls or the payload is not JSON. Unwrapped, that throw became an HTML
-  // 500 with nothing in it.
   let data: { words?: { text: string; start: number; end: number }[] };
 
   try {
     data = await res.json();
+    mark(started, "response parsed");
   } catch (e) {
+    mark(started, "response parse threw");
     return NextResponse.json(
       {
         error:
@@ -216,5 +243,6 @@ async function align(request: Request) {
     );
   }
 
+  mark(started, `returning ${words.length} words`);
   return NextResponse.json({ words });
 }
