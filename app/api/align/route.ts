@@ -4,47 +4,42 @@ import { createServerSupabase } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+/*
+  Abort before the platform does. 60s is the function ceiling; stopping at 50
+  leaves room to answer with JSON. Past the ceiling Vercel returns an HTML
+  error page, which the browser cannot parse and the rep sees as gibberish.
+*/
 const UPSTREAM_TIMEOUT_MS = 50_000;
 
 type AlignedWord = { text: string; start: number; end: number };
 
-/*
-  Marks stay until this is confirmed fixed across a few real uploads. They
-  cost nothing and they are the only reason the cause was found: the log
-  stopped dead after "supabase client built", which located the hang at
-  getUser() rather than anywhere it had been guessed.
-*/
-const mark = (started: number, label: string) =>
-  console.log(`[align] ${label} @ ${Date.now() - started}ms`);
-
 /**
  * Forced alignment: audio + known script text in, word timestamps out.
  *
- * ORDER MATTERS HERE. The request body is read before anything else,
- * including the auth check.
+ * This runs server-side for two reasons. The ElevenLabs key never reaches the
+ * browser, and we can verify the caller is an admin before spending credits --
+ * otherwise any logged-in rep could run up the bill.
  *
- * With a 2.4MB upload still streaming in, supabase.auth.getUser() hung for
- * ~31 seconds and the runtime killed the invocation -- FUNCTION_INVOCATION_
- * FAILED, no outgoing request recorded, and no catchable exception, so the
- * handler's own try/catch never fired. Smaller takes were fully buffered by
- * the platform before the function started, which is why thirty shorter
- * segments aligned fine and this one did not.
+ * DEPLOYMENT NOTE, do not remove: this route depends on the Vercel
+ * environment variable
  *
- * Consuming the body first frees the connection before any outbound call.
+ *     NODE_OPTIONS = --dns-result-order=ipv4first
  *
- * The cost: an unauthorized caller can make us buffer their upload. The
- * authorization check still runs before ElevenLabs is called, which is the
- * point that actually spends credits, so this trades a little wasted compute
- * for a route that works.
+ * Without it every outbound HTTPS call from this function hangs -- Supabase
+ * auth stalled for the full 60s and the runtime killed the invocation with
+ * FUNCTION_INVOCATION_FAILED and no catchable error. The Node runtime was
+ * resolving IPv6 first and the connection went nowhere. The browser and edge
+ * middleware were unaffected, which made it look like a code fault for hours.
+ * If alignment ever starts timing out again, check that variable still exists
+ * before changing anything here.
+ *
+ * Every path returns JSON. An unhandled throw becomes a Vercel HTML 500 with
+ * no message, which is unusable for diagnosis, so the handler is wrapped.
  */
 export async function POST(request: Request) {
-  const started = Date.now();
-  mark(started, "handler entered");
-
   try {
-    return await align(request, started);
+    return await align(request);
   } catch (e) {
-    mark(started, "outer catch fired");
     return NextResponse.json(
       {
         error:
@@ -56,7 +51,7 @@ export async function POST(request: Request) {
   }
 }
 
-async function align(request: Request, started: number) {
+async function align(request: Request) {
   const key = process.env.ELEVENLABS_API_KEY;
 
   if (!key) {
@@ -66,26 +61,39 @@ async function align(request: Request, started: number) {
     );
   }
 
-  console.log(
-    `[align] content-length: ${request.headers.get("content-length") ?? "absent"}`
-  );
+  // --- authorize -------------------------------------------------------
+  const supabase = await createServerSupabase();
 
-  // --- read the upload FIRST -------------------------------------------
-  // Nothing that touches the network may run before this. See the note above.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role, active")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.active || !["admin", "manager"].includes(profile.role)) {
+    return NextResponse.json({ error: "Admins only." }, { status: 403 });
+  }
+
+  // --- read the upload -------------------------------------------------
   let file: File | null = null;
   let text = "";
 
-  mark(started, "formData START");
-
   try {
     const form = await request.formData();
-    mark(started, "formData done");
-
     const f = form.get("file");
     file = f instanceof File ? f : null;
     text = String(form.get("text") || "").trim();
   } catch (e) {
-    mark(started, "formData threw");
+    // A stalled or aborted upload lands here rather than surfacing as an
+    // unexplained crash.
     return NextResponse.json(
       {
         error:
@@ -104,44 +112,10 @@ async function align(request: Request, started: number) {
     return NextResponse.json({ error: "No text to align." }, { status: 400 });
   }
 
-  const sizeMb = file.size / (1024 * 1024);
-  console.log(
-    `[align] file ${file.name} ${sizeMb.toFixed(2)}MB type=${file.type} ` +
-      `text=${text.length} chars`
-  );
-
-  // --- authorize --------------------------------------------------------
-  // Now safe: the body is consumed, so outbound requests are not blocked
-  // behind an unread stream.
-  const supabase = await createServerSupabase();
-  mark(started, "supabase client built");
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  mark(started, `getUser done, user ${user ? "found" : "missing"}`);
-
-  if (!user) {
-    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, active")
-    .eq("id", user.id)
-    .single();
-  mark(started, "profile query done");
-
-  if (!profile?.active || !["admin", "manager"].includes(profile.role)) {
-    return NextResponse.json({ error: "Admins only." }, { status: 403 });
-  }
-
-  // --- call ElevenLabs ---------------------------------------------------
+  // --- call ElevenLabs -------------------------------------------------
   const outbound = new FormData();
   outbound.append("file", file, file.name || "audio.mp3");
   outbound.append("text", text); // plain string; must not be JSON-wrapped
-
-  mark(started, "elevenlabs fetch START");
 
   let res: Response;
 
@@ -152,10 +126,7 @@ async function align(request: Request, started: number) {
       body: outbound,
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
-    mark(started, `elevenlabs responded ${res.status}`);
   } catch (e) {
-    mark(started, "elevenlabs fetch threw");
-
     const timedOut =
       e instanceof Error &&
       (e.name === "TimeoutError" || e.name === "AbortError");
@@ -164,8 +135,8 @@ async function align(request: Request, started: number) {
       return NextResponse.json(
         {
           error:
-            `Alignment gave up after 50 seconds on a ${sizeMb.toFixed(1)} MB ` +
-            "file. Try a shorter take or a smaller file.",
+            "The alignment service did not answer in time. Try again, and if " +
+            "it keeps happening the recording may be too long.",
         },
         { status: 504 }
       );
@@ -219,13 +190,14 @@ async function align(request: Request, started: number) {
     return NextResponse.json({ error }, { status: 502 });
   }
 
+  // Reading the body can fail on its own -- headers arrive, then the stream
+  // stalls or the payload is not JSON. Unwrapped, that throw became an HTML
+  // 500 with nothing in it.
   let data: { words?: { text: string; start: number; end: number }[] };
 
   try {
     data = await res.json();
-    mark(started, "response parsed");
   } catch (e) {
-    mark(started, "response parse threw");
     return NextResponse.json(
       {
         error:
@@ -251,6 +223,5 @@ async function align(request: Request, started: number) {
     );
   }
 
-  mark(started, `returning ${words.length} words`);
   return NextResponse.json({ words });
 }

@@ -193,9 +193,8 @@ export default function TimingEditor({
       } catch {
         if (res.status === 504) {
           throw new Error(
-            "Alignment timed out after 60 seconds, which is the most this " +
-              "plan allows. A WAV is around eight times the size of an MP3 " +
-              "of the same take -- export this one as MP3 and try again."
+            "Alignment timed out. Try again, and if it keeps happening the " +
+              "recording may be too long."
           );
         }
         throw new Error(
@@ -408,7 +407,7 @@ export default function TimingEditor({
         />
       ) : (
         <p className="hint" style={{ marginTop: 12 }}>
-          Choose an MP3 to time.
+          Choose an audio file to time.
         </p>
       )}
 
