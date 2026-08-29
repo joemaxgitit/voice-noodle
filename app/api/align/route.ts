@@ -4,6 +4,14 @@ import { createServerSupabase } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+/*
+  Abort our own call before Vercel kills the function. 60s is the platform
+  ceiling on this plan; stopping at 50 leaves room to answer with JSON saying
+  what happened. Past the ceiling Vercel returns an HTML error page instead,
+  which the browser cannot parse and the rep sees as gibberish.
+*/
+const UPSTREAM_TIMEOUT_MS = 50_000;
+
 type AlignedWord = { text: string; start: number; end: number };
 
 /**
@@ -12,8 +20,28 @@ type AlignedWord = { text: string; start: number; end: number };
  * This runs server-side for two reasons. The ElevenLabs key never reaches the
  * browser, and we can verify the caller is an admin before spending credits --
  * otherwise any logged-in rep could run up the bill.
+ *
+ * Every path returns JSON. An unhandled throw here becomes a Vercel HTML 500
+ * with no message at all, which is unusable for diagnosis -- so the whole
+ * handler is wrapped and the outer catch reports the real error.
  */
 export async function POST(request: Request) {
+  try {
+    return await align(request);
+  } catch (e) {
+    // Last resort. Something threw outside the specific guards below.
+    return NextResponse.json(
+      {
+        error:
+          "The alignment service crashed. " +
+          (e instanceof Error ? e.message : String(e)),
+      },
+      { status: 500 }
+    );
+  }
+}
+
+async function align(request: Request) {
   const key = process.env.ELEVENLABS_API_KEY;
 
   if (!key) {
@@ -53,8 +81,17 @@ export async function POST(request: Request) {
     const f = form.get("file");
     file = f instanceof File ? f : null;
     text = String(form.get("text") || "").trim();
-  } catch {
-    return NextResponse.json({ error: "Bad request body." }, { status: 400 });
+  } catch (e) {
+    // A stalled or aborted upload lands here. Say so, rather than letting it
+    // surface as an unexplained crash.
+    return NextResponse.json(
+      {
+        error:
+          "The audio never finished uploading. " +
+          (e instanceof Error ? e.message : "The connection dropped."),
+      },
+      { status: 400 }
+    );
   }
 
   if (!file) {
@@ -64,6 +101,8 @@ export async function POST(request: Request) {
   if (!text) {
     return NextResponse.json({ error: "No text to align." }, { status: 400 });
   }
+
+  const sizeMb = file.size / (1024 * 1024);
 
   // --- call ElevenLabs -------------------------------------------------
   const outbound = new FormData();
@@ -77,10 +116,31 @@ export async function POST(request: Request) {
       method: "POST",
       headers: { "xi-api-key": key },
       body: outbound,
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
-  } catch {
+  } catch (e) {
+    const timedOut =
+      e instanceof Error &&
+      (e.name === "TimeoutError" || e.name === "AbortError");
+
+    if (timedOut) {
+      return NextResponse.json(
+        {
+          error:
+            `Alignment gave up after 50 seconds on a ${sizeMb.toFixed(1)} MB ` +
+            "file. A WAV is roughly eight times the size of an MP3 of the " +
+            "same take -- export as MP3 and try again.",
+        },
+        { status: 504 }
+      );
+    }
+
     return NextResponse.json(
-      { error: "Could not reach the alignment service." },
+      {
+        error:
+          "Could not reach the alignment service. " +
+          (e instanceof Error ? e.message : ""),
+      },
       { status: 502 }
     );
   }
@@ -123,9 +183,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error }, { status: 502 });
   }
 
-  const data = (await res.json()) as {
-    words?: { text: string; start: number; end: number }[];
-  };
+  // Reading the body can fail on its own -- headers arrive, then the stream
+  // stalls or the payload is not JSON. Unwrapped, that throw became an HTML
+  // 500 with nothing in it.
+  let data: { words?: { text: string; start: number; end: number }[] };
+
+  try {
+    data = await res.json();
+  } catch (e) {
+    return NextResponse.json(
+      {
+        error:
+          "Alignment answered, but the result could not be read. " +
+          (e instanceof Error ? e.message : ""),
+      },
+      { status: 502 }
+    );
+  }
 
   const words: AlignedWord[] = (data.words || [])
     .filter((w) => w.text && w.text.trim())
