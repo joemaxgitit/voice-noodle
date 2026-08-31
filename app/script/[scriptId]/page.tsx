@@ -68,6 +68,7 @@ function ScriptView() {
   const [narratorId, setNarratorId] = useState<string | null>(null);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [byWord, setByWord] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [readError, setReadError] = useState("");
 
@@ -177,7 +178,18 @@ function ScriptView() {
   const active = activeId ? segs.find((sg) => sg.id === activeId) ?? null : null;
   const activeTake = active ? takeFor(active) : null;
 
-  const units: Phrase[] = activeTake?.timings?.length ? activeTake.timings : [];
+  /*
+    Word-level when the switch is over, phrase-level otherwise. A take that was
+    never aligned has no words, so it falls back to phrases rather than going
+    blank -- the switch stays usable across a script that is only partly
+    aligned.
+  */
+  const units: Phrase[] =
+    byWord && activeTake?.words?.length
+      ? activeTake.words
+      : activeTake?.timings?.length
+        ? activeTake.timings
+        : [];
   const { audio, setAudioEl, time } = useKaraoke(units);
 
   const activeTones = useMemo(
@@ -370,6 +382,16 @@ function ScriptView() {
         <span className="read-count">
           {recordedCount} of {totalInLang} segments recorded
         </span>
+
+        {/* Same control as the training card, on purpose. */}
+        <div className="unit-switch" role="group" aria-label="Highlight by">
+          <button aria-pressed={!byWord} onClick={() => setByWord(false)}>
+            Phrase
+          </button>
+          <button aria-pressed={byWord} onClick={() => setByWord(true)}>
+            Word
+          </button>
+        </div>
         {src && (
           <audio ref={setAudioEl} src={src} preload="auto" className="read-audio" />
         )}
