@@ -39,10 +39,22 @@ export default function HomeView() {
     let cancelled = false;
 
     (async () => {
+      /*
+        getSession reads the stored session and refreshes it when expired,
+        rather than making a bare network call for the user. Straight after
+        sign-in the token can briefly not be in place yet, and querying then
+        returns zero rows -- which used to render as "no scripts assigned".
+      */
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
+
+      const user = session.user;
 
       const [profileRes, scriptRes, moduleRes, progressRes] = await Promise.all([
         supabase.from("profiles").select("full_name, role").eq("id", user.id).single(),
@@ -55,7 +67,14 @@ export default function HomeView() {
 
       if (cancelled) return;
 
-      if (moduleRes.error) setError(moduleRes.error.message);
+      /*
+        Surface whichever query failed. Only the modules error was reported
+        before, so a failure on scripts fell through to zero rows and the page
+        told the person their account had no scripts -- which sent them to
+        their manager over what was actually a token problem.
+      */
+      const failed = scriptRes.error || moduleRes.error || profileRes.error;
+      if (failed) setError(failed.message);
 
       setName(profileRes.data?.full_name || "");
       setRole(profileRes.data?.role || "rep");

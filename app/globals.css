@@ -1180,33 +1180,26 @@ select {
   Start from any recorded segment. Sits at the end of the line rather than the
   margin, which is already carrying the section bracket.
 */
+/*
+  Always visible. Hover-only made these invisible on a first read and
+  unreachable on touch -- a control nobody knows about is not a control. Kept
+  quiet enough not to compete with the script itself.
+*/
 .read-from-here {
   margin-left: 8px;
   padding: 2px 8px;
   font-size: 11px;
   line-height: 1.4;
   vertical-align: 1px;
-  color: var(--muted);
+  color: #55524c;
   background: none;
   border-color: transparent;
-  opacity: 0;
-  transition: opacity 0.12s ease, color 0.12s ease;
+  transition: color 0.12s ease;
 }
 
-.script-line:hover .read-from-here,
+.read-from-here:hover,
 .read-from-here:focus-visible {
-  opacity: 1;
-}
-
-.read-from-here:hover {
   color: var(--live);
-}
-
-@media (max-width: 640px) {
-  /* No hover on touch, so keep it visible. */
-  .read-from-here {
-    opacity: 1;
-  }
 }
 
 /* Print-only furniture; the print block below turns it on. */

@@ -215,7 +215,7 @@ function ScriptView() {
       : activeTake?.timings?.length
         ? activeTake.timings
         : [];
-  const { audio, setAudioEl, time } = useKaraoke(units);
+  const { audio, setAudioEl, playing, time } = useKaraoke(units);
 
   const activeTones = useMemo(
     () =>
@@ -337,7 +337,18 @@ function ScriptView() {
 
   function stopRead() {
     audio?.pause();
+    setSingle(false);
     setActiveId(null);
+  }
+
+  // Pause holds position; stop clears the read entirely.
+  function togglePause() {
+    if (!audio) return;
+    if (audio.paused) {
+      void audio.play();
+    } else {
+      audio.pause();
+    }
   }
 
   // Source follows the active segment; play once it is loaded.
@@ -431,9 +442,12 @@ function ScriptView() {
       */}
       <div className="read-bar no-print">
         {activeId ? (
-          <button className="primary" onClick={stopRead}>
-            &#9632; Stop
-          </button>
+          <>
+            <button className="primary" onClick={togglePause}>
+              {playing ? "\u23f8 Pause" : "\u25b6 Resume"}
+            </button>
+            <button onClick={stopRead}>&#9632; Stop</button>
+          </>
         ) : (
           <button
             className="primary"
