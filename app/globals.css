@@ -1131,6 +1131,84 @@ select {
   color: #191308;
 }
 
+/* ---------- script read-along ---------- */
+
+/*
+  Sticky so the control stays reachable through a long script -- a rep part
+  way down a twelve-page call should not have to scroll back to the top to
+  stop it.
+*/
+.read-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 18px 0 26px;
+  padding: 12px 0;
+  background: var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+
+.read-count {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The element is only ever a transport; the bar is the interface. */
+.read-audio {
+  display: none;
+}
+
+/*
+  The line being spoken. Deliberately quieter than the karaoke fill inside it
+  -- the moving highlight is the signal, this only says which paragraph.
+*/
+.script-line-playing {
+  background: var(--live-dim);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-left: -12px;
+}
+
+/*
+  Start from any recorded segment. Sits at the end of the line rather than the
+  margin, which is already carrying the section bracket.
+*/
+.read-from-here {
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  vertical-align: 1px;
+  color: var(--muted);
+  background: none;
+  border-color: transparent;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.script-line:hover .read-from-here,
+.read-from-here:focus-visible {
+  opacity: 1;
+}
+
+.read-from-here:hover {
+  color: var(--live);
+}
+
+@media (max-width: 640px) {
+  /* No hover on touch, so keep it visible. */
+  .read-from-here {
+    opacity: 1;
+  }
+}
+
 /* Print-only furniture; the print block below turns it on. */
 .print-header {
   display: none;
