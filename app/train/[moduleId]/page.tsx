@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useKaraoke, stateFor, type Phrase } from "@/lib/useKaraoke";
 import { findTone, tonesForPhrases, type ToneSpan } from "@/lib/tones";
@@ -36,8 +36,10 @@ type Recording = {
 export default function Train() {
   const supabase = createClient();
   const params = useParams<{ moduleId: string }>();
+  const router = useRouter();
 
   const [moduleTitle, setModuleTitle] = useState("");
+  const [nextModuleId, setNextModuleId] = useState<string | null>(null);
   const [scriptId, setScriptId] = useState<string | null>(null);
   const [segments, setSegments] = useState<Segment[]>([]);
   const [index, setIndex] = useState(0);
@@ -88,7 +90,7 @@ export default function Train() {
       const [modRes, segRes, narRes, meRes] = await Promise.all([
         supabase
           .from("modules")
-          .select("title, script_id")
+          .select("title, script_id, language")
           .eq("id", params.moduleId)
           .single(),
         supabase
@@ -129,7 +131,34 @@ export default function Train() {
       }
 
       setModuleTitle(modRes.data?.title || "Training");
-      setScriptId((modRes.data as { script_id?: string })?.script_id ?? null);
+      const sid = (modRes.data as { script_id?: string })?.script_id ?? null;
+      setScriptId(sid);
+
+      /*
+        Which module follows this one, so finishing the last segment can hand
+        the rep straight on. Same language only -- the Spanish playbook is a
+        parallel run, not a continuation of the English one.
+      */
+      if (sid) {
+        const lang = (modRes.data as { language?: string })?.language || "en";
+        const { data: sibs } = await supabase
+          .from("modules")
+          .select("id, sort_order, language")
+          .eq("script_id", sid);
+
+        if (!cancelled) {
+          const ordered = (
+            (sibs || []) as { id: string; sort_order: number; language: string }[]
+          )
+            .filter((m) => (m.language || "en") === lang)
+            .sort((a, b) => a.sort_order - b.sort_order);
+
+          const at = ordered.findIndex((m) => m.id === params.moduleId);
+          setNextModuleId(
+            at >= 0 && at < ordered.length - 1 ? ordered[at + 1].id : null
+          );
+        }
+      }
       setSegments(
         ((segRes.data || []) as unknown as Segment[]).sort(
           (a, b) => a.sort_order - b.sort_order
@@ -210,7 +239,21 @@ export default function Train() {
     const target =
       ahead !== -1 ? ahead : segments.findIndex((sg) => !nextDone.has(sg.id));
 
-    if (target !== -1) setIndex(target);
+    if (target !== -1) {
+      setIndex(target);
+      return;
+    }
+
+    /*
+      Module finished. Standing on a completed card with nothing happening
+      reads as a broken button, so move on -- the next module in the script,
+      or the section list when this was the last one.
+    */
+    if (nextModuleId) {
+      router.push(`/train/${nextModuleId}`);
+    } else {
+      router.push("/proedgesolutions");
+    }
   }
 
   if (loading) {
