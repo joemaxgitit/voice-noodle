@@ -30,6 +30,8 @@ type Seg = {
   recordings: Recording[];
 };
 
+type Narrator = { id: string; name: string; sort_order: number };
+
 type Mod = {
   id: string;
   title: string;
@@ -69,6 +71,9 @@ function ScriptView() {
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
   const [byWord, setByWord] = useState(false);
+  const [narrators, setNarrators] = useState<Narrator[]>([]);
+  // A single-segment replay stops at the end instead of running on.
+  const [single, setSingle] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [readError, setReadError] = useState("");
 
@@ -76,12 +81,13 @@ function ScriptView() {
     let cancelled = false;
 
     (async () => {
-      const [sRes, mRes] = await Promise.all([
+      const [sRes, mRes, nRes] = await Promise.all([
         supabase.from("scripts").select("title").eq("id", params.scriptId).single(),
         supabase
           .from("modules")
           .select("id, title, sort_order, kind, language")
           .eq("script_id", params.scriptId),
+        supabase.from("narrators").select("id, name, sort_order"),
       ]);
 
       if (cancelled) return;
@@ -114,6 +120,11 @@ function ScriptView() {
 
       if (cancelled) return;
 
+      setNarrators(
+        ((nRes.data || []) as Narrator[]).sort(
+          (a, b) => a.sort_order - b.sort_order
+        )
+      );
       setTitle(sRes.data?.title || "Script");
       setMods(modules);
       setSegs(((segData || []) as unknown as Seg[]).sort((a, b) => a.sort_order - b.sort_order));
@@ -175,6 +186,20 @@ function ScriptView() {
     [ordered, takeFor]
   );
 
+  /*
+    Only voices that actually recorded something in this script. Offering a
+    narrator with nothing here would produce a silent read.
+  */
+  const voices = useMemo(() => {
+    const ids = new Set<string>();
+    for (const sg of ordered) {
+      for (const r of sg.recordings || []) {
+        if (r.audio_path) ids.add(r.narrator_id);
+      }
+    }
+    return narrators.filter((n) => ids.has(n.id));
+  }, [ordered, narrators]);
+
   const active = activeId ? segs.find((sg) => sg.id === activeId) ?? null : null;
   const activeTake = active ? takeFor(active) : null;
 
@@ -233,24 +258,55 @@ function ScriptView() {
     return map;
   }
 
+  // Signs once per session, or again after a change of voice.
+  async function ensureUrls(): Promise<boolean> {
+    if (Object.keys(urls).length > 0) return true;
+
+    setPreparing(true);
+    try {
+      setUrls(await prepare());
+      return true;
+    } catch (e) {
+      setReadError(
+        e instanceof Error ? e.message : "Could not load the recordings."
+      );
+      return false;
+    } finally {
+      setPreparing(false);
+    }
+  }
+
+  // One segment, then stop. Distinct from the play arrow, which runs on
+  // through the rest of the call from that point.
+  async function playOne(id: string) {
+    setReadError("");
+    if (!(await ensureUrls())) return;
+    setSingle(true);
+    setActiveId(id);
+  }
+
+  async function pickVoice(id: string) {
+    audio?.pause();
+    setActiveId(null);
+    setSingle(false);
+    setNarratorId(id);
+    // Different voice, different files -- the signed URLs no longer apply.
+    setUrls({});
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user) {
+      await supabase.from("profiles").update({ narrator_id: id }).eq("id", user.id);
+    }
+  }
+
   async function startRead(fromId?: string) {
     setReadError("");
+    setSingle(false);
 
-    let map = urls;
-    if (Object.keys(map).length === 0) {
-      setPreparing(true);
-      try {
-        map = await prepare();
-        setUrls(map);
-      } catch (e) {
-        setReadError(
-          e instanceof Error ? e.message : "Could not load the recordings."
-        );
-        return;
-      } finally {
-        setPreparing(false);
-      }
-    }
+    if (!(await ensureUrls())) return;
 
     /*
       Default to the top of the call. The exception is arriving from a training
@@ -275,6 +331,7 @@ function ScriptView() {
       return;
     }
 
+
     setActiveId(start.id);
   }
 
@@ -295,10 +352,17 @@ function ScriptView() {
 
   const advance = useCallback(() => {
     if (!activeId) return;
+
+    if (single) {
+      setSingle(false);
+      setActiveId(null);
+      return;
+    }
+
     const at = playable.findIndex((sg) => sg.id === activeId);
     const next = at >= 0 ? playable[at + 1] : undefined;
     setActiveId(next ? next.id : null);
-  }, [activeId, playable]);
+  }, [activeId, playable, single]);
 
   const advanceRef = useRef(advance);
   advanceRef.current = advance;
@@ -382,6 +446,25 @@ function ScriptView() {
         <span className="read-count">
           {recordedCount} of {totalInLang} segments recorded
         </span>
+
+        {/*
+          Whose voice reads. Only shown when more than one person has recorded
+          in this script -- otherwise it is a control with one option.
+        */}
+        {voices.length > 1 && (
+          <div className="narrators" style={{ marginTop: 0 }}>
+            <span className="narrator-label">Voice</span>
+            {voices.map((n) => (
+              <button
+                key={n.id}
+                aria-pressed={narratorId === n.id}
+                onClick={() => pickVoice(n.id)}
+              >
+                {n.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Same control as the training card, on purpose. */}
         <div className="unit-switch" role="group" aria-label="Highlight by">
@@ -468,14 +551,28 @@ function ScriptView() {
                     )}
 
                     {hasAudio && !activeId && (
-                      <button
-                        className="read-from-here no-print"
-                        onClick={() => startRead(sg.id)}
-                        aria-label="Read from here"
-                        title="Read from here"
-                      >
-                        &#9654;
-                      </button>
+                      <>
+                        <button
+                          className="read-from-here no-print"
+                          onClick={() => startRead(sg.id)}
+                          aria-label="Read from here to the end"
+                          title="Read from here to the end"
+                        >
+                          &#9654;
+                        </button>
+                        {/*
+                          Just this line. Separate from the arrow above, which
+                          carries on through the rest of the call.
+                        */}
+                        <button
+                          className="read-from-here no-print"
+                          onClick={() => playOne(sg.id)}
+                          aria-label="Play this segment only"
+                          title="Play this segment only"
+                        >
+                          &#8635;
+                        </button>
+                      </>
                     )}
 
                     {sg.script_note && (
