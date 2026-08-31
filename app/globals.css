@@ -1096,6 +1096,41 @@ select {
   white-space: nowrap;
 }
 
+/* ---------- unit switch ---------- */
+
+/*
+  Two positions rather than one button that toggles. A single button showing
+  "Phrase by phrase" reads equally as the current state or as the action, and
+  a rep mid-drill should not have to work out which.
+*/
+.unit-switch {
+  display: inline-flex;
+  padding: 3px;
+  gap: 3px;
+  background: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.unit-switch button {
+  padding: 6px 14px;
+  font-size: 13px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.unit-switch button:hover:not([aria-pressed="true"]) {
+  color: var(--text);
+}
+
+.unit-switch button[aria-pressed="true"] {
+  background: var(--live);
+  color: #191308;
+}
+
 /* Print-only furniture; the print block below turns it on. */
 .print-header {
   display: none;

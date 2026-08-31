@@ -72,7 +72,7 @@ export default function Train() {
   // available for reps who want to drill exact pronunciation.
   const units: Phrase[] = byWord && words.length ? words : phrases;
 
-  const { audio, setAudioEl, playing, time } = useKaraoke(units);
+  const { audio, setAudioEl, time } = useKaraoke(units);
 
   // Which tone is in force at each phrase, so the chip appears exactly where
   // the script shifts rather than as a flat list at the top of the card.
@@ -193,8 +193,24 @@ export default function Train() {
       });
     }
 
-    if (segment) setDone((d) => new Set(d).add(segment.id));
-    if (index < segments.length - 1) setIndex(index + 1);
+    if (!segment) return;
+
+    const nextDone = new Set(done).add(segment.id);
+    setDone(nextDone);
+
+    /*
+      Move to the next segment that still needs work rather than the next in
+      order. Someone picking up a half-finished module should land on what is
+      left, not click through what they already did. Search forward first so
+      the run stays in script order, then wrap for anything skipped earlier.
+    */
+    const ahead = segments.findIndex(
+      (sg, i) => i > index && !nextDone.has(sg.id)
+    );
+    const target =
+      ahead !== -1 ? ahead : segments.findIndex((sg) => !nextDone.has(sg.id));
+
+    if (target !== -1) setIndex(target);
   }
 
   if (loading) {
@@ -349,25 +365,26 @@ export default function Train() {
             preload="metadata"
           />
           <div className="row">
-            <button
-              onClick={() => {
-                if (!audio) return;
-                audio.currentTime = 0;
-                void audio.play();
-              }}
-            >
-              {playing ? "Playing\u2026" : "\u25b6 Play master"}
-            </button>
             <button onClick={() => setLoop(!loop)}>
               &#8635; Loop {loop ? "on" : "off"}
             </button>
             <button onClick={() => setSpeed(speed === 1 ? 0.75 : 1)}>
               {speed}&times; speed
             </button>
+            {/*
+              Two positions, the live one lit. Phrase is on the left because
+              it is the default and the one that teaches delivery; word is the
+              drill-down.
+            */}
             {words.length > 0 && (
-              <button onClick={() => setByWord(!byWord)}>
-                {byWord ? "Word by word" : "Phrase by phrase"}
-              </button>
+              <div className="unit-switch" role="group" aria-label="Highlight by">
+                <button aria-pressed={!byWord} onClick={() => setByWord(false)}>
+                  Phrase
+                </button>
+                <button aria-pressed={byWord} onClick={() => setByWord(true)}>
+                  Word
+                </button>
+              </div>
             )}
           </div>
 
@@ -431,7 +448,9 @@ export default function Train() {
           &larr; Previous
         </button>
         <button className="primary" onClick={complete}>
-          {index === segments.length - 1 ? "Mark complete" : "Got it \u2192 next"}
+          {segments.some((sg) => sg.id !== segment.id && !done.has(sg.id))
+            ? "Got it \u2192 next"
+            : "Mark complete"}
         </button>
       </div>
     </main>
