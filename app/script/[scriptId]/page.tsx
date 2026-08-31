@@ -151,11 +151,28 @@ function ScriptView() {
     [narratorId]
   );
 
-  // Segments in the visible language that can actually be heard, in order.
-  const playable = useMemo(() => {
-    const ids = new Set(visible.map((m) => m.id));
-    return segs.filter((sg) => ids.has(sg.module_id) && takeFor(sg));
-  }, [segs, visible, takeFor]);
+  /*
+    Script order: module by module, then by sort_order within each. sort_order
+    is per module, so sorting the flat list interleaves them -- rendering hides
+    this because it groups by module first, but playback does not.
+  */
+  const ordered = useMemo(() => {
+    const out: Seg[] = [];
+    for (const m of visible) {
+      out.push(
+        ...segs
+          .filter((sg) => sg.module_id === m.id)
+          .sort((a, b) => a.sort_order - b.sort_order)
+      );
+    }
+    return out;
+  }, [segs, visible]);
+
+  // The ones that can actually be heard, still in script order.
+  const playable = useMemo(
+    () => ordered.filter((sg) => takeFor(sg)),
+    [ordered, takeFor]
+  );
 
   const active = activeId ? segs.find((sg) => sg.id === activeId) ?? null : null;
   const activeTake = active ? takeFor(active) : null;
@@ -223,9 +240,23 @@ function ScriptView() {
       }
     }
 
-    const start = fromId
-      ? playable.find((sg) => sg.id === fromId) ?? playable[0]
-      : playable[0];
+    /*
+      Default to the top of the call. The exception is arriving from a training
+      card via "Show in full script": that carries ?segment=, the rep is
+      already looking at that passage, and sending them back to the opening
+      would lose their place.
+    */
+    let start = playable[0];
+
+    if (fromId) {
+      start = playable.find((sg) => sg.id === fromId) ?? playable[0];
+    } else if (focus) {
+      const at = ordered.findIndex((sg) => sg.id === focus);
+      if (at >= 0) {
+        const fromFocus = ordered.slice(at).find((sg) => takeFor(sg));
+        if (fromFocus) start = fromFocus;
+      }
+    }
 
     if (!start) {
       setReadError("Nothing in this script has been recorded yet.");
