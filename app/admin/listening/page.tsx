@@ -25,6 +25,14 @@ function dayKey(d: Date): string {
   "2m" rather than "2m 0s". Daily totals across a team pass an hour, hence
   the third unit.
 */
+/** Wall-clock time, for saying when something happened. */
+function clock(ms: number): string {
+  return new Date(ms).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function spell(seconds: number): string {
   const total = Math.round(seconds);
   if (total < 60) return `${total}s`;
@@ -131,6 +139,8 @@ export default function Listening() {
         title: string;
         seconds: number;
         plays: number;
+        first: number;
+        last: number;
         sources: Set<string>;
         voices: Set<string>;
       }
@@ -139,16 +149,25 @@ export default function Listening() {
     for (const r of forDay) {
       if (r.user_id !== openRep) continue;
       const code = r.segments?.segment_code || "unknown";
+      const at = new Date(r.created_at).getTime();
+
       const cur = by.get(code) || {
         code,
         title: r.segments?.title || "",
         seconds: 0,
         plays: 0,
+        first: at,
+        last: at,
         sources: new Set<string>(),
         voices: new Set<string>(),
       };
+
       cur.seconds += Number(r.seconds);
       cur.plays += 1;
+      // When they worked on it, not just how long. A run of plays at 8am is a
+      // different habit from the same total scattered through the day.
+      cur.first = Math.min(cur.first, at);
+      cur.last = Math.max(cur.last, at);
       // A segment can be worked both ways and against either voice; the row
       // totals them and says which.
       cur.sources.add(r.source);
@@ -272,6 +291,9 @@ export default function Listening() {
                       </span>
                       <span className="count">
                         {b.plays} {b.plays === 1 ? "play" : "plays"}
+                        <br />
+                        {clock(b.first)}
+                        {b.last - b.first > 60_000 ? `\u2013${clock(b.last)}` : ""}
                       </span>
                     </li>
                   ))}

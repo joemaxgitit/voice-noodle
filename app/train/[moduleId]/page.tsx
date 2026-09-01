@@ -528,9 +528,22 @@ export default function Train() {
 
       {error && <div className="error">{error}</div>}
 
+      {/*
+        Previous and Next just move. The primary button marks the segment done
+        and skips ahead to whatever still needs work -- which is what you want
+        while learning, and useless when you are revisiting a module you have
+        already finished. Without a plain Next there was no way to walk back
+        through completed segments at all.
+      */}
       <div className="nav">
         <button disabled={index === 0} onClick={() => setIndex(index - 1)}>
           &larr; Previous
+        </button>
+        <button
+          disabled={index >= segments.length - 1}
+          onClick={() => setIndex(index + 1)}
+        >
+          Next &rarr;
         </button>
         <button className="primary" onClick={complete}>
           {segments.some((sg) => sg.id !== segment.id && !done.has(sg.id))
