@@ -1247,6 +1247,90 @@ select {
   text-align: center;
 }
 
+/* ---------- practice scores ---------- */
+
+.pending {
+  margin-top: 14px;
+  padding: 14px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.pending .player {
+  margin: 8px 0 12px;
+}
+
+.attempt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.attempt-when {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.attempt-note {
+  margin: 8px 0 0 56px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.scores {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+/*
+  Three numbers rather than one. A single score hides which of pace, pauses
+  and clarity was the problem, and a rep can only fix what they can see.
+*/
+.score {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-variant-numeric: tabular-nums;
+}
+
+.score.good {
+  color: #9fd0a8;
+  background: rgba(111, 191, 139, 0.12);
+  border-color: rgba(111, 191, 139, 0.4);
+}
+
+.score.fair {
+  color: #ffd9a0;
+  background: rgba(240, 166, 60, 0.14);
+  border-color: rgba(240, 166, 60, 0.45);
+}
+
+.score.poor {
+  color: #f0a79f;
+  background: rgba(224, 104, 95, 0.12);
+  border-color: rgba(224, 104, 95, 0.4);
+}
+
+@media (max-width: 560px) {
+  .scores {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .attempt-note {
+    margin-left: 0;
+  }
+}
+
 /* Print-only furniture; the print block below turns it on. */
 .print-header {
   display: none;

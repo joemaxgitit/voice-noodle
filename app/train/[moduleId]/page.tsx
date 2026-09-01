@@ -486,6 +486,7 @@ export default function Train() {
         segmentId={segment.id}
         segmentCode={segment.segment_code}
         narratorId={chosen?.narrator_id ?? null}
+        masterWords={chosen?.words?.length ? chosen.words : null}
       />
 
       <div className="coaching">
