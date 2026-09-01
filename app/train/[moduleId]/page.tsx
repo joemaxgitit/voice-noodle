@@ -51,6 +51,13 @@ export default function Train() {
   const [byWord, setByWord] = useState(false);
   const [narrators, setNarrators] = useState<Narrator[]>([]);
   const [narratorId, setNarratorId] = useState<string | null>(null);
+  /*
+    Whether this organisation has practice recording switched on, set from
+    /admin. Defaults to off so a failed read hides the feature rather than
+    exposing it -- every scored take costs an alignment call, and off is the
+    safe direction to fail in.
+  */
+  const [practiceOn, setPracticeOn] = useState(false);
   const [done, setDone] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -129,10 +136,22 @@ export default function Train() {
       if (uid) {
         const { data: prof } = await supabase
           .from("profiles")
-          .select("narrator_id")
+          .select("narrator_id, org_id")
           .eq("id", uid)
           .single();
+
         if (!cancelled && prof?.narrator_id) setNarratorId(prof.narrator_id);
+
+        // Practice recording is switched per organisation, from /admin.
+        if (prof?.org_id) {
+          const { data: org } = await supabase
+            .from("orgs")
+            .select("practice_enabled")
+            .eq("id", prof.org_id)
+            .single();
+
+          if (!cancelled) setPracticeOn(!!org?.practice_enabled);
+        }
       }
 
       setModuleTitle(modRes.data?.title || "Training");
@@ -481,14 +500,20 @@ export default function Train() {
       {/*
         Practice sits below the coaching notes, not above: read what it should
         sound like, then say it.
+
+        Off means absent, not disabled. A greyed-out control invites people to
+        ask when it is coming back; nothing at all reads as a tool that simply
+        does not have this feature.
       */}
-      <PracticeRecorder
-        segmentId={segment.id}
-        segmentCode={segment.segment_code}
-        narratorId={chosen?.narrator_id ?? null}
-        masterWords={chosen?.words?.length ? chosen.words : null}
-        onPass={complete}
-      />
+      {practiceOn && (
+        <PracticeRecorder
+          segmentId={segment.id}
+          segmentCode={segment.segment_code}
+          narratorId={chosen?.narrator_id ?? null}
+          masterWords={chosen?.words?.length ? chosen.words : null}
+          onPass={complete}
+        />
+      )}
 
       <div className="coaching">
         <div>
