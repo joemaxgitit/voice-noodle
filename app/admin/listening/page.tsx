@@ -19,9 +19,14 @@ function dayKey(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function minutes(seconds: number): string {
+/*
+  Seconds below a minute, then minutes. A short practice run reading "0.1m"
+  looks like a rounding error rather than six seconds of work.
+*/
+function spell(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
   const m = seconds / 60;
-  return m < 10 ? m.toFixed(1) : String(Math.round(m));
+  return m < 10 ? `${m.toFixed(1)}m` : `${Math.round(m)}m`;
 }
 
 /**
@@ -157,7 +162,7 @@ export default function Listening() {
       </div>
 
       <div className="eyebrow">
-        {minutes(dayTotal)} minutes on {day}
+        {spell(dayTotal)} on {day}
       </div>
       <h1>Listening</h1>
       <p className="muted">
@@ -187,7 +192,7 @@ export default function Listening() {
                 }}
               >
                 {d.slice(5)}
-                <span className="section-count">{minutes(secs)}m</span>
+                <span className="section-count">{spell(secs)}</span>
               </button>
             ))}
           </div>
@@ -220,14 +225,14 @@ export default function Listening() {
                     {r.plays} {r.plays === 1 ? "play" : "plays"}
                   </span>
                 </span>
-                <span className="live-count">{minutes(r.seconds)}m</span>
+                <span className="live-count">{spell(r.seconds)}</span>
               </button>
 
               {openRep === id && (
                 <ul className="phrases" style={{ marginTop: 10 }}>
                   {breakdown.map((b) => (
                     <li key={b.code} className="set">
-                      <span className="ts">{minutes(b.seconds)}m</span>
+                      <span className="ts">{spell(b.seconds)}</span>
                       <span className="text">
                         <span className="code">{b.code}</span>
                         {b.title ? ` \u00b7 ${b.title}` : ""}
