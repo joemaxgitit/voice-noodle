@@ -1349,6 +1349,29 @@ select {
   border: 1px solid rgba(111, 191, 139, 0.4);
 }
 
+/* ---------- practice switch ---------- */
+
+.practice-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+  padding: 14px 16px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.practice-switch .label {
+  margin-bottom: 4px;
+}
+
+.practice-switch .hint {
+  max-width: 52ch;
+}
+
 /* Print-only furniture; the print block below turns it on. */
 .print-header {
   display: none;

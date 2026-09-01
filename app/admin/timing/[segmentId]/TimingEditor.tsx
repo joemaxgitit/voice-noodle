@@ -176,6 +176,9 @@ export default function TimingEditor({
       // Must match the phrase lines exactly, so the returned word sequence
       // lines up one-to-one with them.
       form.append("text", lines.join(" "));
+      // An admin building reference timings. Not gated on the practice
+      // switch, so masters can still be aligned while practice is off.
+      form.append("mode", "master");
 
       // The route authenticates with this rather than calling /auth/v1,
       // which hangs from the server. getSession reads locally, no network.

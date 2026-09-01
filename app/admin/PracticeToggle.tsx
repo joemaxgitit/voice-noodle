@@ -55,21 +55,39 @@ export default function PracticeToggle() {
     };
   }, [supabase]);
 
-  async function flip() {
-    if (!orgId || on === null) return;
+  async function set(next: boolean) {
+    if (!orgId || next === on) return;
 
     setBusy(true);
     setError("");
-
-    const next = !on;
 
     const { error } = await supabase
       .from("orgs")
       .update({ practice_enabled: next })
       .eq("id", orgId);
 
-    if (error) setError(error.message);
-    else setOn(next);
+    if (error) {
+      setError(error.message);
+      setBusy(false);
+      return;
+    }
+
+    /*
+      Read it back rather than trusting the write. An update blocked by
+      row-level security matches zero rows and returns no error at all, so
+      assuming success would show a switch that had not moved.
+    */
+    const { data: check } = await supabase
+      .from("orgs")
+      .select("practice_enabled")
+      .eq("id", orgId)
+      .single();
+
+    if (check?.practice_enabled === next) {
+      setOn(next);
+    } else {
+      setError("That did not save. You may not have permission to change it.");
+    }
 
     setBusy(false);
   }
@@ -87,14 +105,24 @@ export default function PracticeToggle() {
         </div>
       </div>
 
-      <button
-        className={on ? "primary" : ""}
-        onClick={flip}
-        disabled={busy}
-        aria-pressed={on}
-      >
-        {busy ? "\u2026" : on ? "On" : "Off"}
-      </button>
+      {/*
+        Two positions, the live one lit. A single button reading "Off" is
+        equally the current state or the thing pressing it would do -- and
+        read the wrong way round, it switches on the spending it was meant to
+        stop.
+      */}
+      <div className="unit-switch" role="group" aria-label="Practice recording">
+        <button
+          aria-pressed={!on}
+          onClick={() => set(false)}
+          disabled={busy}
+        >
+          Off
+        </button>
+        <button aria-pressed={on} onClick={() => set(true)} disabled={busy}>
+          On
+        </button>
+      </div>
 
       {error && <div className="error">{error}</div>}
     </div>
