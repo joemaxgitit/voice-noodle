@@ -146,13 +146,22 @@ export default function Admin() {
         >
           &larr; Training
         </Link>
-        <Link
-          className="btn"
-          href="/admin/people"
-          style={{ textDecoration: "none" }}
-        >
-          People
-        </Link>
+        <div className="row">
+          <Link
+            className="btn"
+            href="/admin/listening"
+            style={{ textDecoration: "none" }}
+          >
+            Listening
+          </Link>
+          <Link
+            className="btn"
+            href="/admin/people"
+            style={{ textDecoration: "none" }}
+          >
+            People
+          </Link>
+        </div>
       </div>
 
       <div className="eyebrow">

@@ -6,6 +6,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useKaraoke, stateFor, type Phrase } from "@/lib/useKaraoke";
+import { useListenLog } from "@/lib/useListenLog";
 import { tonesForPhrases, type ToneSpan } from "@/lib/tones";
 
 type Recording = {
@@ -216,6 +217,9 @@ function ScriptView() {
         ? activeTake.timings
         : [];
   const { audio, setAudioEl, playing, time } = useKaraoke(units);
+
+  // Banks seconds actually heard, per segment, for the admin view.
+  useListenLog(audio, activeId, "read");
 
   const activeTones = useMemo(
     () =>
@@ -564,7 +568,7 @@ function ScriptView() {
                       sg.script_text
                     )}
 
-                    {hasAudio && !activeId && (
+                    {hasAudio && (
                       <>
                         <button
                           className="read-from-here no-print"

@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useKaraoke, stateFor, type Phrase } from "@/lib/useKaraoke";
 import { findTone, tonesForPhrases, type ToneSpan } from "@/lib/tones";
+import { useListenLog } from "@/lib/useListenLog";
 
 type Segment = {
   id: string;
@@ -75,6 +76,9 @@ export default function Train() {
   const units: Phrase[] = byWord && words.length ? words : phrases;
 
   const { audio, setAudioEl, time } = useKaraoke(units);
+
+  // Banks seconds actually heard, per segment, for the admin view.
+  useListenLog(audio, segment?.id ?? null, "train");
 
   // Which tone is in force at each phrase, so the chip appears exactly where
   // the script shifts rather than as a flat list at the top of the card.
