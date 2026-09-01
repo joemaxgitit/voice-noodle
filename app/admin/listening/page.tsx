@@ -20,13 +20,22 @@ function dayKey(d: Date): string {
 }
 
 /*
-  Seconds below a minute, then minutes. A short practice run reading "0.1m"
-  looks like a rounding error rather than six seconds of work.
+  6s, 1m 6s, 1h 12m. Zero parts are dropped, so a clean two minutes reads
+  "2m" rather than "2m 0s". Daily totals across a team pass an hour, hence
+  the third unit.
 */
 function spell(seconds: number): string {
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  const m = seconds / 60;
-  return m < 10 ? `${m.toFixed(1)}m` : `${Math.round(m)}m`;
+  const total = Math.round(seconds);
+  if (total < 60) return `${total}s`;
+
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+
+  if (mins < 60) return secs ? `${mins}m ${secs}s` : `${mins}m`;
+
+  const hours = Math.floor(mins / 60);
+  const rest = mins % 60;
+  return rest ? `${hours}h ${rest}m` : `${hours}h`;
 }
 
 /**
