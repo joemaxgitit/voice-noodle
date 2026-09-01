@@ -1331,6 +1331,24 @@ select {
   }
 }
 
+/* ---------- cleared banner ---------- */
+
+/*
+  Shown for a moment after a passing take, before the card moves on. Without
+  it the reward for a good read is the screen changing, which reads as a
+  glitch rather than progress.
+*/
+.cleared {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #9fd0a8;
+  background: rgba(111, 191, 139, 0.12);
+  border: 1px solid rgba(111, 191, 139, 0.4);
+}
+
 /* Print-only furniture; the print block below turns it on. */
 .print-header {
   display: none;

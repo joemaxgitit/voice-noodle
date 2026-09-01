@@ -487,6 +487,7 @@ export default function Train() {
         segmentCode={segment.segment_code}
         narratorId={chosen?.narrator_id ?? null}
         masterWords={chosen?.words?.length ? chosen.words : null}
+        onPass={complete}
       />
 
       <div className="coaching">

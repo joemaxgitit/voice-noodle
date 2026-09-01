@@ -122,3 +122,29 @@ export function paceNote(delta: number): string {
     ? `${pct}% slower than the master`
     : `${pct}% faster than the master`;
 }
+
+/*
+  What clears a segment.
+
+  Set so a competent read passes and a rushed or flat one does not. They are
+  a floor, not a target -- the point is to stop someone moving on while they
+  are still noticeably off, not to chase 100.
+*/
+export const PASS = { pace: 75, clarity: 75, pauses: 70 };
+
+/*
+  Pauses are only judged when the master has at least two. On a six-word line
+  the one gap over the threshold is usually the narrator drawing breath, and
+  failing someone for not copying a breath is noise, not coaching.
+*/
+export const MIN_PAUSES_TO_JUDGE = 2;
+
+/** Does this take clear the segment? */
+export function passed(s: Scores): boolean {
+  if (s.pace < PASS.pace) return false;
+  if (s.clarity < PASS.clarity) return false;
+  if (s.pauseCount >= MIN_PAUSES_TO_JUDGE && (s.pauses ?? 0) < PASS.pauses) {
+    return false;
+  }
+  return true;
+}

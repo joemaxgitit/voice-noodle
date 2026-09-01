@@ -3,7 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { toWav } from "@/lib/wav";
-import { score as scoreAttempt, paceNote, type Scores } from "@/lib/score";
+import {
+  score as scoreAttempt,
+  paceNote,
+  passed,
+  PASS,
+  type Scores,
+} from "@/lib/score";
 import type { Phrase } from "@/lib/useKaraoke";
 
 type Attempt = {
@@ -47,11 +53,13 @@ export default function PracticeRecorder({
   segmentCode,
   narratorId,
   masterWords,
+  onPass,
 }: {
   segmentId: string;
   segmentCode: string;
   narratorId: string | null;
   masterWords: Phrase[] | null;
+  onPass?: () => void;
 }) {
   const supabase = createClient();
 
@@ -66,6 +74,7 @@ export default function PracticeRecorder({
 
   const [saving, setSaving] = useState("");
   const [playing, setPlaying] = useState<string | null>(null);
+  const [cleared, setCleared] = useState(false);
   const [error, setError] = useState("");
 
   const recorder = useRef<MediaRecorder | null>(null);
@@ -73,6 +82,7 @@ export default function PracticeRecorder({
   const stream = useRef<MediaStream | null>(null);
   const startedAt = useRef(0);
   const ticker = useRef<ReturnType<typeof setInterval> | null>(null);
+  const moveOn = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const canScore = !!masterWords && masterWords.length > 0;
 
@@ -105,6 +115,7 @@ export default function PracticeRecorder({
   useEffect(() => {
     return () => {
       if (ticker.current) clearInterval(ticker.current);
+      if (moveOn.current) clearTimeout(moveOn.current);
       stream.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
@@ -117,6 +128,7 @@ export default function PracticeRecorder({
 
   async function start() {
     setError("");
+    setCleared(false);
 
     if (pending) {
       URL.revokeObjectURL(pending.url);
@@ -290,6 +302,18 @@ export default function PracticeRecorder({
               a.id === saved.id ? { ...a, scores: result.scores } : a
             )
           );
+
+          /*
+            Passing clears the segment. The pause before moving on is so the
+            rep sees the result rather than the page changing under them --
+            without it the reward for a good take is the screen vanishing.
+          */
+          if (passed(result.scores)) {
+            setCleared(true);
+            if (onPass) {
+              moveOn.current = setTimeout(() => onPass(), 1800);
+            }
+          }
         } else {
           setError(
             "Saved, but this take could not be scored. Play it back and try again if it sounded off."
@@ -335,11 +359,23 @@ export default function PracticeRecorder({
         it is saved, and you and your manager can hear them.
       </p>
 
-      {!canScore && (
+      {canScore ? (
+        <p className="hint">
+          Clear this segment with Pace {PASS.pace}, Clarity {PASS.clarity} and
+          Pauses {PASS.pauses}. Record as many takes as you like &mdash; you can
+          always come back and work on it again.
+        </p>
+      ) : (
         <p className="hint">
           This segment has no aligned master yet, so takes are saved but not
           scored.
         </p>
+      )}
+
+      {cleared && (
+        <div className="cleared">
+          Passed &mdash; moving to the next one.
+        </div>
       )}
 
       <div className="row">
@@ -387,6 +423,10 @@ export default function PracticeRecorder({
                   {when(a.created_at)}
                   {a.seconds ? ` \u00b7 ${a.seconds.toFixed(1)}s` : ""}
                 </span>
+
+                {a.scores && passed(a.scores) && (
+                  <span className="score good">Passed</span>
+                )}
 
                 {a.scores && (
                   <span className="scores">
