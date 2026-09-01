@@ -4,51 +4,39 @@ import { createTokenSupabase, subjectOf } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-/*
-  Abort before the platform does. 60s is the function ceiling on this plan;
-  stopping at 45 leaves room to answer with JSON. Past the ceiling Vercel
-  returns an HTML error page, which the browser cannot parse.
-*/
 const UPSTREAM_TIMEOUT_MS = 45_000;
 
 type AlignedWord = { text: string; start: number; end: number };
 
-/*
-  These marks are permanent, not debugging leftovers.
-
-  This route has failed twice in ways that were impossible to diagnose from
-  Vercel's own trace, and both times a single instrumented deploy found the
-  cause immediately after hours of guessing without one. Three console lines
-  cost nothing and turn the next incident into one log read. Do not remove
-  them as tidying.
-*/
 const mark = (started: number, label: string) =>
   console.log(`[align] ${label} @ ${Date.now() - started}ms`);
 
 /**
  * Forced alignment: audio + known script text in, word timestamps out.
  *
- * WHY THERE IS NO getUser() CALL HERE.
+ * Two callers, two rules:
  *
- * supabase.auth.getUser() hits /auth/v1, and from this function that endpoint
- * is unreliable -- usually instant, intermittently never returning. When it
- * hangs the runtime kills the invocation at ~31s with
- * FUNCTION_INVOCATION_FAILED and "No outgoing requests", or at exactly 60s
- * with a timeout. No exception is thrown, so try/catch cannot help. It struck
- * on 29 August, appeared to be fixed by NODE_OPTIONS=--dns-result-order=
- * ipv4first, then returned hours later on a healthy deployment.
+ *   master   -- an admin aligning a recording they just made. Admins only,
+ *               always allowed. This is how the reference timings get built,
+ *               so it must keep working whatever else is switched off.
  *
- * So the call is gone. The caller sends its access token and the profiles
- * query carries it, which touches /rest/v1 instead -- a different service
- * that has never exhibited this. Security is unchanged: PostgREST verifies
- * the JWT signature and row-level security still applies, so a forged or
- * expired token is rejected by the database rather than trusted here.
+ *   practice -- a rep scoring their own attempt. Any active member of the
+ *               org, and only while that org has practice switched on.
  *
- * The role check still runs before ElevenLabs is called, so credits are never
- * spent for a caller who is not an active admin.
+ * The flag is checked HERE, not only in the interface. Hiding a button stops
+ * nobody: a stale tab or a direct call would still spend credits, which is
+ * the entire thing the switch exists to prevent.
  *
- * Every path returns JSON. An unhandled throw becomes a Vercel HTML 500 with
- * no message, which is unusable, so the handler is wrapped.
+ * Two constraints found the hard way:
+ *
+ * 1. The request body is read before anything else. With an upload still
+ *    streaming in, outbound calls stalled and the runtime killed the
+ *    invocation at ~31s with no catchable error.
+ *
+ * 2. Authentication never calls /auth/v1 -- that endpoint hangs
+ *    intermittently from this function. The caller sends its access token and
+ *    the profile query carries it, so only /rest/v1 is touched. PostgREST
+ *    verifies the signature, so this is not a weaker check.
  */
 export async function POST(request: Request) {
   const started = Date.now();
@@ -79,7 +67,6 @@ async function align(request: Request, started: number) {
     );
   }
 
-  // Reading headers is free, so gate on the token before buffering an upload.
   const token = (request.headers.get("authorization") || "").replace(
     /^Bearer\s+/i,
     ""
@@ -101,15 +88,18 @@ async function align(request: Request, started: number) {
     );
   }
 
-  // --- read the upload ---------------------------------------------------
+  // --- read the upload FIRST -------------------------------------------
   let file: File | null = null;
   let text = "";
+  let mode = "master";
 
   try {
     const form = await request.formData();
     const f = form.get("file");
     file = f instanceof File ? f : null;
     text = String(form.get("text") || "").trim();
+    // Absent means an older client, which is only ever the master path.
+    mode = String(form.get("mode") || "master");
   } catch (e) {
     mark(started, "formData threw");
     return NextResponse.json(
@@ -132,28 +122,45 @@ async function align(request: Request, started: number) {
 
   mark(
     started,
-    `body read: ${(file.size / (1024 * 1024)).toFixed(2)}MB ${file.type}`
+    `body read: ${(file.size / (1024 * 1024)).toFixed(2)}MB ${mode}`
   );
 
-  // --- authorize, without /auth/v1 ---------------------------------------
+  // --- authorize --------------------------------------------------------
   const supabase = await createTokenSupabase(token);
 
   const { data: profile, error: profileErr } = await supabase
     .from("profiles")
-    .select("role, active")
+    .select("role, active, org_id")
     .eq("id", userId)
     .single();
   mark(started, `profile checked${profileErr ? " (error)" : ""}`);
 
   if (profileErr) {
-    // An expired or invalid token lands here, rejected by PostgREST.
     return NextResponse.json(
       { error: `Could not verify your account. ${profileErr.message}` },
       { status: 401 }
     );
   }
 
-  if (!profile?.active || !["admin", "manager"].includes(profile.role)) {
+  if (!profile?.active) {
+    return NextResponse.json({ error: "Your account is inactive." }, { status: 403 });
+  }
+
+  if (mode === "practice") {
+    const { data: org } = await supabase
+      .from("orgs")
+      .select("practice_enabled")
+      .eq("id", profile.org_id)
+      .single();
+
+    if (!org?.practice_enabled) {
+      // Deliberately before ElevenLabs is touched. Nothing is spent.
+      return NextResponse.json(
+        { error: "Practice scoring is switched off." },
+        { status: 403 }
+      );
+    }
+  } else if (!["admin", "manager"].includes(profile.role)) {
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
   }
 

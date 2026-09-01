@@ -215,6 +215,9 @@ export default function PracticeRecorder({
     // Built from the master's own words so the two token sequences match
     // exactly -- anything else risks scoring against a different split.
     form.append("text", masterWords.map((w) => w.text).join(" "));
+    // Tells the route this is a rep scoring themselves, not an admin building
+    // a master. Different rules, and this one is gated on the org switch.
+    form.append("mode", "practice");
 
     const res = await fetch("/api/align", {
       method: "POST",
