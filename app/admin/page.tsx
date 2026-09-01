@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
+import PracticeToggle from "./PracticeToggle";
 type ScriptRef = { id: string; title: string; sort_order: number };
 
 type ModuleRef = {
@@ -178,6 +179,8 @@ export default function Admin() {
       <p className="muted">
         Pick a segment to upload a master recording and tap its phrase timing.
       </p>
+
+      <PracticeToggle />
 
       {error && <div className="error">{error}</div>}
 
