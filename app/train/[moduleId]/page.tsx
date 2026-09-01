@@ -86,7 +86,7 @@ export default function Train() {
   const { audio, setAudioEl, time } = useKaraoke(units);
 
   // Banks seconds actually heard, per segment, for the admin view.
-  useListenLog(audio, segment?.id ?? null, "train");
+  useListenLog(audio, segment?.id ?? null, "train", chosen?.narrator_id ?? null);
 
   // Which tone is in force at each phrase, so the chip appears exactly where
   // the script shifts rather than as a flat list at the top of the card.

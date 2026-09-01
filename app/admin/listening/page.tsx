@@ -11,6 +11,7 @@ type Row = {
   user_id: string;
   profiles: { full_name: string | null } | null;
   segments: { segment_code: string; title: string | null } | null;
+  narrators: { name: string } | null;
 };
 
 /** Local YYYY-MM-DD, not UTC -- a 9pm session belongs to that evening. */
@@ -66,7 +67,7 @@ export default function Listening() {
       const { data, error } = await supabase
         .from("listens")
         .select(
-          "seconds, created_at, source, user_id, profiles(full_name), segments(segment_code, title)"
+          "seconds, created_at, source, user_id, profiles(full_name), segments(segment_code, title), narrators(name)"
         )
         .gte("created_at", since.toISOString())
         .order("created_at", { ascending: false });
@@ -131,6 +132,7 @@ export default function Listening() {
         seconds: number;
         plays: number;
         sources: Set<string>;
+        voices: Set<string>;
       }
     >();
 
@@ -143,11 +145,14 @@ export default function Listening() {
         seconds: 0,
         plays: 0,
         sources: new Set<string>(),
+        voices: new Set<string>(),
       };
       cur.seconds += Number(r.seconds);
       cur.plays += 1;
-      // A segment can be worked both ways; the row totals them and says which.
+      // A segment can be worked both ways and against either voice; the row
+      // totals them and says which.
       cur.sources.add(r.source);
+      if (r.narrators?.name) cur.voices.add(r.narrators.name);
       by.set(code, cur);
     }
 
@@ -254,6 +259,11 @@ export default function Listening() {
                       <span className="text">
                         <span className="code">{b.code}</span>
                         {b.title ? ` \u00b7 ${b.title}` : ""}
+                        {[...b.voices].sort().map((v) => (
+                          <span className="source-tag" key={v}>
+                            {v}
+                          </span>
+                        ))}
                         {[...b.sources].sort().map((src) => (
                           <span className="source-tag" key={src}>
                             {src === "read" ? "read-along" : "card"}

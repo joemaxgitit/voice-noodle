@@ -30,13 +30,21 @@ const MAX_STEP = 2;
 export function useListenLog(
   audio: HTMLAudioElement | null,
   segmentId: string | null,
-  source: "train" | "read"
+  source: "train" | "read",
+  narratorId?: string | null
 ) {
   const supabase = createClient();
 
   const banked = useRef(0);
   const lastTime = useRef(0);
   const currentSegment = useRef<string | null>(null);
+
+  /*
+    Whose voice they were listening to. Held in a ref alongside the segment so
+    the value banked is the one that was playing, not whatever is selected by
+    the time the write happens.
+  */
+  const currentNarrator = useRef<string | null>(null);
 
   /*
     The access token, cached.
@@ -70,12 +78,18 @@ export function useListenLog(
   flush.current = (unloading = false) => {
     const seconds = Math.round(banked.current * 10) / 10;
     const segment = currentSegment.current;
+    const narrator = currentNarrator.current;
 
     banked.current = 0;
 
     if (!segment || seconds < MIN_SECONDS) return;
 
-    const row = { segment_id: segment, seconds, source };
+    const row = {
+      segment_id: segment,
+      narrator_id: narrator,
+      seconds,
+      source,
+    };
 
     /*
       On unload the normal client is no good -- the page is going away and any
@@ -124,8 +138,9 @@ export function useListenLog(
       flush.current();
     }
     currentSegment.current = segmentId;
+    currentNarrator.current = narratorId ?? null;
     lastTime.current = 0;
-  }, [segmentId]);
+  }, [segmentId, narratorId]);
 
   useEffect(() => {
     if (!audio) return;

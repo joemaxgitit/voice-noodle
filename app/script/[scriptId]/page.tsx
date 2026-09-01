@@ -219,7 +219,7 @@ function ScriptView() {
   const { audio, setAudioEl, playing, time } = useKaraoke(units);
 
   // Banks seconds actually heard, per segment, for the admin view.
-  useListenLog(audio, activeId, "read");
+  useListenLog(audio, activeId, "read", activeTake?.narrator_id ?? null);
 
   const activeTones = useMemo(
     () =>
