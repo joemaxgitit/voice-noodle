@@ -149,6 +149,13 @@ export default function Admin() {
         <div className="row">
           <Link
             className="btn"
+            href="/admin/attempts"
+            style={{ textDecoration: "none" }}
+          >
+            Attempts
+          </Link>
+          <Link
+            className="btn"
             href="/admin/listening"
             style={{ textDecoration: "none" }}
           >
