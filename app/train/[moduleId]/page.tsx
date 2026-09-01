@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useKaraoke, stateFor, type Phrase } from "@/lib/useKaraoke";
 import { findTone, tonesForPhrases, type ToneSpan } from "@/lib/tones";
 import { useListenLog } from "@/lib/useListenLog";
+import PracticeRecorder from "./PracticeRecorder";
 
 type Segment = {
   id: string;
@@ -476,6 +477,16 @@ export default function Train() {
           </Link>
         </div>
       )}
+
+      {/*
+        Practice sits below the coaching notes, not above: read what it should
+        sound like, then say it.
+      */}
+      <PracticeRecorder
+        segmentId={segment.id}
+        segmentCode={segment.segment_code}
+        narratorId={chosen?.narrator_id ?? null}
+      />
 
       <div className="coaching">
         <div>
