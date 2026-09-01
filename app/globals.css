@@ -1202,6 +1202,26 @@ select {
   color: var(--live);
 }
 
+/* ---------- listening source tag ---------- */
+
+/*
+  Says where the minutes came from -- a training card or a read-through. Quiet
+  on purpose: the number is what is being read, this only qualifies it.
+*/
+.source-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  vertical-align: 1px;
+}
+
 /* Print-only furniture; the print block below turns it on. */
 .print-header {
   display: none;

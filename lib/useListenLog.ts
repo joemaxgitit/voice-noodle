@@ -25,7 +25,7 @@ const MAX_STEP = 2;
  * scrub.
  *
  * Writes on pause, on end, when the segment changes, and when the page goes
- * away. Nothing is written for a segment that never really played.
+ * away.
  */
 export function useListenLog(
   audio: HTMLAudioElement | null,
@@ -38,11 +38,36 @@ export function useListenLog(
   const lastTime = useRef(0);
   const currentSegment = useRef<string | null>(null);
 
+  /*
+    The access token, cached.
+
+    The unload path cannot await anything, so it cannot ask for the session at
+    the moment it needs it. Kept current here instead.
+  */
+  const token = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void supabase.auth.getSession().then(({ data }) => {
+      if (!cancelled) token.current = data.session?.access_token ?? null;
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      token.current = session?.access_token ?? null;
+    });
+
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+  }, [supabase]);
+
   // Held in a ref so listeners always call the current version without
   // needing to be torn down and rebound on every render.
-  const flush = useRef<() => void>(() => {});
+  const flush = useRef<(unloading?: boolean) => void>(() => {});
 
-  flush.current = () => {
+  flush.current = (unloading = false) => {
     const seconds = Math.round(banked.current * 10) / 10;
     const segment = currentSegment.current;
 
@@ -50,11 +75,44 @@ export function useListenLog(
 
     if (!segment || seconds < MIN_SECONDS) return;
 
+    const row = { segment_id: segment, seconds, source };
+
+    /*
+      On unload the normal client is no good -- the page is going away and any
+      request still in flight is cancelled, which is how the last segment of a
+      read used to vanish.
+
+      fetch with keepalive survives that. sendBeacon does not work here: it
+      cannot set the apikey and Authorization headers Supabase requires, and
+      without them the row is rejected.
+    */
+    if (unloading && token.current) {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+      if (url && key) {
+        void fetch(`${url}/rest/v1/listens`, {
+          method: "POST",
+          keepalive: true,
+          headers: {
+            apikey: key,
+            Authorization: `Bearer ${token.current}`,
+            "Content-Type": "application/json",
+            Prefer: "return=minimal",
+          },
+          body: JSON.stringify(row),
+        }).catch(() => {
+          // Nothing useful to do -- the page is already leaving.
+        });
+        return;
+      }
+    }
+
     // Fire and forget. A failed write should never interrupt playback, and
     // the number is a coaching aid rather than an accounting record.
     void supabase
       .from("listens")
-      .insert({ segment_id: segment, seconds, source })
+      .insert(row)
       .then(({ error }) => {
         if (error) console.warn("[listens]", error.message);
       });
@@ -93,10 +151,23 @@ export function useListenLog(
     };
   }, [audio]);
 
-  // Closing the tab or navigating away still banks what was heard.
+  /*
+    pagehide rather than beforeunload: it fires on mobile backgrounding and on
+    back/forward navigation, both of which beforeunload misses. visibilitychange
+    covers the tab being switched away and never returned to.
+  */
   useEffect(() => {
-    const onHide = () => flush.current();
+    const onHide = () => flush.current(true);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush.current(true);
+    };
+
     window.addEventListener("pagehide", onHide);
-    return () => window.removeEventListener("pagehide", onHide);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 }

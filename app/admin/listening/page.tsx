@@ -125,7 +125,13 @@ export default function Listening() {
 
     const by = new Map<
       string,
-      { code: string; title: string; seconds: number; plays: number }
+      {
+        code: string;
+        title: string;
+        seconds: number;
+        plays: number;
+        sources: Set<string>;
+      }
     >();
 
     for (const r of forDay) {
@@ -136,9 +142,12 @@ export default function Listening() {
         title: r.segments?.title || "",
         seconds: 0,
         plays: 0,
+        sources: new Set<string>(),
       };
       cur.seconds += Number(r.seconds);
       cur.plays += 1;
+      // A segment can be worked both ways; the row totals them and says which.
+      cur.sources.add(r.source);
       by.set(code, cur);
     }
 
@@ -245,6 +254,11 @@ export default function Listening() {
                       <span className="text">
                         <span className="code">{b.code}</span>
                         {b.title ? ` \u00b7 ${b.title}` : ""}
+                        {[...b.sources].sort().map((src) => (
+                          <span className="source-tag" key={src}>
+                            {src === "read" ? "read-along" : "card"}
+                          </span>
+                        ))}
                       </span>
                       <span className="count">
                         {b.plays} {b.plays === 1 ? "play" : "plays"}
