@@ -228,7 +228,7 @@ export default function PracticeRecorder({
       <h2>Your turn</h2>
       <p className="hint">
         Say it back against the master, then listen to both. Your takes are
-        saved and your manager can hear them.
+        saved, and you and your manager can hear them.
       </p>
 
       <div className="row">
