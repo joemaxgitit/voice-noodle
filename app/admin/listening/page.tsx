@@ -175,7 +175,12 @@ export default function Listening() {
       by.set(code, cur);
     }
 
-    return [...by.values()].sort((a, b) => b.seconds - a.seconds);
+    /*
+      Newest first. Sorting by total time answered "what did they work on
+      most", which is a different question from "what were they doing" -- and
+      when you open someone's day the second one is usually why.
+    */
+    return [...by.values()].sort((a, b) => b.last - a.last);
   }, [forDay, openRep]);
 
   const dayTotal = forDay.reduce((n, r) => n + Number(r.seconds), 0);
