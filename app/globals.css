@@ -1391,6 +1391,26 @@ select {
   box-shadow: 0 0 0 3px rgba(111, 191, 139, 0.18);
 }
 
+/* ---------- chips do not split ---------- */
+
+/*
+  Any pill with padding and a border needs both of these. Without display it
+  is an inline box and the padding wraps with the text; without nowrap a
+  space or hyphen inside the label is a legal break. "I CARE" became two
+  chips on two lines.
+*/
+.tone,
+.score,
+.source-tag {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+/* The scores row is flex, so its children need to hold their shape. */
+.score {
+  flex: none;
+}
+
 /* Print-only furniture; the print block below turns it on. */
 .print-header {
   display: none;
