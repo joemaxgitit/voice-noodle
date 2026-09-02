@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useKaraoke, stateFor, type Phrase } from "@/lib/useKaraoke";
 import { findTone, tonesForPhrases, type ToneSpan } from "@/lib/tones";
 import { useListenLog } from "@/lib/useListenLog";
+import { usePresence } from "@/lib/usePresence";
 import PracticeRecorder from "./PracticeRecorder";
 
 type Segment = {
@@ -87,6 +88,13 @@ export default function Train() {
 
   // Banks seconds actually heard, per segment, for the admin view.
   useListenLog(audio, segment?.id ?? null, "train", chosen?.narrator_id ?? null);
+
+  // Announces this person on the org's live channel. Nothing is stored.
+  usePresence(audio, {
+    where: "card",
+    segment: segment?.segment_code ?? null,
+    title: segment?.title ?? null,
+  });
 
   // Which tone is in force at each phrase, so the chip appears exactly where
   // the script shifts rather than as a flat list at the top of the card.

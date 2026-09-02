@@ -1372,6 +1372,25 @@ select {
   max-width: 52ch;
 }
 
+/* ---------- live presence ---------- */
+
+/*
+  Lit means audio is running. Unlit means the page is open and it is not --
+  which is not the same as away, and the label beside it says so.
+*/
+.live-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--line);
+}
+
+.live-dot.on {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(111, 191, 139, 0.18);
+}
+
 /* Print-only furniture; the print block below turns it on. */
 .print-header {
   display: none;

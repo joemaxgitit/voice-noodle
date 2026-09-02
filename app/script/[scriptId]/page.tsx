@@ -7,6 +7,7 @@ import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useKaraoke, stateFor, type Phrase } from "@/lib/useKaraoke";
 import { useListenLog } from "@/lib/useListenLog";
+import { usePresence } from "@/lib/usePresence";
 import { tonesForPhrases, type ToneSpan } from "@/lib/tones";
 
 type Recording = {
@@ -220,6 +221,13 @@ function ScriptView() {
 
   // Banks seconds actually heard, per segment, for the admin view.
   useListenLog(audio, activeId, "read", activeTake?.narrator_id ?? null);
+
+  // Announces this person on the org's live channel. Nothing is stored.
+  usePresence(audio, {
+    where: "read-along",
+    segment: active?.segment_code ?? null,
+    title: null,
+  });
 
   const activeTones = useMemo(
     () =>
