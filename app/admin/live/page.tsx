@@ -58,11 +58,17 @@ export default function Live() {
       channel = ch;
 
       const read = () => {
-        const state = ch.presenceState<Here>();
-        const all = Object.values(state)
+        /*
+          presenceState returns Presence<Here> -- our shape plus a
+          presence_ref the library adds. That is assignable to Here as it
+          stands, so the annotation does the narrowing and a type predicate
+          would be rejected for narrowing to something wider's subset.
+        */
+        const all: Here[] = Object.values(ch.presenceState<Here>())
           .flat()
-          .filter((p): p is Here => !!p && typeof p.name === "string");
-        setPeople(all.sort((a, b) => a.name.localeCompare(b.name)));
+          .filter((p) => typeof p?.name === "string");
+
+        setPeople([...all].sort((a, b) => a.name.localeCompare(b.name)));
       };
 
       ch.on("presence", { event: "sync" }, read)
