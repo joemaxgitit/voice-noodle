@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { recordingMatchesScript } from "@/lib/scriptSync";
 import {
   useKaraoke,
   marksToPhrases,
@@ -56,20 +57,33 @@ export default function TimingEditor({
 
   const current = segment.recordings.find((r) => r.narrator_id === narratorId);
 
+  /*
+    Does the stored take still say what the script says? If not, everything
+    derived from it -- the phrasing, the marks, the word alignment -- describes
+    words that are no longer in the script, and seeding from it would hand
+    back the old wording to re-record.
+  */
+  const inSync = recordingMatchesScript(
+    current?.timings ?? null,
+    segment.script_text
+  );
+
   const [file, setFile] = useState<File | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
 
   const [raw, setRaw] = useState(
-    current?.timings?.length
+    inSync && current?.timings?.length
       ? current.timings.map((p) => p.text).join("\n")
       : splitIntoPhrases(segment.script_text).join("\n")
   );
 
   const [marks, setMarks] = useState<number[]>(
-    (current?.timings || []).map((p) => p.start)
+    inSync ? (current?.timings || []).map((p) => p.start) : []
   );
   const [armed, setArmed] = useState(false);
-  const [words, setWords] = useState<Phrase[]>(current?.words || []);
+  const [words, setWords] = useState<Phrase[]>(
+    inSync ? current?.words || [] : []
+  );
   const [aligning, setAligning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
@@ -98,12 +112,17 @@ export default function TimingEditor({
   // recorded this segment yet.
   useEffect(() => {
     const rec = segment.recordings.find((r) => r.narrator_id === narratorId);
+    const fresh = recordingMatchesScript(
+      rec?.timings ?? null,
+      segment.script_text
+    );
+
     setFile(null);
     setAudioUrl(null);
-    setWords(rec?.words || []);
-    setMarks((rec?.timings || []).map((p) => p.start));
+    setWords(fresh ? rec?.words || [] : []);
+    setMarks(fresh ? (rec?.timings || []).map((p) => p.start) : []);
     setRaw(
-      rec?.timings?.length
+      fresh && rec?.timings?.length
         ? rec.timings.map((p) => p.text).join("\n")
         : splitIntoPhrases(segment.script_text).join("\n")
     );
@@ -393,6 +412,19 @@ export default function TimingEditor({
         {current?.audio_path ? `Currently v${current.version}` : "Not recorded yet"}
         {duration > 0 && ` \u00b7 ${duration.toFixed(1)}s of audio`}
       </p>
+
+      {/*
+        The script moved on after this was recorded. The phrasing below has
+        been reset to the current wording, so record the new version and align
+        it -- the old marks are gone because they pointed at words that are no
+        longer in the script.
+      */}
+      {!inSync && (
+        <div className="stale-flag">
+          The script changed after this take was recorded. The phrasing below
+          is the current wording &mdash; record it again and re-align.
+        </div>
+      )}
 
       {/*
         Every voice performs the same tone map. Only the delivery differs,
