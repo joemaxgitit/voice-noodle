@@ -8,6 +8,7 @@ import { useKaraoke, stateFor, type Phrase } from "@/lib/useKaraoke";
 import { findTone, tonesForPhrases, type ToneSpan } from "@/lib/tones";
 import { useListenLog } from "@/lib/useListenLog";
 import { usePresence } from "@/lib/usePresence";
+import { recordingMatchesScript } from "@/lib/scriptSync";
 import PracticeRecorder from "./PracticeRecorder";
 
 type Segment = {
@@ -77,8 +78,21 @@ export default function Train() {
   const chosen =
     available.find((r) => r.narrator_id === narratorId) || available[0] || null;
 
-  const phrases: Phrase[] = chosen?.timings?.length ? chosen.timings : [];
-  const words: Phrase[] = chosen?.words?.length ? chosen.words : [];
+  /*
+    Does the master still say what the script says? The timings hold their own
+    copy of the words, so an edited script leaves a recording that reads
+    correctly and speaks the old wording. Rather than show those stale words
+    as though they were the script, the card falls back to the segment text
+    and says the master needs redoing.
+  */
+  const inSync = recordingMatchesScript(
+    chosen?.timings ?? null,
+    segment?.script_text ?? null
+  );
+
+  const phrases: Phrase[] =
+    inSync && chosen?.timings?.length ? chosen.timings : [];
+  const words: Phrase[] = inSync && chosen?.words?.length ? chosen.words : [];
 
   // Phrase is the default: thought groups are what carry tone. Word-level is
   // available for reps who want to drill exact pronunciation.
@@ -389,6 +403,18 @@ export default function Train() {
           );
         })}
       </div>
+
+      {/*
+        The recording is older than the script. Said plainly, because the
+        alternative is a rep learning wording that was removed -- and because
+        whoever sees it is the person who can get it re-recorded.
+      */}
+      {!inSync && (
+        <div className="stale-flag">
+          The script changed after this was recorded. Read what is on screen
+          &mdash; the audio still says the old version and needs redoing.
+        </div>
+      )}
 
       {/*
         Compliance lines cannot be paraphrased. This has to be visible at the

@@ -1411,6 +1411,24 @@ select {
   flex: none;
 }
 
+/* ---------- stale recording ---------- */
+
+/*
+  Louder than a hint and quieter than an error. The card still works -- the
+  script on screen is correct -- but the audio is out of date and somebody
+  needs to know.
+*/
+.stale-flag {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #f0a79f;
+  background: rgba(224, 104, 95, 0.1);
+  border: 1px solid rgba(224, 104, 95, 0.4);
+}
+
 /* Print-only furniture; the print block below turns it on. */
 .print-header {
   display: none;
