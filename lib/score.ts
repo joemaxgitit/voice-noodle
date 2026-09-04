@@ -34,6 +34,20 @@ const PAUSE_CREDIT = 0.5;
 */
 const RUSHED = 0.55;
 
+/*
+  Pace within this fraction of the master scores 100.
+
+  Without a band, 100 would mean matching the master's duration to about forty
+  milliseconds, which nobody does -- and a bar nobody can clear is not a high
+  standard, it is a broken button. Eight percent is a little over a second on
+  a fifteen-second segment: tight enough that a rushed or dragging read misses
+  it, loose enough that a good one does not.
+*/
+const PACE_BAND = 0.08;
+
+/* Half again as long or half as long is a different delivery, and scores 0. */
+const PACE_FLOOR = 0.5;
+
 const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
 
 const span = (words: Phrase[]) =>
@@ -63,10 +77,15 @@ export function score(rep: Phrase[], master: Phrase[]): Scores | null {
   const paceDelta = (repSpan - masterSpan) / masterSpan;
 
   /*
-    Ten percent off is still a good read, so it costs little. Fifty percent
-    off is a different delivery, and lands near zero.
+    Full marks inside the band, then falling away to nothing at the floor.
+    Linear in between, so the number moves as the delivery moves rather than
+    sitting at 100 and then dropping off a cliff.
   */
-  const pace = clamp(100 - Math.abs(paceDelta) * 200);
+  const off = Math.abs(paceDelta);
+  const pace =
+    off <= PACE_BAND
+      ? 100
+      : clamp(100 - ((off - PACE_BAND) / (PACE_FLOOR - PACE_BAND)) * 100);
 
   // --- pauses -----------------------------------------------------------
   const missedPauses: number[] = [];
@@ -124,13 +143,14 @@ export function paceNote(delta: number): string {
 }
 
 /*
-  What clears a segment.
+  What clears a segment: all three, full marks.
 
-  Set so a competent read passes and a rushed or flat one does not. They are
-  a floor, not a target -- the point is to stop someone moving on while they
-  are still noticeably off, not to chase 100.
+  This only works because full marks are reachable. Pace has a tolerance band
+  (see PACE_BAND), clarity means no word hurried past, and pauses means every
+  pause in the master was taken. Each is demanding and each is achievable, so
+  the gate is a standard rather than an obstacle.
 */
-export const PASS = { pace: 75, clarity: 75, pauses: 70 };
+export const PASS = { pace: 100, clarity: 100, pauses: 100 };
 
 /*
   Pauses are only judged when the master has at least two. On a six-word line
