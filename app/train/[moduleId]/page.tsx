@@ -5,7 +5,13 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useKaraoke, stateFor, type Phrase } from "@/lib/useKaraoke";
-import { findTone, tonesForPhrases, type ToneSpan } from "@/lib/tones";
+import {
+  findTone,
+  toneCopy,
+  tonesForPhrases,
+  type ToneSpan,
+} from "@/lib/tones";
+import { setLang, useLang } from "@/lib/lang";
 import { useListenLog } from "@/lib/useListenLog";
 import { usePresence } from "@/lib/usePresence";
 import { recordingMatchesScript } from "@/lib/scriptSync";
@@ -60,6 +66,8 @@ export default function Train() {
     safe direction to fail in.
   */
   const [practiceOn, setPracticeOn] = useState(false);
+  // Drives the tone glosses below, and the footer key follows it too.
+  const lang = useLang();
   const [done, setDone] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -176,6 +184,15 @@ export default function Train() {
         }
       }
 
+      /*
+        A module is one language, so opening a Spanish card is itself the
+        choice -- there is nothing to switch. This is what keeps the tone
+        key in the footer in step with the script above it.
+      */
+      const modLang =
+        (modRes.data as { language?: string })?.language === "es" ? "es" : "en";
+      setLang(modLang);
+
       setModuleTitle(modRes.data?.title || "Training");
       const sid = (modRes.data as { script_id?: string })?.script_id ?? null;
       setScriptId(sid);
@@ -186,7 +203,6 @@ export default function Train() {
         parallel run, not a continuation of the English one.
       */
       if (sid) {
-        const lang = (modRes.data as { language?: string })?.language || "en";
         const { data: sibs } = await supabase
           .from("modules")
           .select("id, sort_order, language")
@@ -196,7 +212,7 @@ export default function Train() {
           const ordered = (
             (sibs || []) as { id: string; sort_order: number; language: string }[]
           )
-            .filter((m) => (m.language || "en") === lang)
+            .filter((m) => (m.language || "en") === modLang)
             .sort((a, b) => a.sort_order - b.sort_order);
 
           const at = ordered.findIndex((m) => m.id === params.moduleId);
@@ -395,10 +411,11 @@ export default function Train() {
       <div className="tones">
         {segment.tones?.map((t) => {
           const info = findTone(t);
+          const gloss = info ? toneCopy(info, lang).short : null;
           return (
             <span className="tone-line" key={t}>
               <span className="tone">{t}</span>
-              {info && <span className="tone-gloss">{info.short}</span>}
+              {gloss && <span className="tone-gloss">{gloss}</span>}
             </span>
           );
         })}

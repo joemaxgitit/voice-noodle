@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { readLang, setLang as rememberLang, type Lang } from "@/lib/lang";
 
 type ModuleRow = {
   id: string;
@@ -30,7 +31,7 @@ export default function HomeView() {
   const [modules, setModules] = useState<ModuleRow[]>([]);
   const [done, setDone] = useState<Set<string>>(new Set());
   const [role, setRole] = useState<string>("rep");
-  const [lang, setLang] = useState<"en" | "es">("en");
+  const [lang, setLangState] = useState<Lang>("en");
   const [name, setName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -94,6 +95,16 @@ export default function HomeView() {
       cancelled = true;
     };
   }, [supabase]);
+
+  // Remembered across pages, so the footer's tone key matches.
+  useEffect(() => {
+    setLangState(readLang());
+  }, []);
+
+  function choose(next: Lang) {
+    setLangState(next);
+    rememberLang(next);
+  }
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -204,13 +215,13 @@ export default function HomeView() {
               <div className="lang-switch">
                 <button
                   aria-pressed={lang === "en"}
-                  onClick={() => setLang("en")}
+                  onClick={() => choose("en")}
                 >
                   English
                 </button>
                 <button
                   aria-pressed={lang === "es"}
-                  onClick={() => setLang("es")}
+                  onClick={() => choose("es")}
                 >
                   Espa&ntilde;ol
                 </button>

@@ -9,6 +9,7 @@ import { useKaraoke, stateFor, type Phrase } from "@/lib/useKaraoke";
 import { useListenLog } from "@/lib/useListenLog";
 import { usePresence } from "@/lib/usePresence";
 import { tonesForPhrases, type ToneSpan } from "@/lib/tones";
+import { readLang, setLang as rememberLang, type Lang } from "@/lib/lang";
 
 type Recording = {
   narrator_id: string;
@@ -66,7 +67,7 @@ function ScriptView() {
   const [title, setTitle] = useState("");
   const [mods, setMods] = useState<Mod[]>([]);
   const [segs, setSegs] = useState<Seg[]>([]);
-  const [lang, setLang] = useState<"en" | "es">("en");
+  const [lang, setLangState] = useState<Lang>("en");
   const [loading, setLoading] = useState(true);
 
   const [narratorId, setNarratorId] = useState<string | null>(null);
@@ -144,6 +145,17 @@ function ScriptView() {
     const el = document.getElementById(`seg-${focus}`);
     if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [focus, loading, segs]);
+
+  // Pick up whatever language was last chosen, so the page and the
+  // footer's tone key agree on arrival rather than after a click.
+  useEffect(() => {
+    setLangState(readLang());
+  }, []);
+
+  function choose(next: Lang) {
+    setLangState(next);
+    rememberLang(next);
+  }
 
   const visible = useMemo(
     () => mods.filter((m) => (m.language || "en") === lang),
@@ -439,10 +451,10 @@ function ScriptView() {
 
       {hasSpanish && (
         <div className="lang-switch no-print">
-          <button aria-pressed={lang === "en"} onClick={() => setLang("en")}>
+          <button aria-pressed={lang === "en"} onClick={() => choose("en")}>
             English
           </button>
-          <button aria-pressed={lang === "es"} onClick={() => setLang("es")}>
+          <button aria-pressed={lang === "es"} onClick={() => choose("es")}>
             Espa&ntilde;ol
           </button>
         </div>
