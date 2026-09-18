@@ -10,6 +10,7 @@ import { useListenLog } from "@/lib/useListenLog";
 import { usePresence } from "@/lib/usePresence";
 import { tonesForPhrases, type ToneSpan } from "@/lib/tones";
 import { readLang, setLang as rememberLang, type Lang } from "@/lib/lang";
+import { copyFor } from "@/lib/copy";
 
 type Recording = {
   narrator_id: string;
@@ -151,6 +152,8 @@ function ScriptView() {
   useEffect(() => {
     setLangState(readLang());
   }, []);
+
+  const c = copyFor(lang);
 
   function choose(next: Lang) {
     setLangState(next);
@@ -426,9 +429,9 @@ function ScriptView() {
     <main className="shell script-page">
       <div className="topbar no-print">
         <Link className="btn" href="/proedgesolutions" style={{ textDecoration: "none" }}>
-          &larr; Sections
+          &larr; {c.sections}
         </Link>
-        <button onClick={() => window.print()}>Print</button>
+        <button onClick={() => window.print()}>{c.print}</button>
       </div>
 
       {/* Print only: the paper leaves the building, so it carries the brand. */}
@@ -443,11 +446,7 @@ function ScriptView() {
       </div>
 
       <h1>{title}</h1>
-      <p className="muted no-print">
-        The full script. Section names sit in the margin &mdash; click one to
-        practise that part. When printing, switch off &ldquo;Headers and
-        footers&rdquo; in the browser dialog for a clean page.
-      </p>
+      <p className="muted no-print">{c.fullScriptBlurb}</p>
 
       {hasSpanish && (
         <div className="lang-switch no-print">
@@ -468,9 +467,9 @@ function ScriptView() {
         {activeId ? (
           <>
             <button className="primary" onClick={togglePause}>
-              {playing ? "\u23f8 Pause" : "\u25b6 Resume"}
+              {playing ? `\u23f8 ${c.pause}` : `\u25b6 ${c.resume}`}
             </button>
-            <button onClick={stopRead}>&#9632; Stop</button>
+            <button onClick={stopRead}>&#9632; {c.stop}</button>
           </>
         ) : (
           <button
@@ -478,11 +477,11 @@ function ScriptView() {
             onClick={() => startRead()}
             disabled={preparing || recordedCount === 0}
           >
-            {preparing ? "Loading\u2026" : "\u25b6 Read the whole call"}
+            {preparing ? c.loading : `\u25b6 ${c.readWholeCall}`}
           </button>
         )}
         <span className="read-count">
-          {recordedCount} of {totalInLang} segments recorded
+          {recordedCount} {c.of} {totalInLang} {c.segmentsRecorded}
         </span>
 
         {/*
@@ -491,7 +490,7 @@ function ScriptView() {
         */}
         {voices.length > 1 && (
           <div className="narrators" style={{ marginTop: 0 }}>
-            <span className="narrator-label">Voice</span>
+            <span className="narrator-label">{c.voice}</span>
             {voices.map((n) => (
               <button
                 key={n.id}
@@ -505,12 +504,12 @@ function ScriptView() {
         )}
 
         {/* Same control as the training card, on purpose. */}
-        <div className="unit-switch" role="group" aria-label="Highlight by">
+        <div className="unit-switch" role="group" aria-label={c.highlightBy}>
           <button aria-pressed={!byWord} onClick={() => setByWord(false)}>
-            Phrase
+            {c.phrase}
           </button>
           <button aria-pressed={byWord} onClick={() => setByWord(true)}>
-            Word
+            {c.word}
           </button>
         </div>
         {src && (
@@ -593,8 +592,8 @@ function ScriptView() {
                         <button
                           className="read-from-here no-print"
                           onClick={() => startRead(sg.id)}
-                          aria-label="Read from here to the end"
-                          title="Read from here to the end"
+                          aria-label={c.readFromHere}
+                          title={c.readFromHere}
                         >
                           &#9654;
                         </button>
@@ -605,8 +604,8 @@ function ScriptView() {
                         <button
                           className="read-from-here no-print"
                           onClick={() => playOne(sg.id)}
-                          aria-label="Play this segment only"
-                          title="Play this segment only"
+                          aria-label={c.playOnlyThis}
+                          title={c.playOnlyThis}
                         >
                           &#8635;
                         </button>

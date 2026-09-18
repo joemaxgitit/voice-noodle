@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { readLang, setLang as rememberLang, type Lang } from "@/lib/lang";
+import { copyFor } from "@/lib/copy";
 
 type ModuleRow = {
   id: string;
@@ -101,6 +102,8 @@ export default function HomeView() {
     setLangState(readLang());
   }, []);
 
+  const c = copyFor(lang);
+
   function choose(next: Lang) {
     setLangState(next);
     rememberLang(next);
@@ -123,7 +126,7 @@ export default function HomeView() {
   if (loading) {
     return (
       <main className="shell">
-        <p className="muted">Loading…</p>
+        <p className="muted">{c.loading}</p>
       </main>
     );
   }
@@ -154,25 +157,24 @@ export default function HomeView() {
         <div className="site-header-actions">
           {["admin", "manager"].includes(role) && (
             <Link className="btn" href="/admin" style={{ textDecoration: "none" }}>
-              Admin
+              {c.admin}
             </Link>
           )}
-          <button onClick={signOut}>Sign out</button>
+          <button onClick={signOut}>{c.signOut}</button>
         </div>
       </header>
 
-      <div className="eyebrow">{name ? `Welcome back, ${name}` : "Training"}</div>
-      <h1>Pick a section</h1>
-      <p className="muted">
-        Work one card at a time. Listen, repeat it out loud, then move on.
-      </p>
+      <div className="eyebrow">
+        {name ? `${c.welcomeBack}, ${name}` : c.training}
+      </div>
+      <h1>{c.pickSection}</h1>
+      <p className="muted">{c.pickSectionBlurb}</p>
 
       {error && <div className="error">{error}</div>}
 
       {scripts.length === 0 && !error && (
         <p className="muted" style={{ marginTop: 24 }}>
-          No scripts are assigned to your account yet. Ask your manager to add you
-          to an organization.
+          {c.noScripts}
         </p>
       )}
 
@@ -198,7 +200,7 @@ export default function HomeView() {
                   <Link href={`/train/${m.id}`}>
                     <span>{m.title}</span>
                     <span className="count">
-                      {total === 0 ? "empty" : `${complete} / ${total}`}
+                      {total === 0 ? c.empty : `${complete} / ${total}`}
                     </span>
                   </Link>
                 </li>
@@ -231,9 +233,9 @@ export default function HomeView() {
             {sequence.length > 0 && (
               <>
                 <h2>
-                  The call, in order
+                  {c.callInOrder}
                   <Link className="section-link" href={`/script/${script.id}`}>
-                    Full script
+                    {c.fullScriptLink}
                   </Link>
                 </h2>
                 {renderList(sequence)}
@@ -248,12 +250,8 @@ export default function HomeView() {
             */}
             {loops.length > 0 && (
               <>
-                <h2>When they object</h2>
-                <p className="muted group-note">
-                  An objection is uncertainty about one of three things: the
-                  program, you, or the company. Pick the loop that rebuilds
-                  the one that slipped.
-                </p>
+                <h2>{c.whenTheyObject}</h2>
+                <p className="muted group-note">{c.objectionBlurb}</p>
                 {renderList(loops)}
               </>
             )}

@@ -12,6 +12,7 @@ import {
   type ToneSpan,
 } from "@/lib/tones";
 import { setLang, useLang } from "@/lib/lang";
+import { copyFor } from "@/lib/copy";
 import { useListenLog } from "@/lib/useListenLog";
 import { usePresence } from "@/lib/usePresence";
 import { recordingMatchesScript } from "@/lib/scriptSync";
@@ -68,6 +69,7 @@ export default function Train() {
   const [practiceOn, setPracticeOn] = useState(false);
   // Drives the tone glosses below, and the footer key follows it too.
   const lang = useLang();
+  const c = copyFor(lang);
   const [done, setDone] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -321,7 +323,7 @@ export default function Train() {
   if (loading) {
     return (
       <main className="shell">
-        <p className="muted">Loading&hellip;</p>
+        <p className="muted">{c.loading}</p>
       </main>
     );
   }
@@ -331,15 +333,12 @@ export default function Train() {
       <main className="shell">
         <div className="topbar">
           <Link className="btn" href="/proedgesolutions" style={{ textDecoration: "none" }}>
-            &larr; Sections
+            &larr; {c.sections}
           </Link>
         </div>
         <div className="card">
-          <h1>Nothing to practice yet</h1>
-          <p className="muted">
-            This section has no published segments. An admin can add them from
-            the admin area.
-          </p>
+          <h1>{c.nothingYet}</h1>
+          <p className="muted">{c.nothingYetBlurb}</p>
           {error && <div className="error">{error}</div>}
         </div>
       </main>
@@ -352,10 +351,10 @@ export default function Train() {
     <main className="shell">
       <div className="topbar">
         <Link className="btn" href="/proedgesolutions" style={{ textDecoration: "none" }}>
-          &larr; Sections
+          &larr; {c.sections}
         </Link>
         <div className="brand">
-          {moduleTitle} &middot; {index + 1} of {segments.length}
+          {moduleTitle} &middot; {index + 1} {c.of} {segments.length}
         </div>
       </div>
 
@@ -427,10 +426,7 @@ export default function Train() {
         whoever sees it is the person who can get it re-recorded.
       */}
       {!inSync && (
-        <div className="stale-flag">
-          The script changed after this was recorded. Read what is on screen
-          &mdash; the audio still says the old version and needs redoing.
-        </div>
+        <div className="stale-flag">{c.stale}</div>
       )}
 
       {/*
@@ -438,9 +434,7 @@ export default function Train() {
         moment of delivery, not buried in the coaching notes underneath.
       */}
       {segment.verbatim && (
-        <div className="verbatim-flag">
-          Say this word for word &mdash; required for compliance
-        </div>
+        <div className="verbatim-flag">{c.verbatim}</div>
       )}
 
       <div className="script" aria-live="polite">
@@ -484,10 +478,10 @@ export default function Train() {
           />
           <div className="row">
             <button onClick={() => setLoop(!loop)}>
-              &#8635; Loop {loop ? "on" : "off"}
+              &#8635; {c.loop} {loop ? c.on : c.off}
             </button>
             <button onClick={() => setSpeed(speed === 1 ? 0.75 : 1)}>
-              {speed}&times; speed
+              {speed}&times; {c.speed}
             </button>
             {/*
               Two positions, the live one lit. Phrase is on the left because
@@ -495,12 +489,12 @@ export default function Train() {
               drill-down.
             */}
             {words.length > 0 && (
-              <div className="unit-switch" role="group" aria-label="Highlight by">
+              <div className="unit-switch" role="group" aria-label={c.highlightBy}>
                 <button aria-pressed={!byWord} onClick={() => setByWord(false)}>
-                  Phrase
+                  {c.phrase}
                 </button>
                 <button aria-pressed={byWord} onClick={() => setByWord(true)}>
-                  Word
+                  {c.word}
                 </button>
               </div>
             )}
@@ -513,7 +507,7 @@ export default function Train() {
           */}
           {available.length > 1 && (
             <div className="narrators">
-              <span className="narrator-label">Voice</span>
+              <span className="narrator-label">{c.voice}</span>
               {narrators
                 .filter((n) => available.some((r) => r.narrator_id === n.id))
                 .map((n) => (
@@ -529,7 +523,7 @@ export default function Train() {
           )}
         </>
       ) : (
-        <p className="muted">No master recording uploaded for this one yet.</p>
+        <p className="muted">{c.noRecording}</p>
       )}
 
       {segment.script_note && (
@@ -543,7 +537,7 @@ export default function Train() {
             href={`/script/${scriptId}?segment=${segment.id}`}
             style={{ textDecoration: "none" }}
           >
-            Show in full script
+            {c.showInScript}
           </Link>
         </div>
       )}
@@ -568,11 +562,11 @@ export default function Train() {
 
       <div className="coaching">
         <div>
-          <div className="label">Delivery</div>
+          <div className="label">{c.delivery}</div>
           <div className="value">{segment.coaching || "\u2014"}</div>
         </div>
         <div>
-          <div className="label">Client should feel</div>
+          <div className="label">{c.clientShouldFeel}</div>
           <div className="value">{segment.client_should_feel || "\u2014"}</div>
         </div>
       </div>
@@ -588,18 +582,18 @@ export default function Train() {
       */}
       <div className="nav">
         <button disabled={index === 0} onClick={() => setIndex(index - 1)}>
-          &larr; Previous
+          &larr; {c.previous}
         </button>
         <button
           disabled={index >= segments.length - 1}
           onClick={() => setIndex(index + 1)}
         >
-          Next &rarr;
+          {c.next} &rarr;
         </button>
         <button className="primary" onClick={complete}>
           {segments.some((sg) => sg.id !== segment.id && !done.has(sg.id))
-            ? "Got it \u2192 next"
-            : "Mark complete"}
+            ? c.gotItNext
+            : c.markComplete}
         </button>
       </div>
     </main>
