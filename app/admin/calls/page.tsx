@@ -48,6 +48,7 @@ type CallRow = {
   outcome: Outcome | null;
   outcome_manual: Outcome | null;
   close_quality: string | null;
+  retention: string | null;
   error: string | null;
   script_id: string | null;
   updated_at: string;
@@ -127,7 +128,7 @@ export default function Calls() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, rep_id, rep_name, client_label, call_date, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, error, script_id, updated_at, created_at, cost, lang:transcript->>language, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
+        "id, rep_id, rep_name, client_label, call_date, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, retention, error, script_id, updated_at, created_at, cost, lang:transcript->>language, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
       )
       .order("created_at", { ascending: false })
       .limit(300);
@@ -344,7 +345,11 @@ export default function Calls() {
         (c) =>
           (!filterRep || repKeyOf(c) === filterRep) &&
           (!filterOutcome ||
-            (filterOutcome === "fragile" ? c.close_quality === "fragile" : outcomeOf(c) === filterOutcome))
+            (filterOutcome === "fragile"
+              ? c.close_quality === "fragile"
+              : filterOutcome === "cancelled"
+                ? c.retention === "cancelled"
+                : outcomeOf(c) === filterOutcome))
       ),
     [calls, filterRep, filterOutcome]
   );
@@ -372,6 +377,24 @@ export default function Calls() {
       n += 1;
     }
     return { usd, n };
+  }, [calls]);
+
+  // Of a rep's reviewed closes, how many cancelled.
+  const cancelsFor = (key: string) => {
+    const closes = calls.filter((c) => repKeyOf(c) === key && outcomeOf(c) === "enrolled");
+    return { closes: closes.length, cancelled: closes.filter((c) => c.retention === "cancelled").length };
+  };
+
+  /*
+    The check on the grader itself: do closes it called fragile actually
+    cancel more than solid ones? Only shown once there is something to compare.
+  */
+  const closeCheck = useMemo(() => {
+    const tally = (q: string) => {
+      const set = calls.filter((c) => outcomeOf(c) === "enrolled" && c.close_quality === q && c.retention);
+      return { n: set.length, cancelled: set.filter((c) => c.retention === "cancelled").length };
+    };
+    return { fragile: tally("fragile"), solid: tally("solid") };
   }, [calls]);
 
   // Average graded score per rep, for the filter view.
@@ -488,6 +511,7 @@ export default function Calls() {
             </option>
           ))}
           <option value="fragile">Fragile closes</option>
+          <option value="cancelled">Cancelled</option>
         </select>
         {repsWithCalls.length > 1 && (
           <select
@@ -502,6 +526,10 @@ export default function Calls() {
                 <option key={r.key} value={r.key}>
                   {r.label}
                   {a !== null ? ` (avg ${a})` : ""}
+                  {(() => {
+                    const k = cancelsFor(r.key);
+                    return k.closes ? ` \u00b7 ${k.cancelled}/${k.closes} closes cancelled` : "";
+                  })()}
                 </option>
               );
             })}
@@ -509,6 +537,13 @@ export default function Calls() {
         )}
         </span>
       </div>
+
+      {(closeCheck.fragile.n > 0 || closeCheck.solid.n > 0) && (
+        <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+          Closes with retention entered: fragile {closeCheck.fragile.cancelled}/{closeCheck.fragile.n} cancelled
+          {" \u00b7 "}solid {closeCheck.solid.cancelled}/{closeCheck.solid.n} cancelled
+        </p>
+      )}
 
       {shown.length === 0 && (
         <p className="muted">{calls.length === 0 ? "No calls uploaded yet." : "No calls match these filters."}</p>
@@ -530,6 +565,7 @@ export default function Calls() {
                     {outcomeOf(c) ? ` · ${OUTCOME_LABEL[outcomeOf(c) as Outcome]}` : ""}
                     {c.lang && langOf(c.lang) === "es" ? " · Spanish" : ""}
                     {c.close_quality === "fragile" && <span className="danger">{" · fragile close"}</span>}
+                    {c.retention === "cancelled" && <strong className="danger">{" · cancelled"}</strong>}
                   </div>
                 </span>
                 {c.status === "graded" && c.score !== null ? (

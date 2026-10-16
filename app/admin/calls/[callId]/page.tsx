@@ -16,6 +16,9 @@ import {
   scoreBand,
   slpScoreOf,
   OUTCOME_LABEL,
+  CANCEL_REASONS,
+  daysToCancel,
+  type Retention,
   type Outcome,
   arcScoreOf,
   skillsScoreOf,
@@ -52,6 +55,10 @@ type Call = {
   slp_score: number | null;
   outcome: Outcome | null;
   outcome_manual: Outcome | null;
+  retention: Retention | null;
+  cancel_date: string | null;
+  cancel_reason: string | null;
+  cancel_note: string | null;
   grade_history: GradeVersion[] | null;
   cost: CallCost | null;
   script_id: string | null;
@@ -229,7 +236,7 @@ export default function CallDetail() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, grade_history, cost, translation, voice_v:voice->v, script_id, updated_at, rep_id, rep_name, profiles:rep_id(full_name), scripts(title, logo_url)"
+        "id, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, retention, cancel_date, cancel_reason, cancel_note, grade_history, cost, translation, voice_v:voice->v, script_id, updated_at, rep_id, rep_name, profiles:rep_id(full_name), scripts(title, logo_url)"
       )
       .eq("id", callId)
       .single();
@@ -384,6 +391,27 @@ export default function CallDetail() {
 
   // A manager's correction. Kept separate so a re-grade never overwrites it;
   // choosing the grader's own answer clears the correction.
+  /*
+    Did the client stay? Saved as soon as a field changes. Marking a client
+    cancelled defaults the date to today; it can be changed.
+  */
+  async function setRetention(patch: Partial<Pick<Call, "retention" | "cancel_date" | "cancel_reason" | "cancel_note">>) {
+    if (!call) return;
+    const next = { ...patch };
+    if (patch.retention === "cancelled" && !call.cancel_date) {
+      const d = new Date();
+      next.cancel_date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+    if (patch.retention === "active" || patch.retention === null) {
+      next.cancel_date = null;
+      next.cancel_reason = null;
+      next.cancel_note = null;
+    }
+    setCall({ ...call, ...next });
+    const { error } = await supabase.from("calls").update(next).eq("id", call.id);
+    if (error) setError(error.message);
+  }
+
   async function setOutcome(value: string) {
     if (!call) return;
     const manual = !value || value === call.outcome ? null : (value as Outcome);
@@ -532,6 +560,11 @@ export default function CallDetail() {
           >
             {stuck ? "Stuck" : STATUS_LABEL[call.status]}
           </span>
+          {call.retention === "cancelled" && (
+            <span className="pill failed" style={{ marginLeft: 8 }}>
+              Cancelled
+            </span>
+          )}
           {call.redaction_count > 0 && (
             <span className="muted" style={{ marginLeft: 10, fontSize: 13 }}>
               {call.redaction_count} number{call.redaction_count === 1 ? "" : "s"} redacted
@@ -653,6 +686,88 @@ export default function CallDetail() {
                   <div className="calls-meta">
                     Corrected by a manager. The grader read it as{" "}
                     {OUTCOME_LABEL[(call.outcome ?? g.outcome ?? "other") as Outcome]}.
+                  </div>
+                )}
+
+                {(call.outcome_manual ?? call.outcome ?? g.outcome) === "enrolled" && (
+                  <div className="retention">
+                    <div className="grade-item-head" style={{ alignItems: "center" }}>
+                      <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>
+                        Retention
+                      </span>
+                      <strong className="print-only">
+                        {call.retention === "cancelled" ? "Cancelled" : call.retention === "active" ? "Active" : "Not set"}
+                      </strong>
+                      <select
+                        className="no-print"
+                        value={call.retention ?? ""}
+                        onChange={(e) => setRetention({ retention: (e.target.value || null) as Retention | null })}
+                        style={{ width: "auto", fontSize: 14, padding: "6px 10px" }}
+                        aria-label="Retention"
+                      >
+                        <option value="">Not set</option>
+                        <option value="active">Active</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </div>
+
+                    {call.retention === "cancelled" && (
+                      <>
+                        <div className="retention-fields no-print">
+                          <label className="field">
+                            <span>Cancelled on</span>
+                            <input
+                              type="date"
+                              value={call.cancel_date ?? ""}
+                              onChange={(e) => setRetention({ cancel_date: e.target.value || null })}
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Reason</span>
+                            <select
+                              value={call.cancel_reason ?? ""}
+                              onChange={(e) => setRetention({ cancel_reason: e.target.value || null })}
+                            >
+                              <option value="">Choose&hellip;</option>
+                              {Object.entries(CANCEL_REASONS).map(([k, v]) => (
+                                <option key={k} value={k}>
+                                  {v}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="field wide">
+                            <span>Note (optional)</span>
+                            <input
+                              defaultValue={call.cancel_note ?? ""}
+                              placeholder="What the client said, who took the call"
+                              onBlur={(e) =>
+                                e.target.value !== (call.cancel_note ?? "") &&
+                                setRetention({ cancel_note: e.target.value || null })
+                              }
+                            />
+                          </label>
+                        </div>
+                        <div className="grade-coach">
+                          {(() => {
+                            const days = daysToCancel(call.call_date, call.cancel_date);
+                            const parts = [
+                              days === null
+                                ? ""
+                                : days <= 7
+                                  ? `Cancelled ${days} day${days === 1 ? "" : "s"} after the sale \u2014 within the 7-day window`
+                                  : `Cancelled ${days} days after the sale`,
+                              call.cancel_reason ? CANCEL_REASONS[call.cancel_reason] : "",
+                              call.cancel_note ?? "",
+                            ].filter(Boolean);
+                            return parts.join(" \u00b7 ");
+                          })()}
+                        </div>
+                        {g.close_quality === "fragile" && (
+                          <div className="calls-meta">The grader flagged this close as fragile.</div>
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
               </div>

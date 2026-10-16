@@ -433,3 +433,25 @@ details.fold > summary:hover .fold-title { color: var(--text); }
   details.fold > summary::before,
   .fold-preview { display: none; }
 }
+
+/* ---------- Retention (on enrolled calls) ---------- */
+
+.retention {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.retention-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+  margin-top: 10px;
+}
+
+.retention-fields .wide { grid-column: 1 / -1; }
+.retention-fields .field { margin-bottom: 10px; }
+
+@media (max-width: 600px) {
+  .retention-fields { grid-template-columns: 1fr; }
+}

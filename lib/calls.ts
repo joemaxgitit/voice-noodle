@@ -107,6 +107,29 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
   other: "Other",
 };
 
+/* Retention: whether an enrolled client stayed. Entered by a manager for
+   now; the Bolton retention agent can fill it in later, matched on the
+   lead ID in the Client field. */
+export type Retention = "active" | "cancelled";
+
+export const CANCEL_REASONS: Record<string, string> = {
+  remorse: "Buyer's remorse",
+  afford: "Couldn't afford it",
+  misunderstood: "Misunderstood the program",
+  pressure: "Creditor or legal pressure",
+  family: "Family talked them out of it",
+  other: "Other",
+};
+
+/** Days from the sales call to the cancellation, or null if either date is missing. */
+export function daysToCancel(callDate: string | null, cancelDate: string | null): number | null {
+  if (!callDate || !cancelDate) return null;
+  const a = new Date(`${callDate}T00:00:00`).getTime();
+  const b = new Date(`${cancelDate}T00:00:00`).getTime();
+  if (!isFinite(a) || !isFinite(b)) return null;
+  return Math.max(0, Math.round((b - a) / 86_400_000));
+}
+
 export type TurningPoint = {
   time: number | null;
   moment: string;
