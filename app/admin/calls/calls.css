@@ -210,3 +210,62 @@ select {
   background: var(--live-dim);
   font-size: 14px;
 }
+
+/* ---------- Straight Line ---------- */
+
+.score-pair {
+  display: flex;
+  gap: 22px;
+  text-align: right;
+}
+
+.tens {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 12px 0 4px;
+}
+
+.ten {
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  text-align: center;
+}
+
+.ten-n {
+  font-size: 30px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.ten-n.good { color: var(--ok); }
+.ten-n.fair { color: var(--live); }
+.ten-n.poor { color: var(--bad); }
+
+.meter {
+  height: 4px;
+  background: var(--ink-3);
+  border-radius: 2px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.meter div { height: 100%; background: var(--muted); }
+.meter .good { background: var(--ok); }
+.meter .fair { background: var(--live); }
+.meter .poor { background: var(--bad); }
+
+.arc-feel {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.grade-item.arc.not_reached {
+  opacity: 0.55;
+}
+
+.grade-item.turn.toward { border-left: 3px solid var(--ok); }
+.grade-item.turn.away { border-left: 3px solid var(--bad); }

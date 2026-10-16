@@ -60,6 +60,47 @@ export type Flag = {
   severity: "high" | "medium" | "low";
 };
 
+export type ArcStage = {
+  stage: string;
+  intended: string;
+  observed: string;
+  landed: "yes" | "partial" | "no" | "not_reached";
+  evidence: string;
+  time: number | null;
+};
+
+export type SlpSkill = {
+  skill: string;
+  score: number | null; // 1-10, null = no chance to show it
+  evidence: string;
+  time: number | null;
+  coaching: string;
+};
+
+export type ThreeTens = {
+  product: number | null;
+  rep: number | null;
+  company: number | null;
+  evidence: string;
+};
+
+export type Outcome = "enrolled" | "callback" | "not_interested" | "hung_up" | "other";
+
+export const OUTCOME_LABEL: Record<Outcome, string> = {
+  enrolled: "Enrolled",
+  callback: "Callback set",
+  not_interested: "Not interested",
+  hung_up: "Hung up",
+  other: "Other",
+};
+
+export type TurningPoint = {
+  time: number | null;
+  moment: string;
+  direction: "toward" | "away";
+  why: string;
+};
+
 export type Grade = {
   speaker_roles: { speaker: string; role: Role }[];
   summary: string;
@@ -69,12 +110,49 @@ export type Grade = {
   flags: Flag[];
   strengths: string[];
   coaching_priorities: string[];
+  // Straight Line. Optional: grades made before it was added lack them.
+  emotional_arc?: ArcStage[];
+  slp?: SlpSkill[];
+  three_tens?: ThreeTens;
+  slp_summary?: string;
+  // Outcome. Explains the result; never adds points to either score.
+  outcome?: Outcome;
+  outcome_note?: string;
+  turning_points?: TurningPoint[];
+  close_quality?: "solid" | "fragile" | "n/a";
+  close_quality_reason?: string;
   model?: string;
   graded_at?: string;
 };
 
+/*
+  The emotional roadmap of a sale -- Max's own, in his words. This is the
+  backbone of the Straight Line grade: each stage is graded on whether the
+  client actually reached the feeling it is built to create, and the arc is
+  half of the Straight Line score. Stages are found wherever they happen on
+  the call, not by script section ("Hopeless" happens inside SuperMoney).
+  Edit here to change the roadmap; nothing else needs to change.
+*/
+export const ROADMAP: { stage: string; feel: string }[] = [
+  { stage: "Intro", feel: "trust and comfort" },
+  { stage: "Intelligence gathering (hardship)", feel: "opens up, feels heard, the pain gets real" },
+  { stage: "Create the villain", feel: "anger at the system as a whole -- it's not my fault" },
+  { stage: "Hope spike", feel: "hope -- the SuperMoney loan might fix this" },
+  { stage: "Hopeless", feel: "the drop -- the loan isn't available" },
+  {
+    stage: "Light at the end of the tunnel",
+    feel: "relief -- there are real options -- and empowered, because the choice is handed back to them",
+  },
+  { stage: "The pitch", feel: "understands the program and believes it fits" },
+  { stage: "Credit review", feel: "urgency -- the pain made concrete by maxed-out accounts" },
+  { stage: "More about Bolton", feel: "certainty in the company" },
+  { stage: "The close", feel: "certain enough to act" },
+  { stage: "Contract and compliance", feel: "clear on exactly what they agreed to" },
+  { stage: "Button up", feel: "committed, and patient for the long haul" },
+];
+
 /** A grade that has since been replaced by a re-grade. */
-export type GradeVersion = { grade: Grade; score: number | null };
+export type GradeVersion = { grade: Grade; score: number | null; slp_score?: number | null };
 
 /** What processing one call cost. Estimates from list prices. */
 export type CallCost = {
@@ -392,6 +470,39 @@ export function scoreOf(grade: Grade): number | null {
     0
   );
   return Math.round((100 * points) / reached.length);
+}
+
+/** 0-100 from the emotional roadmap: landed = full, partly = half. Stages the
+ *  call never reached are left out, as with the script score. */
+export function arcScoreOf(grade: Grade): number | null {
+  const reached = (grade.emotional_arc ?? []).filter((a) => a.landed !== "not_reached");
+  if (reached.length === 0) return null;
+  const points = reached.reduce(
+    (sum, a) => sum + (a.landed === "yes" ? 1 : a.landed === "partial" ? 0.5 : 0),
+    0
+  );
+  return Math.round((100 * points) / reached.length);
+}
+
+/** 0-100 from the 8-skill scorecard. */
+export function skillsScoreOf(grade: Grade): number | null {
+  const scored = (grade.slp ?? [])
+    .map((k) => k.score)
+    .filter((n): n is number => typeof n === "number");
+  if (scored.length === 0) return null;
+  return Math.round((10 * scored.reduce((a, b) => a + b, 0)) / scored.length);
+}
+
+/**
+ * The Straight Line score: half the emotional roadmap, half the skills.
+ * If only one is available (an older grade), that one alone.
+ */
+export function slpScoreOf(grade: Grade): number | null {
+  const arc = arcScoreOf(grade);
+  const skills = skillsScoreOf(grade);
+  if (arc === null) return skills;
+  if (skills === null) return arc;
+  return Math.round((arc + skills) / 2);
 }
 
 export function clock(secs: number | null | undefined): string {

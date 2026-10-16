@@ -1,8 +1,10 @@
 import { NextResponse, after } from "next/server";
 import {
+  ROADMAP,
   gradeCostUsd,
   isStuck,
   scoreOf,
+  slpScoreOf,
   type CallCost,
   type CallStatus,
   type Grade,
@@ -29,6 +31,11 @@ type ModuleRow = {
     script_text: string;
     sort_order: number;
     active: boolean;
+    tones: string[] | null;
+    tone_map: { tone: string | null; text: string }[] | null;
+    coaching: string | null;
+    client_should_feel: string | null;
+    script_note: string | null;
   }[];
 };
 
@@ -69,7 +76,7 @@ export async function POST(request: Request) {
   const { data: call, error } = await supabase
     .from("calls")
     .select(
-      "id, status, updated_at, transcript, script_id, grade, score, grade_history, cost, profiles:rep_id(full_name)"
+      "id, status, updated_at, transcript, script_id, grade, score, slp_score, grade_history, cost, profiles:rep_id(full_name)"
     )
     .eq("id", callId)
     .single();
@@ -93,7 +100,7 @@ export async function POST(request: Request) {
     supabase.from("scripts").select("title").eq("id", call.script_id).single(),
     supabase
       .from("modules")
-      .select("title, kind, language, sort_order, segments(segment_code, title, script_text, sort_order, active)")
+      .select("title, kind, language, sort_order, segments(segment_code, title, script_text, sort_order, active, tones, tone_map, coaching, client_should_feel, script_note)")
       .eq("script_id", call.script_id)
       .eq("active", true)
       .order("sort_order"),
@@ -134,7 +141,11 @@ export async function POST(request: Request) {
 
   const previous: GradeVersion | null =
     call.grade && call.score !== undefined
-      ? { grade: call.grade as Grade, score: call.score as number | null }
+      ? {
+          grade: call.grade as Grade,
+          score: call.score as number | null,
+          slp_score: (call.slp_score as number | null) ?? null,
+        }
       : null;
 
   after(() =>
@@ -159,7 +170,21 @@ function scriptText(modules: ModuleRow[]): { text: string; sequence: string[] } 
     const segs = (m.segments || [])
       .filter((s) => s.active !== false)
       .sort((a, b) => a.sort_order - b.sort_order)
-      .map((s) => `  [${s.segment_code}] ${s.script_text.trim()}`)
+      .map((s) => {
+        // Tone markers inline, where the script puts them: "<AC> We
+        // specialize... <I CARE> Today we will...". Falls back to the
+        // segment's tone list, then to plain text.
+        const spoken = s.tone_map?.length
+          ? s.tone_map
+              .map((t) => (t.tone ? `<${t.tone.toUpperCase()}> ` : "") + t.text.trim())
+              .join(" ")
+          : (s.tones?.length ? `<${s.tones.join("/").toUpperCase()}> ` : "") + s.script_text.trim();
+        const lines = [`  [${s.segment_code}] ${spoken}`];
+        if (s.script_note) lines.push(`      direction: ${s.script_note.trim()}`);
+        if (s.client_should_feel) lines.push(`      client should feel: ${s.client_should_feel.trim()}`);
+        if (s.coaching) lines.push(`      coaching: ${s.coaching.trim()}`);
+        return lines.join("\n");
+      })
       .join("\n");
     blocks.push(`### ${isLoop ? "OBJECTION LOOP" : "SECTION"}: ${m.title}\n${segs}`);
   }
@@ -193,6 +218,12 @@ The script is "${scriptTitle}".
 ${s.text}
 </script>
 
+How the script is annotated: <AC>, <I CARE>, <PT>, <RM>, <S>, <CALM>, <PREACHER> are Straight Line tonality markers (Absolute Certainty, I Care, Presupposing Tone, Reasonable Man, Scarcity, Calm, The Preacher) placed on the phrase they apply to. "client should feel" is the emotion that line is built to create. "coaching" is the manager's own note on why the line is there.
+
+The script is built on Jordan Belfort's Straight Line Persuasion. Its backbone is this emotional roadmap -- the sequence of feelings the call is designed to take the client through, in order:
+${ROADMAP.map((r, i) => `${i + 1}. ${r.stage} -- ${r.feel}`).join("\n")}
+The script sections deliver these stages, but not one-to-one: "Hopeless", for example, happens inside the SuperMoney section when the loan is not available. The three objection loops each rebuild one of Belfort's Three Tens: Loop 1 the product, Loop 2 trust in the rep, Loop 3 the company.
+
 The transcript will follow. Each line is [seconds from start] speaker_id: words.
 Speaker ids come from automatic diarization and can be imperfect -- work out who is who from what is said.
 Banking and ID numbers have been removed and appear as [REDACTED] or [... REDACTED]. That is expected; never penalize it.
@@ -221,9 +252,37 @@ flags: anything a compliance reviewer should listen to:
 severity: "high" for anything that could mislead a client about what they are buying or what will happen to them; "medium" for overstated claims; "low" for minor wording. Quote 25 words or fewer.
 List at most 15 flags. If there are more, keep the most serious, and prefer claims that are NOT in the script over ones that are. If the same claim is repeated, flag it once.
 
+emotional_arc: this is the backbone of the grade. Exactly one entry per roadmap stage, in roadmap order, using the stage names exactly as written. Find each stage wherever it actually happened on the call. intended: the roadmap feeling for that stage, sharpened with the script's "client should feel" lines where they apply. observed: what the client actually showed, in a few words, judged only from what the client said. landed: "yes" if the client's own words show they reached the feeling, "partial", "no", or "not_reached" if the call never got there.
+A stage only lands if the client genuinely understood. Agreement given while confused ("okay", "I guess") is not a landed pitch, close or contract stage -- mark it "partial" or "no" and say why in observed. If the loan was approved, "Hopeless" did not happen: mark it "not_reached".
+evidence: a short quote of the CLIENT (20 words or fewer) or "", and its time.
+
+slp: exactly these eight skills, in this order, each scored 1-10 (1-3 weak, 4-6 developing, 7-8 solid, 9-10 textbook), or null if the call never gave the rep a chance to show it:
+- "Control and the straight line": the rep leads the conversation, brings tangents back, and moves the call forward on purpose.
+- "Intelligence gathering": depth and quality of the hardship questions, listening, and summarizing back what the client said.
+- "Rapport and trust (Ten 2)": the client's certainty in the rep as an expert who cares.
+- "Product certainty (Ten 1)": whether the client clearly understands the program and believes it fits them.
+- "Company certainty (Ten 3)": the client's certainty in Bolton and Lionside.
+- "Looping": recognizing which Ten is low when the client stalls and running the matching loop.
+- "Action and pain thresholds": raising the client's urgency honestly and lowering the risk they feel about acting.
+- "Tonality cues (from words)": whether the wording fits the tones the script marks, for example I Care language where the script calls for it. Tone of voice cannot be heard here; judge wording only and say so.
+evidence: a short quote (20 words or fewer) and its time, or "". coaching: one specific sentence.
+
+How Straight Line is scored here -- this matters:
+Straight Line is about building real certainty and closing qualified buyers. A client who says they do not understand, cannot afford it, or want to stop is telling you their product certainty is low or that they may not qualify. In that moment the rep earns credit for slowing down, re-explaining in plain words, and confirming understanding and fit -- or for letting them go and setting a callback. Pushing forward, piling on new claims, or looping past real confusion or real inability to pay is NOT good control or good looping: score it down on "Control", "Product certainty" and "Looping", and it also belongs in flags. Never reward pressure on a client who has not understood what they are agreeing to.
+
+three_tens: your estimate of where the client ended the call on product, rep and company, each 1-10 or null if the call did not get far enough to tell, plus one sentence of evidence.
+
+slp_summary: two plain sentences on how well the rep ran the Straight Line, naming the roadmap stage where the arc broke (if it did) and why.
+
+outcome: how the call ended for the sale -- "enrolled" (agreement signed or payment set up), "callback" (a specific follow-up was agreed), "not_interested", "hung_up", or "other". outcome_note: a few words, for example "set Nov 15 payment, did not give bank info".
+
+turning_points: the 2 or 3 moments that most moved the client toward yes or away from it. time, moment (what happened, in a few words), direction ("toward" or "away"), why (one sentence). On an enrolled call these explain what earned the yes; on a lost call, where it was lost. Do not award credit for the close itself -- explain what caused it.
+
+close_quality: only for an enrolled call, otherwise "n/a". "solid" if the client clearly understood what they agreed to (not a loan, not settlement, payments go to Bolton, accounts go to collections, participation required) and chose it freely. "fragile" if they signed while confused, pressured, unable to afford the payment, or after the rep contradicted the acknowledgements -- a fragile close is a cancellation risk. close_quality_reason: one sentence, or "".
+
 furthest_point: one short phrase for where the call ended (for example "Enrolled and handed to account manager" or "Client hung up during options").
 summary: 2-3 plain sentences a busy manager can read in ten seconds.
-strengths: 2-4 short items. coaching_priorities: the top 3 things for this rep to work on, most important first.
+strengths: 2-4 short items. coaching_priorities: the top 3 things for this rep to work on, most important first -- draw on the roadmap stage where the arc broke first, the Straight Line scorecard, the script sections and the flags together.
 
 You are grading from words only. Do not judge tone of voice or pacing.
 Return only the JSON object described by the schema.`;
@@ -257,9 +316,79 @@ const GRADE_SCHEMA = {
     "flags",
     "strengths",
     "coaching_priorities",
+    "emotional_arc",
+    "slp",
+    "three_tens",
+    "slp_summary",
+    "outcome",
+    "outcome_note",
+    "turning_points",
+    "close_quality",
+    "close_quality_reason",
   ],
   additionalProperties: false,
   properties: {
+    emotional_arc: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["stage", "intended", "observed", "landed", "evidence", "time"],
+        additionalProperties: false,
+        properties: {
+          stage: { type: "string" },
+          intended: { type: "string" },
+          observed: { type: "string" },
+          landed: { type: "string", enum: ["yes", "partial", "no", "not_reached"] },
+          evidence: { type: "string" },
+          time: { type: ["number", "null"] },
+        },
+      },
+    },
+    slp: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["skill", "score", "evidence", "time", "coaching"],
+        additionalProperties: false,
+        properties: {
+          skill: { type: "string" },
+          score: { type: ["integer", "null"] },
+          evidence: { type: "string" },
+          time: { type: ["number", "null"] },
+          coaching: { type: "string" },
+        },
+      },
+    },
+    three_tens: {
+      type: "object",
+      required: ["product", "rep", "company", "evidence"],
+      additionalProperties: false,
+      properties: {
+        product: { type: ["integer", "null"] },
+        rep: { type: ["integer", "null"] },
+        company: { type: ["integer", "null"] },
+        evidence: { type: "string" },
+      },
+    },
+    slp_summary: { type: "string" },
+    outcome: { type: "string", enum: ["enrolled", "callback", "not_interested", "hung_up", "other"] },
+    outcome_note: { type: "string" },
+    turning_points: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["time", "moment", "direction", "why"],
+        additionalProperties: false,
+        properties: {
+          time: { type: ["number", "null"] },
+          moment: { type: "string" },
+          direction: { type: "string", enum: ["toward", "away"] },
+          why: { type: "string" },
+        },
+      },
+    },
+    close_quality: { type: "string", enum: ["solid", "fragile", "n/a"] },
+    close_quality_reason: { type: "string" },
     speaker_roles: {
       type: "array",
       items: {
@@ -427,6 +556,17 @@ async function grade(
     for (const c of result.compliance) c.status = low(c.status);
     for (const f of result.flags) f.severity = low(f.severity);
     for (const r of result.speaker_roles) r.role = low(r.role);
+    result.emotional_arc ||= [];
+    result.turning_points ||= [];
+    if (result.outcome) result.outcome = low(result.outcome);
+    if (result.close_quality) result.close_quality = low(result.close_quality);
+    for (const t of result.turning_points) t.direction = low(t.direction);
+    result.slp ||= [];
+    for (const a of result.emotional_arc) a.landed = low(a.landed);
+    // Scores outside 1-10 would skew the average; clamp them.
+    for (const k of result.slp) {
+      if (typeof k.score === "number") k.score = Math.max(1, Math.min(10, Math.round(k.score)));
+    }
 
     result.model = MODEL;
     result.graded_at = new Date().toISOString();
@@ -463,6 +603,10 @@ async function grade(
         error: null,
         grade: result,
         score: scoreOf(result),
+        slp_score: slpScoreOf(result),
+        // The grader's reading. A manager's correction lives in outcome_manual
+        // and is never overwritten by a re-grade.
+        outcome: result.outcome ?? null,
         grade_history: history,
         cost,
         updated_at: new Date().toISOString(),

@@ -13,6 +13,11 @@ import {
   isStuck,
   resolveRoles,
   scoreBand,
+  slpScoreOf,
+  OUTCOME_LABEL,
+  type Outcome,
+  arcScoreOf,
+  skillsScoreOf,
   type CallStatus,
   type Grade,
   type Role,
@@ -36,6 +41,9 @@ type Call = {
   speaker_roles: Record<string, Role> | null;
   grade: Grade | null;
   score: number | null;
+  slp_score: number | null;
+  outcome: Outcome | null;
+  outcome_manual: Outcome | null;
   grade_history: GradeVersion[] | null;
   cost: CallCost | null;
   script_id: string | null;
@@ -47,6 +55,8 @@ type Call = {
 const BUSY: CallStatus[] = ["uploading", "uploaded", "transcribing", "grading"];
 
 const SECTION_LABEL = { hit: "Hit", partial: "Partial", missed: "Missed", not_reached: "Not reached" };
+const ARC_LABEL: Record<string, string> = { yes: "Landed", partial: "Partly", no: "Didn't land", not_reached: "Not reached" };
+const ARC_PILL: Record<string, string> = { yes: "good", partial: "fair", no: "poor", not_reached: "" };
 const COMPLIANCE_LABEL = { yes: "Yes", no: "No", unclear: "Unclear", not_reached: "Not reached" };
 
 /** Shows [... REDACTED] markers as quiet chips rather than loud text. */
@@ -87,7 +97,7 @@ export default function CallDetail() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, grade_history, cost, script_id, updated_at, profiles:rep_id(full_name), scripts(title)"
+        "id, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, grade_history, cost, script_id, updated_at, profiles:rep_id(full_name), scripts(title)"
       )
       .eq("id", callId)
       .single();
@@ -175,6 +185,16 @@ export default function CallDetail() {
     if (error) setError(error.message);
   }
 
+  // A manager's correction. Kept separate so a re-grade never overwrites it;
+  // choosing the grader's own answer clears the correction.
+  async function setOutcome(value: string) {
+    if (!call) return;
+    const manual = !value || value === call.outcome ? null : (value as Outcome);
+    setCall({ ...call, outcome_manual: manual });
+    const { error } = await supabase.from("calls").update({ outcome_manual: manual }).eq("id", call.id);
+    if (error) setError(error.message);
+  }
+
   async function setScript(id: string) {
     if (!call) return;
     setCall({ ...call, script_id: id });
@@ -219,14 +239,18 @@ export default function CallDetail() {
     version >= 0 && history[version]
       ? history[version]
       : call.grade
-        ? { grade: call.grade, score: call.score }
+        ? { grade: call.grade, score: call.score, slp_score: call.slp_score }
         : null;
   const g = viewing?.grade ?? null;
   const shownScore = viewing?.score ?? null;
+  // Older grades predate the Straight Line scorecard; recompute when absent.
+  const shownSlp = viewing ? viewing.slp_score ?? slpScoreOf(viewing.grade) : null;
   const modelName = (m?: string) =>
     !m ? "" : m.includes("haiku") ? "Haiku" : m.includes("sonnet") ? "Sonnet" : m.includes("opus") ? "Opus" : m;
   const versionLabel = (v: GradeVersion, i: number) =>
-    `${i < 0 ? "Latest" : "Earlier"} \u00b7 ${v.score ?? "-"} \u00b7 ${modelName(v.grade.model)}${
+    `${i < 0 ? "Latest" : "Earlier"} \u00b7 script ${v.score ?? "-"}${
+      (v.slp_score ?? slpScoreOf(v.grade)) !== null ? ` \u00b7 SLP ${v.slp_score ?? slpScoreOf(v.grade)}` : ""
+    } \u00b7 ${modelName(v.grade.model)}${
       v.grade.graded_at
         ? ` \u00b7 ${new Date(v.grade.graded_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
         : ""
@@ -274,12 +298,20 @@ export default function CallDetail() {
             </span>
           )}
         </div>
-        {shownScore !== null && (
-          <div style={{ textAlign: "right" }}>
-            <div className={`score-big ${band}`}>{shownScore}</div>
-            <div className="muted" style={{ fontSize: 12 }}>
-              script score
-            </div>
+        {(shownScore !== null || shownSlp !== null) && (
+          <div className="score-pair">
+            {shownScore !== null && (
+              <div>
+                <div className={`score-big ${band}`}>{shownScore}</div>
+                <div className="muted" style={{ fontSize: 12 }}>script</div>
+              </div>
+            )}
+            {shownSlp !== null && (
+              <div>
+                <div className={`score-big ${scoreBand(shownSlp)}`}>{shownSlp}</div>
+                <div className="muted" style={{ fontSize: 12 }}>straight line</div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -347,6 +379,65 @@ export default function CallDetail() {
             Call ended: {g.furthest_point}
           </p>
 
+          {(call.outcome || call.outcome_manual || g.outcome) && (
+            <>
+              <h2>Outcome</h2>
+              <div className="grade-item">
+                <div className="grade-item-head" style={{ alignItems: "center" }}>
+                  <select
+                    value={call.outcome_manual ?? call.outcome ?? g.outcome ?? ""}
+                    onChange={(e) => setOutcome(e.target.value)}
+                    style={{ width: "auto", fontSize: 15, padding: "8px 10px" }}
+                    aria-label="Call outcome"
+                  >
+                    {(Object.keys(OUTCOME_LABEL) as Outcome[]).map((o) => (
+                      <option key={o} value={o}>
+                        {OUTCOME_LABEL[o]}
+                      </option>
+                    ))}
+                  </select>
+                  {g.close_quality && g.close_quality !== "n/a" && (
+                    <span className={`pill ${g.close_quality === "solid" ? "good" : "poor"}`}>
+                      {g.close_quality === "solid" ? "Solid close" : "Fragile close \u00b7 cancel risk"}
+                    </span>
+                  )}
+                </div>
+                {g.outcome_note && <div className="grade-coach">{g.outcome_note}</div>}
+                {g.close_quality_reason && <div className="grade-coach">{g.close_quality_reason}</div>}
+                {call.outcome_manual && (
+                  <div className="calls-meta">
+                    Corrected by a manager. The grader read it as{" "}
+                    {OUTCOME_LABEL[(call.outcome ?? g.outcome ?? "other") as Outcome]}.
+                  </div>
+                )}
+              </div>
+
+              {(g.turning_points?.length ?? 0) > 0 && (
+                <>
+                  <h2>Turning points</h2>
+                  {g.turning_points!.map((t, i) => (
+                    <div key={i} className={`grade-item turn ${t.direction}`}>
+                      <div className="grade-item-head">
+                        <span>
+                          {t.time !== null && (
+                            <button className="time-link" onClick={() => seek(t.time)}>
+                              {clock(t.time)}
+                            </button>
+                          )}
+                          {t.moment}
+                        </span>
+                        <span className={`pill ${t.direction === "toward" ? "good" : "poor"}`}>
+                          {t.direction === "toward" ? "Toward yes" : "Away from yes"}
+                        </span>
+                      </div>
+                      <div className="grade-coach">{t.why}</div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </>
+          )}
+
           {g.coaching_priorities.length > 0 && (
             <>
               <h2>Coach on</h2>
@@ -366,6 +457,117 @@ export default function CallDetail() {
                   <li key={i}>{c}</li>
                 ))}
               </ul>
+            </>
+          )}
+
+          {((g.slp?.length ?? 0) > 0 || (g.emotional_arc?.length ?? 0) > 0) && (
+            <>
+              <h2>Straight Line</h2>
+              {g.slp_summary && <p style={{ lineHeight: 1.6, marginTop: 0 }}>{g.slp_summary}</p>}
+
+          </>
+          )}
+
+          {(g.emotional_arc?.length ?? 0) > 0 && (
+            <>
+              <h2>
+                Emotional roadmap
+                {arcScoreOf(g) !== null && (
+                  <span className={`pill ${scoreBand(arcScoreOf(g))}`} style={{ marginLeft: 10 }}>
+                    {arcScoreOf(g)}
+                  </span>
+                )}
+              </h2>
+              <p className="muted" style={{ marginTop: 0 }}>
+                The backbone of the sale: what each stage is built to make the client feel, and what the
+                client actually showed. Half of the Straight Line score.
+              </p>
+              {g.emotional_arc!.map((a, i) => (
+                <div key={i} className={`grade-item arc ${a.landed}`}>
+                  <div className="grade-item-head">
+                    <span>{a.stage}</span>
+                    <span className={`pill ${ARC_PILL[a.landed] ?? ""}`}>{ARC_LABEL[a.landed] ?? a.landed}</span>
+                  </div>
+                  {a.landed !== "not_reached" && (
+                    <div className="arc-feel">
+                      <span className="muted">Built to feel:</span> {a.intended}
+                      <br />
+                      <span className="muted">Client showed:</span> {a.observed}
+                    </div>
+                  )}
+                  {a.evidence && (
+                    <div className="grade-quote">
+                      {a.time !== null && (
+                        <button className="time-link" onClick={() => seek(a.time)}>
+                          {clock(a.time)}
+                        </button>
+                      )}
+                      &ldquo;{a.evidence}&rdquo;
+                    </div>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
+
+          {(g.slp?.length ?? 0) > 0 && (
+            <>
+              <h2>
+                Straight Line skills
+                {skillsScoreOf(g) !== null && (
+                  <span className={`pill ${scoreBand(skillsScoreOf(g))}`} style={{ marginLeft: 10 }}>
+                    {skillsScoreOf(g)}
+                  </span>
+                )}
+              </h2>
+              <p className="muted" style={{ marginTop: 0 }}>The other half of the Straight Line score.</p>
+
+              {g.three_tens && (
+                <div className="tens">
+                  {(
+                    [
+                      ["Product", g.three_tens.product],
+                      ["Rep", g.three_tens.rep],
+                      ["Company", g.three_tens.company],
+                    ] as [string, number | null][]
+                  ).map(([name, n]) => (
+                    <div key={name} className="ten">
+                      <div className={`ten-n ${n === null ? "" : scoreBand(n * 10)}`}>{n ?? "\u2013"}</div>
+                      <div className="muted" style={{ fontSize: 12 }}>{name} certainty</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {g.three_tens?.evidence && (
+                <p className="muted" style={{ marginTop: 6 }}>{g.three_tens.evidence}</p>
+              )}
+
+              {g.slp!.map((k, i) => (
+                <div key={i} className="grade-item">
+                  <div className="grade-item-head">
+                    <span>{k.skill}</span>
+                    <span className={`pill ${k.score === null ? "" : scoreBand(k.score * 10)}`}>
+                      {k.score === null ? "n/a" : `${k.score}/10`}
+                    </span>
+                  </div>
+                  {k.score !== null && (
+                    <div className="meter">
+                      <div className={scoreBand(k.score * 10)} style={{ width: `${k.score * 10}%` }} />
+                    </div>
+                  )}
+                  {k.evidence && (
+                    <div className="grade-quote">
+                      {k.time !== null && (
+                        <button className="time-link" onClick={() => seek(k.time)}>
+                          {clock(k.time)}
+                        </button>
+                      )}
+                      &ldquo;{k.evidence}&rdquo;
+                    </div>
+                  )}
+                  {k.coaching && <div className="grade-coach">{k.coaching}</div>}
+                </div>
+              ))}
             </>
           )}
 
@@ -438,7 +640,7 @@ export default function CallDetail() {
           )}
 
           <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>
-            {g.model ? `Graded by ${modelName(g.model)}. ` : ""}Graded from the words only, not tone of voice. The score counts sections the call reached:
+            {g.model ? `Graded by ${modelName(g.model)}. ` : ""}Graded from the words only, not tone of voice. The Straight Line score is half the emotional roadmap, half the skills. The script score counts sections the call reached:
             hit = full credit, partial = half.
           </p>
         </>

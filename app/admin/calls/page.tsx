@@ -5,7 +5,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { startJob } from "@/lib/callsClient";
-import { STATUS_LABEL, clock, isStuck, money, scoreBand, type CallCost, type CallStatus } from "@/lib/calls";
+import {
+  OUTCOME_LABEL,
+  STATUS_LABEL,
+  clock,
+  isStuck,
+  money,
+  scoreBand,
+  type CallCost,
+  type CallStatus,
+  type Outcome,
+} from "@/lib/calls";
 import { shrinkAudio, SHRINK_OVER_BYTES } from "@/lib/shrinkAudio";
 import "./calls.css";
 
@@ -22,6 +32,10 @@ type CallRow = {
   duration_secs: number | null;
   status: CallStatus;
   score: number | null;
+  slp_score: number | null;
+  outcome: Outcome | null;
+  outcome_manual: Outcome | null;
+  close_quality: string | null;
   error: string | null;
   script_id: string | null;
   updated_at: string;
@@ -85,6 +99,7 @@ export default function Calls() {
   const [callDate, setCallDate] = useState(today());
   const [busy, setBusy] = useState("");
   const [filterRep, setFilterRep] = useState("");
+  const [filterOutcome, setFilterOutcome] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
 
   // Grading is started from here once a transcript lands. Remember which
@@ -95,7 +110,7 @@ export default function Calls() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, rep_id, client_label, call_date, duration_secs, status, score, error, script_id, updated_at, created_at, cost, profiles:rep_id(full_name)"
+        "id, rep_id, client_label, call_date, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, error, script_id, updated_at, created_at, cost, profiles:rep_id(full_name)"
       )
       .order("created_at", { ascending: false })
       .limit(300);
@@ -259,9 +274,17 @@ export default function Calls() {
     router.push(`/admin/calls/${row.id}`);
   }
 
+  const outcomeOf = (c: CallRow): Outcome | null => c.outcome_manual ?? c.outcome;
+
   const shown = useMemo(
-    () => (filterRep ? calls.filter((c) => c.rep_id === filterRep) : calls),
-    [calls, filterRep]
+    () =>
+      calls.filter(
+        (c) =>
+          (!filterRep || c.rep_id === filterRep) &&
+          (!filterOutcome ||
+            (filterOutcome === "fragile" ? c.close_quality === "fragile" : outcomeOf(c) === filterOutcome))
+      ),
+    [calls, filterRep, filterOutcome]
   );
 
   const repsWithCalls = useMemo(() => {
@@ -373,6 +396,21 @@ export default function Calls() {
 
       <div className="row" style={{ marginTop: 28, justifyContent: "space-between" }}>
         <h2 style={{ margin: 0 }}>Calls</h2>
+        <span className="row" style={{ gap: 8 }}>
+        <select
+          value={filterOutcome}
+          onChange={(e) => setFilterOutcome(e.target.value)}
+          style={{ width: "auto", fontSize: 14, padding: "8px 10px" }}
+          aria-label="Filter by outcome"
+        >
+          <option value="">All outcomes</option>
+          {(Object.keys(OUTCOME_LABEL) as Outcome[]).map((o) => (
+            <option key={o} value={o}>
+              {OUTCOME_LABEL[o]}
+            </option>
+          ))}
+          <option value="fragile">Fragile closes</option>
+        </select>
         {repsWithCalls.length > 1 && (
           <select
             value={filterRep}
@@ -391,9 +429,12 @@ export default function Calls() {
             })}
           </select>
         )}
+        </span>
       </div>
 
-      {shown.length === 0 && <p className="muted">No calls uploaded yet.</p>}
+      {shown.length === 0 && (
+        <p className="muted">{calls.length === 0 ? "No calls uploaded yet." : "No calls match these filters."}</p>
+      )}
 
       <ul className="list" style={{ marginTop: 10 }}>
         {shown.map((c) => {
@@ -408,10 +449,19 @@ export default function Calls() {
                   <div className="calls-meta">
                     {dateLabel(c.call_date)}
                     {c.duration_secs ? ` · ${clock(c.duration_secs)}` : ""}
+                    {outcomeOf(c) ? ` · ${OUTCOME_LABEL[outcomeOf(c) as Outcome]}` : ""}
+                    {c.close_quality === "fragile" && <span className="danger">{" · fragile close"}</span>}
                   </div>
                 </span>
                 {c.status === "graded" && c.score !== null ? (
-                  <span className={`pill ${band}`}>{c.score}</span>
+                  <span className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
+                    <span className={`pill ${band}`} title="Script score">{c.score}</span>
+                    {c.slp_score !== null && (
+                      <span className={`pill ${scoreBand(c.slp_score)}`} title="Straight Line score">
+                        SLP {c.slp_score}
+                      </span>
+                    )}
+                  </span>
                 ) : (
                   <span
                     className={`pill ${
