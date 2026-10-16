@@ -38,10 +38,13 @@ import {
 import { decodeMono } from "@/lib/shrinkAudio";
 import { measureVoice } from "@/lib/voice";
 import { bleepAudio } from "@/lib/bleep";
+import type { RoleplayInfo } from "@/lib/roleplay";
 import "../calls.css";
 
 type Call = {
   id: string;
+  source: string | null; // "roleplay" for a practice call with a mock client
+  roleplay: RoleplayInfo | null;
   client_label: string | null;
   call_date: string | null;
   file_name: string | null;
@@ -340,7 +343,7 @@ export default function CallDetail() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, retention, cancel_date, cancel_reason, cancel_note, graduated_date, final_credit_score, audio_redact_state, audio_redacted_at, audio_redact_note, grade_history, cost, translation, voice_v:voice->v, script_id, updated_at, rep_id, rep_name, profiles:rep_id(full_name), scripts(title, logo_url)"
+        "id, source, roleplay, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, retention, cancel_date, cancel_reason, cancel_note, graduated_date, final_credit_score, audio_redact_state, audio_redacted_at, audio_redact_note, grade_history, cost, translation, voice_v:voice->v, script_id, updated_at, rep_id, rep_name, profiles:rep_id(full_name), scripts(title, logo_url)"
       )
       .eq("id", callId)
       .single();
@@ -404,9 +407,32 @@ export default function CallDetail() {
   }, [call?.transcript, call?.audio_path, call?.audio_redact_state, audioUrl]);
 
   const audioPath = call?.audio_path;
+  // A practice call's recording stays with ElevenLabs; stream it through.
+  const practiceConv = call?.source === "roleplay" ? call.roleplay?.conversation_id || "" : "";
+  const practiceCallId = practiceConv ? call?.id || "" : "";
+  useEffect(() => {
+    if (audioPath || !practiceCallId) return;
+    let url = "";
+    void (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const res = await fetch(`/api/roleplay/audio?callId=${practiceCallId}`, {
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      }).catch(() => null);
+      if (res?.ok) {
+        url = URL.createObjectURL(await res.blob());
+        setAudioUrl(url);
+      }
+    })();
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [audioPath, practiceCallId, supabase]);
+
   useEffect(() => {
     if (!audioPath) {
-      setAudioUrl("");
+      if (!practiceCallId) setAudioUrl("");
       return;
     }
     void supabase.storage
@@ -586,12 +612,31 @@ export default function CallDetail() {
     void audio.current.play().catch(() => {});
   }
 
+  async function finishPractice(id: string): Promise<string> {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const res = await fetch("/api/roleplay/finish", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session?.access_token ?? ""}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ callId: id }),
+    }).catch(() => null);
+    if (res?.ok) return "";
+    const b = res ? await res.json().catch(() => ({})) : {};
+    return b?.error || "Could not fetch the practice call.";
+  }
+
   async function run(route: "transcribe" | "grade") {
     if (!call) return;
     setWorking(true);
     setError("");
     kicked.current = true;
-    const err = await startJob(supabase, route, call.id);
+    // A practice call has no uploaded audio to transcribe; its transcript
+    // comes from the voice agent.
+    const err =
+      call.source === "roleplay" && route === "transcribe"
+        ? await finishPractice(call.id)
+        : await startJob(supabase, route, call.id);
     if (err) setError(err);
     await load();
     setWorking(false);
@@ -834,6 +879,11 @@ export default function CallDetail() {
           >
             {stuck ? "Stuck" : STATUS_LABEL[call.status]}
           </span>
+          {call.source === "roleplay" && (
+            <span className="pill busy" style={{ marginLeft: 8 }}>
+              Practice call{call.roleplay?.persona_title ? ` · ${call.roleplay.persona_title}` : ""}
+            </span>
+          )}
           {call.retention === "cancelled" && (
             <span className="pill failed" style={{ marginLeft: 8 }}>
               Cancelled

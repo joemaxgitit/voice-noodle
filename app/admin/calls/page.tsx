@@ -133,6 +133,8 @@ export default function Calls() {
       .select(
         "id, rep_id, rep_name, client_label, call_date, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, retention, redaction_count, audio_path, audio_redact_state, error, script_id, updated_at, created_at, cost, lang:transcript->>language, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
       )
+      // Practice calls with a mock client have their own page.
+      .neq("source", "roleplay")
       .order("created_at", { ascending: false })
       .limit(300);
     if (error) setError(error.message);
@@ -424,9 +426,14 @@ export default function Calls() {
         <Link className="btn" href="/admin" style={{ textDecoration: "none" }}>
           &larr; Admin
         </Link>
-        <Link className="btn" href="/admin/calls/insights" style={{ textDecoration: "none" }}>
-          Insights &amp; tuning
-        </Link>
+        <div className="row">
+          <Link className="btn" href="/admin/roleplay" style={{ textDecoration: "none" }}>
+            Practice calls
+          </Link>
+          <Link className="btn" href="/admin/calls/insights" style={{ textDecoration: "none" }}>
+            Insights &amp; tuning
+          </Link>
+        </div>
       </div>
 
       <div className="eyebrow">

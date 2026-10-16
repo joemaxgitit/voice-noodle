@@ -7,6 +7,7 @@
 */
 
 export type CallStatus =
+  | "live" // a practice call still in progress
   | "uploading"
   | "uploaded"
   | "transcribing"
@@ -249,6 +250,8 @@ export type CallCost = {
   grade_output_tokens?: number;
   grade_usd?: number | null; // the latest grading run
   grade_usd_total?: number; // every grading run on this call, re-grades included
+  roleplay_secs?: number; // practice call with a mock client
+  roleplay_usd?: number;
 };
 
 /*
@@ -675,6 +678,7 @@ export function scoreBand(n: number | null): "good" | "fair" | "poor" | "" {
 }
 
 export const STATUS_LABEL: Record<CallStatus, string> = {
+  live: "On the call",
   uploading: "Uploading",
   uploaded: "Queued",
   transcribing: "Transcribing",

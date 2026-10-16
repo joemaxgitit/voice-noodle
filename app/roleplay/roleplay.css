@@ -1,0 +1,251 @@
+/* Practice calls with a mock client. Reads the same tokens as the rest of the app. */
+
+.rp-shell { max-width: 980px; }
+
+.rp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.rp-persona {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.rp-persona h3 { margin: 0; font-size: 17px; letter-spacing: -0.01em; }
+.rp-persona .who { color: var(--muted); font-size: 13px; }
+.rp-persona .facts { font-size: 13px; line-height: 1.5; color: var(--text); }
+.rp-persona button { margin-top: auto; }
+
+.rp-diff { align-self: flex-start; }
+.rp-diff.easy { color: var(--ok); border-color: var(--ok); }
+.rp-diff.medium { color: var(--live); border-color: var(--live); }
+.rp-diff.hard { color: var(--bad); border-color: var(--bad); }
+
+.rp-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+/* ---------- live call ---------- */
+
+.rp-live {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 16px;
+  margin-top: 16px;
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .rp-live { grid-template-columns: 1fr; }
+}
+
+.rp-phone {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 28px 20px;
+  text-align: center;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+
+.rp-phone .name { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.rp-phone .timer { font-family: var(--mono); font-size: 30px; font-variant-numeric: tabular-nums; }
+
+.rp-orb {
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  color: var(--muted);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.rp-orb.speaking {
+  border-color: var(--live);
+  color: var(--live);
+  box-shadow: 0 0 0 8px var(--live-dim);
+  animation: rp-pulse 1.2s ease-in-out infinite;
+}
+
+.rp-orb.listening { border-color: var(--tone); color: var(--tone); }
+
+@keyframes rp-pulse {
+  50% { box-shadow: 0 0 0 14px var(--live-dim); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rp-orb.speaking { animation: none; }
+}
+
+.rp-controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+button.rp-hangup {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: #fff;
+  min-width: 120px;
+}
+
+button.rp-muted { border-color: var(--live); color: var(--live); }
+
+.rp-captions {
+  width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.5;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.rp-captions p { margin: 0 0 6px; }
+.rp-captions b { color: var(--muted); font-weight: 600; }
+
+/* ---------- lead card (what a rep has on screen) ---------- */
+
+.rp-lead { display: flex; flex-direction: column; gap: 12px; }
+
+.rp-lead dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.rp-lead dt { color: var(--muted); }
+.rp-lead dd { margin: 0; }
+
+.rp-reveal {
+  padding: 12px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.rp-reveal.declined { border-style: solid; border-color: var(--bad); }
+.rp-reveal.approved { border-style: solid; border-color: var(--ok); }
+
+.rp-accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rp-accounts th, .rp-accounts td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: left; }
+.rp-accounts th { color: var(--muted); font-weight: 600; }
+.rp-accounts td.num, .rp-accounts th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.rp-accounts tfoot td { font-weight: 700; border-bottom: none; }
+
+/* ---------- results ---------- */
+
+.rp-verdict {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--ink-2);
+  margin-top: 14px;
+}
+
+.rp-verdict.right { border-color: var(--ok); }
+.rp-verdict.wrong { border-color: var(--bad); }
+.rp-verdict.close { border-color: var(--live); }
+.rp-verdict .mark { font-size: 22px; line-height: 1; }
+.rp-verdict.right .mark { color: var(--ok); }
+.rp-verdict.wrong .mark { color: var(--bad); }
+.rp-verdict.close .mark { color: var(--live); }
+
+.rp-section { margin-top: 22px; }
+.rp-section h2 { font-size: 17px; margin: 0 0 10px; }
+
+.rp-list { margin: 0; padding-left: 20px; line-height: 1.6; }
+
+.rp-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 12rem) auto minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+
+@media (max-width: 600px) {
+  .rp-stage { grid-template-columns: 1fr auto; }
+  .rp-stage .obs { grid-column: 1 / -1; }
+}
+
+.rp-stage .obs { color: var(--muted); }
+
+.rp-tens { display: flex; gap: 10px; flex-wrap: wrap; }
+.rp-ten {
+  flex: 1 1 120px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.rp-ten .n { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rp-ten .n small { color: var(--muted); font-weight: 400; font-size: 13px; }
+
+details.rp-secret {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--ink-2);
+}
+details.rp-secret summary { cursor: pointer; font-weight: 600; }
+details.rp-secret p { white-space: pre-wrap; line-height: 1.55; font-size: 14px; }
+
+.rp-transcript p { margin: 0 0 8px; line-height: 1.55; font-size: 14px; }
+.rp-transcript .who { font-weight: 700; margin-right: 6px; }
+.rp-transcript .who.rep { color: var(--live); }
+.rp-transcript .who.client { color: var(--tone); }
+.rp-transcript .t { color: var(--muted); font-family: var(--mono); font-size: 12px; margin-right: 6px; }
+
+.rp-history { margin-top: 30px; }
+.rp-history a.calls-row { text-decoration: none; color: inherit; }
+
+.rp-hist-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  color: inherit;
+  text-decoration: none;
+}
+.rp-hist-row:last-child { border-bottom: none; }
+.rp-hist-row:hover { background: var(--ink-3); }
+
+.rp-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0 14px;
+}
+.rp-form-grid .field { margin-bottom: 10px; }
+.rp-shell input[type="checkbox"] { width: auto; padding: 0; }
+.rp-shell textarea.prose { font-family: var(--font); font-size: 15px; line-height: 1.6; }

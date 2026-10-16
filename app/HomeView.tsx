@@ -32,6 +32,7 @@ export default function HomeView() {
   const [modules, setModules] = useState<ModuleRow[]>([]);
   const [done, setDone] = useState<Set<string>>(new Set());
   const [role, setRole] = useState<string>("rep");
+  const [roleplayOn, setRoleplayOn] = useState(false);
   const [lang, setLangState] = useState<Lang>("en");
   const [name, setName] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -59,7 +60,7 @@ export default function HomeView() {
       const user = session.user;
 
       const [profileRes, scriptRes, moduleRes, progressRes] = await Promise.all([
-        supabase.from("profiles").select("full_name, role").eq("id", user.id).single(),
+        supabase.from("profiles").select("full_name, role, org_id").eq("id", user.id).single(),
         supabase.from("scripts").select("id, title, sort_order, logo_url"),
         supabase
           .from("modules")
@@ -80,6 +81,18 @@ export default function HomeView() {
 
       setName(profileRes.data?.full_name || "");
       setRole(profileRes.data?.role || "rep");
+
+      // Practice calls appear only while a manager has them switched on.
+      if (profileRes.data?.org_id) {
+        supabase
+          .from("orgs")
+          .select("roleplay_enabled")
+          .eq("id", profileRes.data.org_id)
+          .maybeSingle()
+          .then(({ data }) => {
+            if (!cancelled) setRoleplayOn(!!data?.roleplay_enabled);
+          });
+      }
       setScripts(
         (scriptRes.data || []).sort((a, b) => a.sort_order - b.sort_order)
       );
@@ -155,6 +168,11 @@ export default function HomeView() {
           alt=""
         />
         <div className="site-header-actions">
+          {roleplayOn && (
+            <Link className="btn" href="/roleplay" style={{ textDecoration: "none" }}>
+              {lang === "es" ? "Llamada de práctica" : "Practice call"}
+            </Link>
+          )}
           {["admin", "manager"].includes(role) && (
             <Link className="btn" href="/admin" style={{ textDecoration: "none" }}>
               {c.admin}

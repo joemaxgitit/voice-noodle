@@ -157,6 +157,13 @@ export default function Admin() {
           </Link>
           <Link
             className="btn"
+            href="/admin/roleplay"
+            style={{ textDecoration: "none" }}
+          >
+            Practice
+          </Link>
+          <Link
+            className="btn"
             href="/admin/live"
             style={{ textDecoration: "none" }}
           >

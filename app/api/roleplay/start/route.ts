@@ -1,0 +1,86 @@
+import { NextResponse } from "next/server";
+import { requireMember, signedUrl, xiKey } from "@/lib/roleplayServer";
+import type { Persona, RoleplayInfo, RoleplayLang } from "@/lib/roleplay";
+
+export const runtime = "nodejs";
+
+/**
+ * Starts a practice call: checks the switch, files the call, and hands the
+ * browser a one-time link to the mock client's voice agent.
+ * Body: { personaId, lang: "en" | "es" }.
+ */
+export async function POST(request: Request) {
+  const ctx = await requireMember(request);
+  if (ctx instanceof NextResponse) return ctx;
+  const { supabase, userId, orgId } = ctx;
+
+  if (!xiKey()) {
+    return NextResponse.json({ error: "Practice calls are not set up on the server yet (no ElevenLabs key)." }, { status: 500 });
+  }
+
+  const body = (await request.json().catch(() => ({}))) as { personaId?: string; lang?: string };
+  const lang: RoleplayLang = body.lang === "es" ? "es" : "en";
+  if (!body.personaId) return NextResponse.json({ error: "Pick a client first." }, { status: 400 });
+
+  // The switch is enforced here, not just by hiding the button, so a stale
+  // tab cannot keep spending after a manager turns it off.
+  const { data: org } = await supabase.from("orgs").select("roleplay_enabled").eq("id", orgId).single();
+  if (!org?.roleplay_enabled) {
+    return NextResponse.json({ error: "Practice calls are switched off." }, { status: 403 });
+  }
+
+  const { data: personaRow, error } = await supabase
+    .from("roleplay_personas")
+    .select("*")
+    .eq("id", body.personaId)
+    .single();
+  const persona = personaRow as Persona | null;
+  if (error || !persona || !persona.active) {
+    return NextResponse.json({ error: "That client is not available." }, { status: 404 });
+  }
+
+  const agentId = lang === "es" ? persona.agent_es : persona.agent_en;
+  if (!agentId) {
+    return NextResponse.json(
+      { error: "This client's voice is not set up yet. Ask a manager to press \"Sync voice agents\" on the Practice calls page." },
+      { status: 409 }
+    );
+  }
+
+  const info: RoleplayInfo = {
+    persona: persona.name,
+    persona_title: persona.title,
+    lang,
+    agent_id: agentId,
+    conversation_id: null,
+    started_at: new Date().toISOString(),
+  };
+
+  const { data: call, error: insErr } = await supabase
+    .from("calls")
+    .insert({
+      org_id: orgId,
+      uploaded_by: userId,
+      rep_id: userId,
+      source: "roleplay",
+      persona_id: persona.id,
+      script_id: persona.script_id,
+      client_label: `Practice: ${persona.name}`,
+      call_date: new Date().toISOString().slice(0, 10),
+      status: "live",
+      roleplay: info,
+    })
+    .select("id")
+    .single();
+  if (insErr || !call) {
+    return NextResponse.json({ error: `Could not start the call. ${insErr?.message ?? ""}` }, { status: 500 });
+  }
+
+  try {
+    const url = await signedUrl(agentId);
+    return NextResponse.json({ callId: call.id, signedUrl: url, info });
+  } catch (e) {
+    await supabase.from("calls").delete().eq("id", call.id);
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 502 });
+  }
+}
