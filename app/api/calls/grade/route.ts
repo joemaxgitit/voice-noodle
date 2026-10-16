@@ -239,7 +239,7 @@ Add an entry for an OBJECTION LOOP only if that objection came up on the call; n
 - "partial": the rep did the section but left out something that matters. Say what in coaching.
 - "missed": the call got past this point and the rep skipped it.
 - "not_reached": the call ended or was handed off before this point.
-evidence: a short quote from the transcript (20 words or fewer) showing what happened, or "" if missed/not reached. time: the seconds value of that line, or null.
+evidence: a short quote from the transcript (20 words or fewer) showing what happened, or "" if missed/not reached. time: the seconds value of that line, or -1 if there is none.
 coaching: one specific, practical sentence for the rep. "" if nothing to improve.
 
 compliance: every required disclosure or confirmation question that appears in the script itself -- for example the call-recording notice, each compliance question the client must answer yes to, and statements about cancellation rights. One entry each, worded as the item. status "yes" if clearly done (for questions: asked and answered yes), "no" if the call reached that point and it was not done or the answer was not a clear yes, "unclear", or "not_reached".
@@ -249,14 +249,14 @@ flags: anything a compliance reviewer should listen to:
 - anything said that contradicts the client acknowledgements (for example calling the program a loan or debt settlement, or saying the debt is no longer owed);
 - misstatements, pressure, rushing past a client question or hesitation, or a client who sounds confused about what they agreed to;
 - the rep reading sensitive numbers back aloud.
-severity: "high" for anything that could mislead a client about what they are buying or what will happen to them; "medium" for overstated claims; "low" for minor wording. Quote 25 words or fewer.
+severity: "high" for anything that could mislead a client about what they are buying or what will happen to them; "medium" for overstated claims; "low" for minor wording. Quote 25 words or fewer. time: seconds, or -1.
 List at most 15 flags. If there are more, keep the most serious, and prefer claims that are NOT in the script over ones that are. If the same claim is repeated, flag it once.
 
 emotional_arc: this is the backbone of the grade. Exactly one entry per roadmap stage, in roadmap order, using the stage names exactly as written. Find each stage wherever it actually happened on the call. intended: the roadmap feeling for that stage, sharpened with the script's "client should feel" lines where they apply. observed: what the client actually showed, in a few words, judged only from what the client said. landed: "yes" if the client's own words show they reached the feeling, "partial", "no", or "not_reached" if the call never got there.
 A stage only lands if the client genuinely understood. Agreement given while confused ("okay", "I guess") is not a landed pitch, close or contract stage -- mark it "partial" or "no" and say why in observed. If the loan was approved, "Hopeless" did not happen: mark it "not_reached".
-evidence: a short quote of the CLIENT (20 words or fewer) or "", and its time.
+evidence: a short quote of the CLIENT (20 words or fewer) or "", and its time (-1 if none).
 
-slp: exactly these eight skills, in this order, each scored 1-10 (1-3 weak, 4-6 developing, 7-8 solid, 9-10 textbook), or null if the call never gave the rep a chance to show it:
+slp: exactly these eight skills, in this order, each scored 1-10 (1-3 weak, 4-6 developing, 7-8 solid, 9-10 textbook), or 0 if the call never gave the rep a chance to show it:
 - "Control and the straight line": the rep leads the conversation, brings tangents back, and moves the call forward on purpose.
 - "Intelligence gathering": depth and quality of the hardship questions, listening, and summarizing back what the client said.
 - "Rapport and trust (Ten 2)": the client's certainty in the rep as an expert who cares.
@@ -265,18 +265,18 @@ slp: exactly these eight skills, in this order, each scored 1-10 (1-3 weak, 4-6 
 - "Looping": recognizing which Ten is low when the client stalls and running the matching loop.
 - "Action and pain thresholds": raising the client's urgency honestly and lowering the risk they feel about acting.
 - "Tonality cues (from words)": whether the wording fits the tones the script marks, for example I Care language where the script calls for it. Tone of voice cannot be heard here; judge wording only and say so.
-evidence: a short quote (20 words or fewer) and its time, or "". coaching: one specific sentence.
+evidence: a short quote (20 words or fewer) and its time (-1 if none), or "". coaching: one specific sentence.
 
 How Straight Line is scored here -- this matters:
 Straight Line is about building real certainty and closing qualified buyers. A client who says they do not understand, cannot afford it, or want to stop is telling you their product certainty is low or that they may not qualify. In that moment the rep earns credit for slowing down, re-explaining in plain words, and confirming understanding and fit -- or for letting them go and setting a callback. Pushing forward, piling on new claims, or looping past real confusion or real inability to pay is NOT good control or good looping: score it down on "Control", "Product certainty" and "Looping", and it also belongs in flags. Never reward pressure on a client who has not understood what they are agreeing to.
 
-three_tens: your estimate of where the client ended the call on product, rep and company, each 1-10 or null if the call did not get far enough to tell, plus one sentence of evidence.
+three_tens: your estimate of where the client ended the call on product, rep and company, each 1-10, or 0 if the call did not get far enough to tell, plus one sentence of evidence.
 
 slp_summary: two plain sentences on how well the rep ran the Straight Line, naming the roadmap stage where the arc broke (if it did) and why.
 
 outcome: how the call ended for the sale -- "enrolled" (agreement signed or payment set up), "callback" (a specific follow-up was agreed), "not_interested", "hung_up", or "other". outcome_note: a few words, for example "set Nov 15 payment, did not give bank info".
 
-turning_points: the 2 or 3 moments that most moved the client toward yes or away from it. time, moment (what happened, in a few words), direction ("toward" or "away"), why (one sentence). On an enrolled call these explain what earned the yes; on a lost call, where it was lost. Do not award credit for the close itself -- explain what caused it.
+turning_points: the 2 or 3 moments that most moved the client toward yes or away from it. time (seconds), moment (what happened, in a few words), direction ("toward" or "away"), why (one sentence). On an enrolled call these explain what earned the yes; on a lost call, where it was lost. Do not award credit for the close itself -- explain what caused it.
 
 close_quality: only for an enrolled call, otherwise "n/a". "solid" if the client clearly understood what they agreed to (not a loan, not settlement, payments go to Bolton, accounts go to collections, participation required) and chose it freely. "fragile" if they signed while confused, pressured, unable to afford the payment, or after the rep contradicted the acknowledgements -- a fragile close is a cancellation risk. close_quality_reason: one sentence, or "".
 
@@ -304,6 +304,11 @@ Grade this call as instructed above.`;
 /*
   Structured output: the API guarantees the reply matches this schema.
   Every object must say additionalProperties: false.
+
+  Kept deliberately plain -- no enums, no "number or null" unions. Both make
+  the API's compiled grammar bigger, and past a limit it refuses the request
+  ("compiled grammar is too large"). Allowed values are spelled out in the
+  prompt instead and checked in clean() below; "none" is -1 or 0.
 */
 const GRADE_SCHEMA = {
   type: "object",
@@ -338,9 +343,9 @@ const GRADE_SCHEMA = {
           stage: { type: "string" },
           intended: { type: "string" },
           observed: { type: "string" },
-          landed: { type: "string", enum: ["yes", "partial", "no", "not_reached"] },
+          landed: { type: "string" },
           evidence: { type: "string" },
-          time: { type: ["number", "null"] },
+          time: { type: "number" },
         },
       },
     },
@@ -352,9 +357,9 @@ const GRADE_SCHEMA = {
         additionalProperties: false,
         properties: {
           skill: { type: "string" },
-          score: { type: ["integer", "null"] },
+          score: { type: "integer" },
           evidence: { type: "string" },
-          time: { type: ["number", "null"] },
+          time: { type: "number" },
           coaching: { type: "string" },
         },
       },
@@ -364,14 +369,14 @@ const GRADE_SCHEMA = {
       required: ["product", "rep", "company", "evidence"],
       additionalProperties: false,
       properties: {
-        product: { type: ["integer", "null"] },
-        rep: { type: ["integer", "null"] },
-        company: { type: ["integer", "null"] },
+        product: { type: "integer" },
+        rep: { type: "integer" },
+        company: { type: "integer" },
         evidence: { type: "string" },
       },
     },
     slp_summary: { type: "string" },
-    outcome: { type: "string", enum: ["enrolled", "callback", "not_interested", "hung_up", "other"] },
+    outcome: { type: "string" },
     outcome_note: { type: "string" },
     turning_points: {
       type: "array",
@@ -380,14 +385,14 @@ const GRADE_SCHEMA = {
         required: ["time", "moment", "direction", "why"],
         additionalProperties: false,
         properties: {
-          time: { type: ["number", "null"] },
+          time: { type: "number" },
           moment: { type: "string" },
-          direction: { type: "string", enum: ["toward", "away"] },
+          direction: { type: "string" },
           why: { type: "string" },
         },
       },
     },
-    close_quality: { type: "string", enum: ["solid", "fragile", "n/a"] },
+    close_quality: { type: "string" },
     close_quality_reason: { type: "string" },
     speaker_roles: {
       type: "array",
@@ -397,7 +402,7 @@ const GRADE_SCHEMA = {
         additionalProperties: false,
         properties: {
           speaker: { type: "string" },
-          role: { type: "string", enum: ["rep", "client", "am", "other"] },
+          role: { type: "string" },
         },
       },
     },
@@ -411,9 +416,9 @@ const GRADE_SCHEMA = {
         additionalProperties: false,
         properties: {
           section: { type: "string" },
-          status: { type: "string", enum: ["hit", "partial", "missed", "not_reached"] },
+          status: { type: "string" },
           evidence: { type: "string" },
-          time: { type: ["number", "null"] },
+          time: { type: "number" },
           coaching: { type: "string" },
         },
       },
@@ -426,9 +431,9 @@ const GRADE_SCHEMA = {
         additionalProperties: false,
         properties: {
           item: { type: "string" },
-          status: { type: "string", enum: ["yes", "no", "unclear", "not_reached"] },
+          status: { type: "string" },
           evidence: { type: "string" },
-          time: { type: ["number", "null"] },
+          time: { type: "number" },
         },
       },
     },
@@ -439,11 +444,11 @@ const GRADE_SCHEMA = {
         required: ["time", "quote", "issue", "in_script", "severity"],
         additionalProperties: false,
         properties: {
-          time: { type: ["number", "null"] },
+          time: { type: "number" },
           quote: { type: "string" },
           issue: { type: "string" },
           in_script: { type: "boolean" },
-          severity: { type: "string", enum: ["high", "medium", "low"] },
+          severity: { type: "string" },
         },
       },
     },
@@ -467,6 +472,87 @@ function thinkingFor(model: string): { thinking?: { type: string } } {
   return {};
 }
 
+function askClaude(blocks: { type: string; text: string }[], key: string, strict: boolean) {
+  const content = strict
+    ? blocks
+    : [
+        ...blocks,
+        {
+          type: "text",
+          text:
+            "Reply with exactly one JSON object and nothing else -- no prose, no code fences. " +
+            "It must match this JSON Schema:\n" +
+            JSON.stringify(GRADE_SCHEMA),
+        },
+      ];
+  return fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      /*
+        These models think by default, and thinking counts against
+        max_tokens -- on a 90-minute call it used up the whole budget
+        before writing the grade. thinkingFor() turns it off, which also
+        keeps the job well inside Vercel's 5-minute limit.
+      */
+      max_tokens: 32000,
+      ...thinkingFor(MODEL),
+      output_config: strict
+        ? { effort: "high", format: { type: "json_schema", schema: GRADE_SCHEMA } }
+        : { effort: "high" },
+      messages: [{ role: "user", content }],
+    }),
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+  });
+}
+
+/** Maps the schema's plain values back to the app's: -1 and 0 mean "none",
+ *  and anything outside the allowed set falls back to a safe value. */
+function clean(g: Grade) {
+  const t = (n: unknown) => (typeof n === "number" && n >= 0 ? n : null);
+  const one = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T =>
+    allowed.includes(v as T) ? (v as T) : fallback;
+  const ten = (n: unknown) => (typeof n === "number" && n >= 1 ? Math.min(10, Math.round(n)) : null);
+
+  for (const x of g.sections) {
+    x.time = t(x.time);
+    x.status = one(x.status, ["hit", "partial", "missed", "not_reached"] as const, "missed");
+  }
+  for (const x of g.compliance) {
+    x.time = t(x.time);
+    x.status = one(x.status, ["yes", "no", "unclear", "not_reached"] as const, "unclear");
+  }
+  for (const x of g.flags) {
+    x.time = t(x.time);
+    x.severity = one(x.severity, ["high", "medium", "low"] as const, "medium");
+  }
+  for (const x of g.speaker_roles) x.role = one(x.role, ["rep", "client", "am", "other"] as const, "other");
+  for (const x of g.emotional_arc ?? []) {
+    x.time = t(x.time);
+    x.landed = one(x.landed, ["yes", "partial", "no", "not_reached"] as const, "no");
+  }
+  for (const x of g.slp ?? []) {
+    x.time = t(x.time);
+    x.score = ten(x.score);
+  }
+  if (g.three_tens) {
+    g.three_tens.product = ten(g.three_tens.product);
+    g.three_tens.rep = ten(g.three_tens.rep);
+    g.three_tens.company = ten(g.three_tens.company);
+  }
+  for (const x of g.turning_points ?? []) {
+    x.time = t(x.time);
+    x.direction = one(x.direction, ["toward", "away"] as const, "away");
+  }
+  g.outcome = one(g.outcome, ["enrolled", "callback", "not_interested", "hung_up", "other"] as const, "other");
+  g.close_quality = one(g.close_quality, ["solid", "fragile", "n/a"] as const, "n/a");
+}
+
 type Usage = {
   input_tokens?: number;
   output_tokens?: number;
@@ -483,32 +569,19 @@ async function grade(
   prior: { previous: GradeVersion | null; history: GradeVersion[]; cost: CallCost }
 ) {
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        /*
-          These models think by default, and thinking counts against
-          max_tokens -- on a 90-minute call it used up the whole budget
-          before writing the grade. thinkingFor() turns it off, which also
-          keeps the job well inside Vercel's 5-minute limit.
-        */
-        max_tokens: 32000,
-        ...thinkingFor(MODEL),
-        output_config: {
-          effort: "high",
-          format: { type: "json_schema", schema: GRADE_SCHEMA },
-        },
-        messages: [{ role: "user", content: blocks }],
-      }),
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-    });
+    let res = await askClaude(blocks, key, true);
     log("grade", callId, started, `anthropic ${res.status}`);
+
+    // If the API ever refuses the schema again, ask for the same JSON as
+    // plain text rather than failing the grade.
+    if (res.status === 400) {
+      const raw = await res.clone().text().catch(() => "");
+      if (/grammar|schema|too (large|complex)/i.test(raw)) {
+        log("grade", callId, started, "schema refused; retrying without strict format");
+        res = await askClaude(blocks, key, false);
+        log("grade", callId, started, `anthropic (plain) ${res.status}`);
+      }
+    }
 
     if (!res.ok) {
       const raw = await res.text().catch(() => "");
@@ -537,7 +610,10 @@ async function grade(
     const text = data.content?.find((c) => c.type === "text")?.text || "";
     let result: Grade;
     try {
-      result = JSON.parse(text) as Grade;
+      // Strict mode returns bare JSON; the plain fallback may wrap it.
+      const a = text.indexOf("{");
+      const b = text.lastIndexOf("}");
+      result = JSON.parse(a >= 0 && b > a ? text.slice(a, b + 1) : text) as Grade;
     } catch {
       throw new Error("The grader returned something unreadable. Try again.");
     }
@@ -561,6 +637,7 @@ async function grade(
     if (result.outcome) result.outcome = low(result.outcome);
     if (result.close_quality) result.close_quality = low(result.close_quality);
     for (const t of result.turning_points) t.direction = low(t.direction);
+    clean(result);
     result.slp ||= [];
     for (const a of result.emotional_arc) a.landed = low(a.landed);
     // Scores outside 1-10 would skew the average; clamp them.
