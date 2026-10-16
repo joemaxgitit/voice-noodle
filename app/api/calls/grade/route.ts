@@ -167,7 +167,7 @@ Add an entry for an OBJECTION LOOP only if that objection came up on the call; n
 - "partial": the rep did the section but left out something that matters. Say what in coaching.
 - "missed": the call got past this point and the rep skipped it.
 - "not_reached": the call ended or was handed off before this point.
-evidence: a short quote from the transcript (25 words or fewer) showing what happened, or "" if missed/not reached. time: the seconds value of that line, or null.
+evidence: a short quote from the transcript (20 words or fewer) showing what happened, or "" if missed/not reached. time: the seconds value of that line, or null.
 coaching: one specific, practical sentence for the rep. "" if nothing to improve.
 
 compliance: every required disclosure or confirmation question that appears in the script itself -- for example the call-recording notice, each compliance question the client must answer yes to, and statements about cancellation rights. One entry each, worded as the item. status "yes" if clearly done (for questions: asked and answered yes), "no" if the call reached that point and it was not done or the answer was not a clear yes, "unclear", or "not_reached".
@@ -178,6 +178,7 @@ flags: anything a compliance reviewer should listen to:
 - misstatements, pressure, rushing past a client question or hesitation, or a client who sounds confused about what they agreed to;
 - the rep reading sensitive numbers back aloud.
 severity: "high" for anything that could mislead a client about what they are buying or what will happen to them; "medium" for overstated claims; "low" for minor wording. Quote 25 words or fewer.
+List at most 15 flags. If there are more, keep the most serious, and prefer claims that are NOT in the script over ones that are. If the same claim is repeated, flag it once.
 
 furthest_point: one short phrase for where the call ended (for example "Enrolled and handed to account manager" or "Client hung up during options").
 summary: 2-3 plain sentences a busy manager can read in ten seconds.
@@ -281,8 +282,17 @@ async function grade(supabase: Supa, callId: string, prompt: string, key: string
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 12000,
+        /*
+          Sonnet 5.5 thinks by default, and thinking counts against
+          max_tokens -- on a 90-minute call it used up the whole budget
+          before writing the grade. between_tools turns off up-front
+          thinking (there are no tools, so none happens), which also keeps
+          the job well inside Vercel's 5-minute limit.
+        */
+        max_tokens: 32000,
+        thinking: { type: "between_tools" },
         output_config: {
+          effort: "high",
           format: { type: "json_schema", schema: GRADE_SCHEMA.schema },
         },
         messages: [{ role: "user", content: prompt }],
