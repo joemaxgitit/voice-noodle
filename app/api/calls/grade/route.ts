@@ -184,13 +184,15 @@ summary: 2-3 plain sentences a busy manager can read in ten seconds.
 strengths: 2-4 short items. coaching_priorities: the top 3 things for this rep to work on, most important first.
 
 You are grading from words only. Do not judge tone of voice or pacing.
-Submit your result with the submit_grade tool.`;
+Return only the JSON object described by the schema.`;
 }
 
-const GRADE_TOOL = {
-  name: "submit_grade",
-  description: "Submit the graded call review.",
-  input_schema: {
+/*
+  Structured output: the API guarantees the reply matches this schema.
+  Every object must say additionalProperties: false.
+*/
+const GRADE_SCHEMA = {
+  schema: {
     type: "object",
     required: [
       "speaker_roles",
@@ -202,12 +204,14 @@ const GRADE_TOOL = {
       "strengths",
       "coaching_priorities",
     ],
+    additionalProperties: false,
     properties: {
       speaker_roles: {
         type: "array",
         items: {
           type: "object",
           required: ["speaker", "role"],
+          additionalProperties: false,
           properties: {
             speaker: { type: "string" },
             role: { type: "string", enum: ["rep", "client", "am", "other"] },
@@ -221,6 +225,7 @@ const GRADE_TOOL = {
         items: {
           type: "object",
           required: ["section", "status", "evidence", "time", "coaching"],
+          additionalProperties: false,
           properties: {
             section: { type: "string" },
             status: { type: "string", enum: ["hit", "partial", "missed", "not_reached"] },
@@ -235,6 +240,7 @@ const GRADE_TOOL = {
         items: {
           type: "object",
           required: ["item", "status", "evidence", "time"],
+          additionalProperties: false,
           properties: {
             item: { type: "string" },
             status: { type: "string", enum: ["yes", "no", "unclear", "not_reached"] },
@@ -248,6 +254,7 @@ const GRADE_TOOL = {
         items: {
           type: "object",
           required: ["time", "quote", "issue", "in_script", "severity"],
+          additionalProperties: false,
           properties: {
             time: { type: ["number", "null"] },
             quote: { type: "string" },
@@ -275,8 +282,9 @@ async function grade(supabase: Supa, callId: string, prompt: string, key: string
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 12000,
-        tools: [GRADE_TOOL],
-        tool_choice: { type: "tool", name: "submit_grade" },
+        output_config: {
+          format: { type: "json_schema", schema: GRADE_SCHEMA.schema },
+        },
         messages: [{ role: "user", content: prompt }],
       }),
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
@@ -295,25 +303,40 @@ async function grade(supabase: Supa, callId: string, prompt: string, key: string
     }
 
     const data = (await res.json()) as {
-      content?: { type: string; name?: string; input?: unknown }[];
+      content?: { type: string; text?: string }[];
       stop_reason?: string;
     };
-    const use = data.content?.find((c) => c.type === "tool_use" && c.name === "submit_grade");
-    if (!use?.input) {
-      throw new Error(
-        data.stop_reason === "max_tokens"
-          ? "The grade was too long and got cut off. Try again."
-          : "The grader did not return a result."
-      );
+
+    if (data.stop_reason === "refusal") {
+      throw new Error("The grader declined to grade this call.");
+    }
+    if (data.stop_reason === "max_tokens") {
+      throw new Error("The grade was too long and got cut off. Try again.");
     }
 
-    const result = use.input as Grade;
+    const text = data.content?.find((c) => c.type === "text")?.text || "";
+    let result: Grade;
+    try {
+      result = JSON.parse(text) as Grade;
+    } catch {
+      throw new Error("The grader returned something unreadable. Try again.");
+    }
+
     result.sections ||= [];
     result.compliance ||= [];
     result.flags ||= [];
     result.strengths ||= [];
     result.coaching_priorities ||= [];
     result.speaker_roles ||= [];
+
+    // The API can capitalize enum values ("Hit" for "hit"). Normalize so
+    // scoring and the colored pills match.
+    const low = <T extends string>(v: T) => String(v).toLowerCase().replace(/ /g, "_") as T;
+    for (const s of result.sections) s.status = low(s.status);
+    for (const c of result.compliance) c.status = low(c.status);
+    for (const f of result.flags) f.severity = low(f.severity);
+    for (const r of result.speaker_roles) r.role = low(r.role);
+
     result.model = MODEL;
     result.graded_at = new Date().toISOString();
 
