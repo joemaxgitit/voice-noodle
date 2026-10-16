@@ -23,12 +23,22 @@ import "./calls.css";
 
 type Person = { id: string; full_name: string | null; email: string | null; team: string | null; org_id: string | null };
 
+const NEW_REP = "__new";
+
+/** One key per rep, whether they have an account or were typed in by name. */
+const repKeyOf = (c: CallRow): string | null =>
+  c.rep_id ?? (c.rep_name?.trim() ? `name:${c.rep_name.trim().toLowerCase()}` : null);
+
+const repLabelOf = (c: CallRow): string =>
+  c.profiles?.full_name?.trim() || c.rep_name?.trim() || "Unknown rep";
+
 const nameOf = (p: Person) => p.full_name?.trim() || p.email || "Unnamed";
 type ScriptOpt = { id: string; title: string; team: string | null; sort_order: number };
 
 type CallRow = {
   id: string;
   rep_id: string | null;
+  rep_name: string | null; // typed in when the rep has no account yet
   client_label: string | null;
   call_date: string | null;
   duration_secs: number | null;
@@ -99,6 +109,7 @@ export default function Calls() {
 
   const [file, setFile] = useState<File | null>(null);
   const [repId, setRepId] = useState("");
+  const [repName, setRepName] = useState(""); // used when repId is NEW_REP
   const [scriptId, setScriptId] = useState("");
   const [client, setClient] = useState("");
   const [callDate, setCallDate] = useState(today());
@@ -116,7 +127,7 @@ export default function Calls() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, rep_id, client_label, call_date, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, error, script_id, updated_at, created_at, cost, lang:transcript->>language, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
+        "id, rep_id, rep_name, client_label, call_date, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, error, script_id, updated_at, created_at, cost, lang:transcript->>language, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
       )
       .order("created_at", { ascending: false })
       .limit(300);
@@ -187,9 +198,11 @@ export default function Calls() {
     }
   }, [calls, supabase]);
 
-  // Picking a rep picks the script for their team.
+  // Picking a rep picks the script for their team. A typed-in rep has no
+  // team, so the script is left for the manager to choose.
   function chooseRep(id: string) {
     setRepId(id);
+    if (id === NEW_REP) return;
     const team = people.find((p) => p.id === id)?.team;
     const match = scripts.find((s) => s.team && s.team === team);
     if (match) setScriptId(match.id);
@@ -197,8 +210,13 @@ export default function Calls() {
 
   async function upload() {
     setError("");
-    if (!file || !repId || !scriptId || !me?.org_id) {
-      setError("Choose a recording, the rep, and the script.");
+    const typed = repId === NEW_REP ? repName.trim() : "";
+    if (!file || !repId || (repId === NEW_REP && !typed) || !scriptId || !me?.org_id) {
+      setError(
+        repId === NEW_REP && !typed
+          ? "Type the rep's name."
+          : "Choose a recording, the rep, and the script."
+      );
       return;
     }
     // The recording is decoded once, in this browser. That feeds two things:
@@ -264,7 +282,8 @@ export default function Calls() {
       .insert({
         org_id: me.org_id,
         uploaded_by: me.id,
-        rep_id: repId,
+        rep_id: repId === NEW_REP ? null : repId,
+        rep_name: repId === NEW_REP ? typed : null,
         script_id: scriptId,
         client_label: client.trim() || null,
         call_date: callDate || null,
@@ -312,6 +331,7 @@ export default function Calls() {
 
     setFile(null);
     setClient("");
+    setRepName("");
     if (fileInput.current) fileInput.current.value = "";
     router.push(`/admin/calls/${row.id}`);
   }
@@ -322,7 +342,7 @@ export default function Calls() {
     () =>
       calls.filter(
         (c) =>
-          (!filterRep || c.rep_id === filterRep) &&
+          (!filterRep || repKeyOf(c) === filterRep) &&
           (!filterOutcome ||
             (filterOutcome === "fragile" ? c.close_quality === "fragile" : outcomeOf(c) === filterOutcome))
       ),
@@ -330,9 +350,15 @@ export default function Calls() {
   );
 
   const repsWithCalls = useMemo(() => {
-    const ids = new Set(calls.map((c) => c.rep_id));
-    return people.filter((p) => ids.has(p.id));
-  }, [calls, people]);
+    const seen = new Map<string, string>();
+    for (const c of calls) {
+      const key = repKeyOf(c);
+      if (key && !seen.has(key)) seen.set(key, repLabelOf(c));
+    }
+    return [...seen.entries()]
+      .map(([key, label]) => ({ key, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [calls]);
 
   // Estimated spend this calendar month, from each call's recorded cost.
   const monthCost = useMemo(() => {
@@ -349,8 +375,8 @@ export default function Calls() {
   }, [calls]);
 
   // Average graded score per rep, for the filter view.
-  const avgFor = (id: string) => {
-    const s = calls.filter((c) => c.rep_id === id && c.score !== null).map((c) => c.score as number);
+  const avgFor = (key: string) => {
+    const s = calls.filter((c) => repKeyOf(c) === key && c.score !== null).map((c) => c.score as number);
     return s.length ? Math.round(s.reduce((a, b) => a + b, 0) / s.length) : null;
   };
 
@@ -400,7 +426,17 @@ export default function Calls() {
                   {nameOf(p)}
                 </option>
               ))}
+              <option value={NEW_REP}>Not listed &mdash; enter a name&hellip;</option>
             </select>
+            {repId === NEW_REP && (
+              <input
+                autoFocus
+                value={repName}
+                placeholder="Rep's full name"
+                onChange={(e) => setRepName(e.target.value)}
+                style={{ marginTop: 8 }}
+              />
+            )}
           </label>
           <label className="field">
             <span>Grade against</span>
@@ -460,11 +496,11 @@ export default function Calls() {
             style={{ width: "auto", fontSize: 14, padding: "8px 10px" }}
           >
             <option value="">All reps</option>
-            {repsWithCalls.map((p) => {
-              const a = avgFor(p.id);
+            {repsWithCalls.map((r) => {
+              const a = avgFor(r.key);
               return (
-                <option key={p.id} value={p.id}>
-                  {nameOf(p)}
+                <option key={r.key} value={r.key}>
+                  {r.label}
                   {a !== null ? ` (avg ${a})` : ""}
                 </option>
               );
@@ -486,7 +522,7 @@ export default function Calls() {
             <li key={c.id}>
               <Link href={`/admin/calls/${c.id}`}>
                 <span>
-                  {c.profiles?.full_name || "Unknown rep"}
+                  {repLabelOf(c)}
                   {c.client_label ? ` · ${c.client_label}` : ""}
                   <div className="calls-meta">
                     {dateLabel(c.call_date)}

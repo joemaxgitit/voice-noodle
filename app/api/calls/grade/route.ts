@@ -74,7 +74,7 @@ export async function POST(request: Request) {
   const { data: call, error } = await supabase
     .from("calls")
     .select(
-      "id, status, updated_at, transcript, voice, script_id, grade, score, slp_score, grade_history, cost, profiles:rep_id(full_name)"
+      "id, status, updated_at, transcript, voice, script_id, grade, score, slp_score, grade_history, cost, rep_name, profiles:rep_id(full_name)"
     )
     .eq("id", callId)
     .single();
@@ -133,6 +133,7 @@ export async function POST(request: Request) {
 
   const repName =
     (call as unknown as { profiles: { full_name: string | null } | null }).profiles?.full_name ||
+    (call.rep_name as string | null)?.trim() ||
     "the rep";
 
   const voice = (call.voice as VoiceTimeline | null) ?? null;

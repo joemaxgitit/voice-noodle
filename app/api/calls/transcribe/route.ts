@@ -77,7 +77,7 @@ export async function POST(request: Request) {
 
   const { data: call, error } = await supabase
     .from("calls")
-    .select("id, status, updated_at, audio_path, duration_secs, rep_id, profiles:rep_id(full_name)")
+    .select("id, status, updated_at, audio_path, duration_secs, rep_id, rep_name, profiles:rep_id(full_name)")
     .eq("id", callId)
     .single();
 
@@ -122,8 +122,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Could not start. ${claimErr.message}` }, { status: 500 });
   }
 
-  const repName = (call as unknown as { profiles: { full_name: string | null } | null }).profiles
-    ?.full_name;
+  const repName =
+    (call as unknown as { profiles: { full_name: string | null } | null }).profiles?.full_name ||
+    (call.rep_name as string | null)?.trim() ||
+    null;
 
   const audioSecs = Number(call.duration_secs) || null;
 

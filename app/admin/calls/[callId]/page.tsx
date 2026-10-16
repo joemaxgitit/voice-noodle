@@ -56,6 +56,8 @@ type Call = {
   script_id: string | null;
   updated_at: string;
   profiles: { full_name: string | null } | null;
+  rep_id: string | null;
+  rep_name: string | null;
   scripts: { title: string; logo_url: string | null } | null;
 };
 
@@ -91,6 +93,8 @@ export default function CallDetail() {
 
   const [call, setCall] = useState<Call | null>(null);
   const [scripts, setScripts] = useState<{ id: string; title: string }[]>([]);
+  const [people, setPeople] = useState<{ id: string; name: string }[]>([]);
+  const [repDraft, setRepDraft] = useState<string | null>(null); // typed name being edited
   const [audioUrl, setAudioUrl] = useState("");
   const [now, setNow] = useState(0);
   const [error, setError] = useState("");
@@ -122,7 +126,7 @@ export default function CallDetail() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, grade_history, cost, translation, voice_v:voice->v, script_id, updated_at, profiles:rep_id(full_name), scripts(title, logo_url)"
+        "id, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, grade_history, cost, translation, voice_v:voice->v, script_id, updated_at, rep_id, rep_name, profiles:rep_id(full_name), scripts(title, logo_url)"
       )
       .eq("id", callId)
       .single();
@@ -138,6 +142,18 @@ export default function CallDetail() {
       .eq("active", true)
       .order("sort_order")
       .then(({ data }) => setScripts(data || []));
+    void supabase
+      .from("profiles")
+      .select("id, full_name, email, org_id")
+      .eq("active", true)
+      .then(({ data }) =>
+        setPeople(
+          (data || [])
+            .filter((p) => p.org_id)
+            .map((p) => ({ id: p.id as string, name: (p.full_name as string)?.trim() || (p.email as string) || "Unnamed" }))
+            .sort((a, b) => a.name.localeCompare(b.name))
+        )
+      );
   }, [load, supabase]);
 
   // Signed URL for playback, once we know the path.
@@ -228,7 +244,7 @@ export default function CallDetail() {
   // Transcript labels use the names entered at upload: the rep chosen in the
   // dropdown, and the client name if one was typed.
   const label = (r: Role): string => {
-    if (r === "rep") return call?.profiles?.full_name?.trim() || ROLE_LABEL.rep;
+    if (r === "rep") return call?.profiles?.full_name?.trim() || call?.rep_name?.trim() || ROLE_LABEL.rep;
     if (r === "client") return call?.client_label?.trim() || ROLE_LABEL.client;
     return ROLE_LABEL[r];
   };
@@ -270,6 +286,24 @@ export default function CallDetail() {
     const manual = !value || value === call.outcome ? null : (value as Outcome);
     setCall({ ...call, outcome_manual: manual });
     const { error } = await supabase.from("calls").update({ outcome_manual: manual }).eq("id", call.id);
+    if (error) setError(error.message);
+  }
+
+  /*
+    Who the rep is. Picking an account links the call to it (and its name);
+    a typed name is for reps who are not in Voice Noodle yet. Re-grade after
+    changing it so the report uses the new name.
+  */
+  async function setRep(repId: string | null, repName: string | null) {
+    if (!call) return;
+    const person = people.find((p) => p.id === repId);
+    setCall({
+      ...call,
+      rep_id: repId,
+      rep_name: repName,
+      profiles: person ? { full_name: person.name } : null,
+    });
+    const { error } = await supabase.from("calls").update({ rep_id: repId, rep_name: repName }).eq("id", call.id);
     if (error) setError(error.message);
   }
 
@@ -387,7 +421,7 @@ export default function CallDetail() {
             {call.scripts?.title ? ` · ${call.scripts.title}` : ""}
           </div>
           <h1>
-            {call.profiles?.full_name || "Unknown rep"}
+            {call.profiles?.full_name?.trim() || call.rep_name?.trim() || "Unknown rep"}
             {call.client_label ? ` · ${call.client_label}` : ""}
           </h1>
           <span
@@ -906,6 +940,54 @@ export default function CallDetail() {
           below, then Re-grade.
         </p>
       )}
+      <label className="field" style={{ maxWidth: 360 }}>
+        <span>Rep</span>
+        <select
+          value={repDraft !== null ? "__new" : call.rep_id ?? (call.rep_name ? "__typed" : "")}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "__new") setRepDraft(call.rep_id ? "" : call.rep_name ?? "");
+            else if (v && v !== "__typed") {
+              setRepDraft(null);
+              void setRep(v, null);
+            }
+          }}
+        >
+          {!call.rep_id && !call.rep_name && <option value="">Choose&hellip;</option>}
+          {!call.rep_id && call.rep_name && <option value="__typed">{call.rep_name} (typed in)</option>}
+          {people.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+          <option value="__new">Not listed &mdash; enter a name&hellip;</option>
+        </select>
+      </label>
+      {repDraft !== null && (
+        <div className="row" style={{ marginTop: -6, marginBottom: 14, maxWidth: 360 }}>
+          <input
+            autoFocus
+            value={repDraft}
+            placeholder="Rep's full name"
+            onChange={(e) => setRepDraft(e.target.value)}
+            style={{ flex: 1 }}
+          />
+          <button
+            className="primary"
+            disabled={!repDraft.trim()}
+            onClick={() => {
+              void setRep(null, repDraft.trim());
+              setRepDraft(null);
+            }}
+          >
+            Save
+          </button>
+          <button onClick={() => setRepDraft(null)}>Cancel</button>
+        </div>
+      )}
+      <p className="muted" style={{ marginTop: -6 }}>
+        When a typed-in rep gets an account, pick them here to link this call to it. Re-grade after changing the rep.
+      </p>
       <label className="field" style={{ maxWidth: 360 }}>
         <span>Grade against</span>
         <select value={call.script_id || ""} onChange={(e) => setScript(e.target.value)}>
