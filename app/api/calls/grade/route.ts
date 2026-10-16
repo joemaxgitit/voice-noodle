@@ -323,6 +323,21 @@ const GRADE_SCHEMA = {
   },
 };
 
+/*
+  How to switch off up-front thinking differs by model, and sending the wrong
+  one is a 400 error:
+    Sonnet 5.5 -- "between_tools" (no tools here, so no thinking happens)
+    Haiku 5.5  -- "disabled"
+    others     -- leave it out and let the model decide (it still fits:
+                  max_tokens is 32000)
+  All of these are only accepted at effort "high" or below, which we use.
+*/
+function thinkingFor(model: string): { thinking?: { type: string } } {
+  if (model.includes("sonnet-5-5")) return { thinking: { type: "between_tools" } };
+  if (model.includes("haiku-5-5")) return { thinking: { type: "disabled" } };
+  return {};
+}
+
 type Usage = {
   input_tokens?: number;
   output_tokens?: number;
@@ -349,14 +364,13 @@ async function grade(
       body: JSON.stringify({
         model: MODEL,
         /*
-          Sonnet 5.5 thinks by default, and thinking counts against
+          These models think by default, and thinking counts against
           max_tokens -- on a 90-minute call it used up the whole budget
-          before writing the grade. between_tools turns off up-front
-          thinking (there are no tools, so none happens), which also keeps
-          the job well inside Vercel's 5-minute limit.
+          before writing the grade. thinkingFor() turns it off, which also
+          keeps the job well inside Vercel's 5-minute limit.
         */
         max_tokens: 32000,
-        thinking: { type: "between_tools" },
+        ...thinkingFor(MODEL),
         output_config: {
           effort: "high",
           format: { type: "json_schema", schema: GRADE_SCHEMA },
