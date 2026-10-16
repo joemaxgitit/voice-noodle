@@ -49,6 +49,9 @@ type CallRow = {
   outcome_manual: Outcome | null;
   close_quality: string | null;
   retention: string | null;
+  redaction_count: number;
+  audio_path: string | null;
+  audio_redact_state: string | null;
   error: string | null;
   script_id: string | null;
   updated_at: string;
@@ -128,7 +131,7 @@ export default function Calls() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, rep_id, rep_name, client_label, call_date, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, retention, error, script_id, updated_at, created_at, cost, lang:transcript->>language, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
+        "id, rep_id, rep_name, client_label, call_date, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, retention, redaction_count, audio_path, audio_redact_state, error, script_id, updated_at, created_at, cost, lang:transcript->>language, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
       )
       .order("created_at", { ascending: false })
       .limit(300);
@@ -577,6 +580,9 @@ export default function Calls() {
                     {c.close_quality === "fragile" && <span className="danger">{" · fragile close"}</span>}
                     {c.retention === "cancelled" && <strong className="danger">{" · cancelled"}</strong>}
                     {c.retention === "graduated" && <strong className="good-text">{" · graduated"}</strong>}
+                    {c.redaction_count > 0 && c.audio_path && c.audio_redact_state !== "done" && (
+                      <span className="danger">{" · numbers still in recording"}</span>
+                    )}
                   </div>
                 </span>
                 {c.status === "graded" && c.score !== null ? (

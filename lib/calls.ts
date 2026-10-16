@@ -31,10 +31,15 @@ export type Utterance = {
   text: string;
 };
 
+export type Span = { start: number; end: number };
+
 export type Transcript = {
   utterances: Utterance[];
   speakers: string[]; // in order of first appearance
   language?: string | null;
+  /** Where each redacted number was said, in seconds -- used to bleep the
+   *  recording itself. Missing on calls transcribed before this existed. */
+  redact_spans?: Span[];
 };
 
 export type SectionResult = {
@@ -516,7 +521,57 @@ export function buildTranscript(
     }
   }
 
-  return { transcript: { utterances, speakers, language: language ?? null }, redactions: count };
+  return {
+    transcript: { utterances, speakers, language: language ?? null, redact_spans: spansOf(safe, utterances) },
+    redactions: count,
+  };
+}
+
+const isRedacted = (text: string) => /REDACTED\]/.test(text);
+
+/*
+  The stretches of audio to bleep. Each redacted token keeps the start and
+  end of the words it replaced. If a token's times look wrong (missing, or
+  implausibly long), that whole line is bleeped instead -- erring toward
+  removing too much rather than leaving a number audible.
+*/
+function spansOf(tokens: Tok[], utterances: Utterance[]): Span[] {
+  const spans: Span[] = [];
+  for (const t of tokens) {
+    if (!isRedacted(t.text)) continue;
+    if (t.end > t.start && t.end - t.start < 25) spans.push({ start: t.start, end: t.end });
+  }
+  for (const u of utterances) {
+    if (!isRedacted(u.text)) continue;
+    const covered = spans.some((s) => s.start >= u.start - 1 && s.end <= u.end + 1);
+    if (!covered) spans.push({ start: u.start, end: u.end });
+  }
+  return mergeSpans(spans);
+}
+
+/** Overlapping or nearly touching spans become one. */
+export function mergeSpans(spans: Span[], gap = 0.3): Span[] {
+  const sorted = [...spans].sort((a, b) => a.start - b.start);
+  const out: Span[] = [];
+  for (const s of sorted) {
+    const last = out[out.length - 1];
+    if (last && s.start - last.end <= gap) last.end = Math.max(last.end, s.end);
+    else out.push({ ...s });
+  }
+  return out;
+}
+
+/**
+ * What to bleep on a call. Exact spans when the transcript has them; for
+ * calls transcribed before that, every line that had a number redacted.
+ */
+export function bleepPlan(t: Transcript | null): { spans: Span[]; method: "exact" | "lines" } {
+  if (!t) return { spans: [], method: "exact" };
+  if (t.redact_spans) return { spans: t.redact_spans, method: "exact" };
+  return {
+    spans: mergeSpans(t.utterances.filter((u) => isRedacted(u.text)).map((u) => ({ start: u.start, end: u.end }))),
+    method: "lines",
+  };
 }
 
 /* ------------------------------------------------------------------------

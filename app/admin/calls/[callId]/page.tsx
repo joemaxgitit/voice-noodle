@@ -16,6 +16,7 @@ import {
   scoreBand,
   slpScoreOf,
   OUTCOME_LABEL,
+  bleepPlan,
   stageLabel,
   stageTerm,
   CANCEL_REASONS,
@@ -36,6 +37,7 @@ import {
 } from "@/lib/calls";
 import { decodeMono } from "@/lib/shrinkAudio";
 import { measureVoice } from "@/lib/voice";
+import { bleepAudio } from "@/lib/bleep";
 import "../calls.css";
 
 type Call = {
@@ -60,6 +62,9 @@ type Call = {
   retention: Retention | null;
   graduated_date: string | null;
   final_credit_score: number | null;
+  audio_redact_state: "working" | "done" | "failed" | null;
+  audio_redacted_at: string | null;
+  audio_redact_note: string | null;
   cancel_date: string | null;
   cancel_reason: string | null;
   cancel_note: string | null;
@@ -273,6 +278,8 @@ export default function CallDetail() {
   const [voiceDone, setVoiceDone] = useState(false);
   const [fixList, setFixList] = useState<Correction[]>([]);
   const [myOrg, setMyOrg] = useState<string | null>(null);
+  const [bleepBusy, setBleepBusy] = useState("");
+  const kickedBleep = useRef(false);
   // Which part is being printed. The class it puts on <main> tells the print
   // stylesheet what to leave out; cleared again once the print dialog closes.
   const [printMode, setPrintMode] = useState<"report" | "transcript" | null>(null);
@@ -333,7 +340,7 @@ export default function CallDetail() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, retention, cancel_date, cancel_reason, cancel_note, graduated_date, final_credit_score, grade_history, cost, translation, voice_v:voice->v, script_id, updated_at, rep_id, rep_name, profiles:rep_id(full_name), scripts(title, logo_url)"
+        "id, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, retention, cancel_date, cancel_reason, cancel_note, graduated_date, final_credit_score, audio_redact_state, audio_redacted_at, audio_redact_note, grade_history, cost, translation, voice_v:voice->v, script_id, updated_at, rep_id, rep_name, profiles:rep_id(full_name), scripts(title, logo_url)"
       )
       .eq("id", callId)
       .single();
@@ -383,6 +390,19 @@ export default function CallDetail() {
   }, [load, supabase]);
 
   // Signed URL for playback, once we know the path.
+  const bleepStale =
+    call?.audio_redact_state === "working" &&
+    !!call.audio_redacted_at &&
+    Date.now() - new Date(call.audio_redacted_at).getTime() > 10 * 60 * 1000;
+  useEffect(() => {
+    if (!call?.transcript || !call.audio_path || !audioUrl || kickedBleep.current) return;
+    if (call.audio_redact_state === null) {
+      kickedBleep.current = true;
+      void cleanRecording();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [call?.transcript, call?.audio_path, call?.audio_redact_state, audioUrl]);
+
   const audioPath = call?.audio_path;
   useEffect(() => {
     if (!audioPath) {
@@ -435,6 +455,86 @@ export default function CallDetail() {
     recording into this browser and measure it, the same as an upload does.
     Runs here rather than on the server because it is free here.
   */
+  /*
+    Bleep the bank, card and ID numbers out of the stored recording, using
+    the times the transcript recorded for each one. Runs once per call, in
+    this browser, as soon as the transcript exists; the cleaned file
+    replaces the original, which is then deleted.
+
+    The claim (state null -> working) stops two open tabs doing it twice.
+  */
+  async function cleanRecording(retry = false) {
+    if (!call?.audio_path || !call.transcript || !audioUrl) return;
+    setError("");
+    const from = retry ? call.audio_redact_state : null;
+    const claim = supabase
+      .from("calls")
+      .update({ audio_redact_state: "working", audio_redact_note: null, audio_redacted_at: new Date().toISOString() })
+      .eq("id", call.id);
+    const { data: claimed, error: claimErr } = await (from ? claim.eq("audio_redact_state", from) : claim.is("audio_redact_state", null)).select("id");
+    if (claimErr) {
+      // Most likely the SQL for this step has not been run yet.
+      setError(`Could not start cleaning the recording. ${claimErr.message}`);
+      return;
+    }
+    if (!claimed?.length) return; // another tab got there first
+
+    const oldPath = call.audio_path;
+    const plan = bleepPlan(call.transcript);
+    try {
+      if (plan.spans.length === 0) {
+        await supabase
+          .from("calls")
+          .update({ audio_redact_state: "done", audio_redact_note: "No numbers to remove." })
+          .eq("id", call.id);
+        await load();
+        return;
+      }
+
+      setBleepBusy("Downloading recording...");
+      const res = await fetch(audioUrl);
+      if (!res.ok) throw new Error(`Could not download the recording (${res.status}).`);
+      const out = await bleepAudio(await res.arrayBuffer(), plan.spans, call.file_name || "call.mp3", setBleepBusy);
+
+      setBleepBusy("Uploading cleaned recording...");
+      const newPath = `${oldPath.replace(/\.[^./]+$/, "")}-redacted-${Date.now()}.mp3`;
+      const { error: upErr } = await supabase.storage
+        .from("call-audio")
+        .upload(newPath, out.file, { contentType: "audio/mpeg", upsert: false });
+      if (upErr) throw new Error(`Upload failed. ${upErr.message}`);
+
+      const note =
+        `${out.spans} spot${out.spans === 1 ? "" : "s"} bleeped` +
+        (plan.method === "lines" ? " (whole lines, because this call was transcribed before exact timing was kept)" : "");
+      const { error: updErr } = await supabase
+        .from("calls")
+        .update({
+          audio_path: newPath,
+          audio_redact_state: "done",
+          audio_redacted_at: new Date().toISOString(),
+          audio_redact_note: note,
+        })
+        .eq("id", call.id);
+      if (updErr) throw new Error(updErr.message);
+
+      // Only now is the original safe to remove.
+      const { error: rmErr } = await supabase.storage.from("call-audio").remove([oldPath]);
+      if (rmErr) {
+        await supabase
+          .from("calls")
+          .update({ audio_redact_note: `${note}. The original file could not be deleted: ${rmErr.message}` })
+          .eq("id", call.id);
+      }
+    } catch (e) {
+      await supabase
+        .from("calls")
+        .update({ audio_redact_state: "failed", audio_redact_note: e instanceof Error ? e.message : String(e) })
+        .eq("id", call.id);
+    }
+    setBleepBusy("");
+    await load();
+  }
+
   async function analyzeVoice() {
     if (!call || !audioUrl) return;
     setError("");
@@ -747,7 +847,22 @@ export default function CallDetail() {
           {call.redaction_count > 0 && (
             <span className="muted" style={{ marginLeft: 10, fontSize: 13 }}>
               {call.redaction_count} number{call.redaction_count === 1 ? "" : "s"} redacted
+              {call.audio_path &&
+                (bleepBusy
+                  ? ` \u00b7 ${bleepBusy}`
+                  : call.audio_redact_state === "done"
+                    ? " \u00b7 bleeped from recording"
+                    : call.audio_redact_state === "failed" || bleepStale
+                      ? " \u00b7 still in recording"
+                      : call.audio_redact_state === "working"
+                        ? " \u00b7 removing from recording..."
+                        : "")}
             </span>
+          )}
+          {call.audio_path && (call.audio_redact_state === "failed" || bleepStale) && !bleepBusy && (
+            <button className="link-btn no-print" style={{ marginLeft: 8 }} onClick={() => cleanRecording(true)}>
+              Bleep now
+            </button>
           )}
         </div>
         {(shownScore !== null || shownSlp !== null) && (
@@ -1469,6 +1584,17 @@ export default function CallDetail() {
 
       <div className="no-print">
       <h2>Settings</h2>
+      {call.audio_path && call.audio_redact_state === "done" && call.audio_redact_note && (
+        <p className="muted" style={{ marginTop: 0 }}>
+          Recording: {call.audio_redact_note}. Bank, card and ID numbers are replaced with a tone; the original was
+          deleted.
+        </p>
+      )}
+      {call.audio_path && call.audio_redact_state === "failed" && (
+        <div className="error" style={{ marginTop: 0, marginBottom: 12 }}>
+          The numbers are still in this recording. {call.audio_redact_note}
+        </div>
+      )}
       {voiceDone && (
         <div className="note" style={{ marginBottom: 12 }}>
           Voice measured. Press <strong>Re-grade</strong> at the top to grade tonality from it.
