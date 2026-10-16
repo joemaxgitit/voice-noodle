@@ -6,9 +6,12 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { startJob } from "@/lib/callsClient";
 import { STATUS_LABEL, clock, isStuck, scoreBand, type CallStatus } from "@/lib/calls";
+import { shrinkAudio, SHRINK_OVER_BYTES } from "@/lib/shrinkAudio";
 import "./calls.css";
 
-type Person = { id: string; full_name: string | null; team: string | null; org_id: string | null };
+type Person = { id: string; full_name: string | null; email: string | null; team: string | null; org_id: string | null };
+
+const nameOf = (p: Person) => p.full_name?.trim() || p.email || "Unnamed";
 type ScriptOpt = { id: string; title: string; team: string | null; sort_order: number };
 
 type CallRow = {
@@ -108,7 +111,7 @@ export default function Calls() {
       const uid = session?.user.id;
 
       const [peopleRes, scriptRes] = await Promise.all([
-        supabase.from("profiles").select("id, full_name, team, org_id").eq("active", true),
+        supabase.from("profiles").select("id, full_name, email, team, org_id").eq("active", true),
         supabase.from("scripts").select("id, title, team, sort_order").eq("active", true).order("sort_order"),
       ]);
       if (cancelled) return;
@@ -118,7 +121,7 @@ export default function Calls() {
       setPeople(
         all
           .filter((p) => p.org_id)
-          .sort((a, b) => (a.full_name || "").localeCompare(b.full_name || ""))
+          .sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
       );
       setScripts((scriptRes.data || []) as ScriptOpt[]);
       await loadCalls();
@@ -164,16 +167,39 @@ export default function Calls() {
       setError("Choose a recording, the rep, and the script.");
       return;
     }
-    if (file.size > MAX_MB * 1024 * 1024) {
+    // Long calls go over the storage limit, so big files are re-encoded to
+    // small speech-quality MP3 first. See lib/shrinkAudio.ts.
+    let upFile = file;
+    let seconds: number | null = null;
+
+    if (file.size > SHRINK_OVER_BYTES) {
+      setBusy("Compressing 0%...");
+      try {
+        const out = await shrinkAudio(file, (f) =>
+          setBusy(`Compressing ${Math.round(f * 100)}%...`)
+        );
+        upFile = out.file;
+        seconds = out.seconds;
+      } catch (e) {
+        setBusy("");
+        setError(e instanceof Error ? e.message : "Could not compress the recording.");
+        return;
+      }
+    } else {
+      setBusy("Reading file...");
+      seconds = await audioSeconds(file);
+    }
+
+    if (upFile.size > MAX_MB * 1024 * 1024) {
+      setBusy("");
       setError(
-        `That file is ${(file.size / 1048576).toFixed(0)} MB. The storage limit is ${MAX_MB} MB per file -- export it from the dialer as MP3 if it is a WAV.`
+        `Even compressed, this recording is ${(upFile.size / 1048576).toFixed(0)} MB, over the ${MAX_MB} MB storage limit. That is roughly a 3-hour call.`
       );
       return;
     }
 
-    setBusy("Reading file...");
-    const seconds = await audioSeconds(file);
-    const ext = (file.name.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "") || "mp3";
+    const ext =
+      (upFile.name.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "") || "mp3";
 
     setBusy("Saving...");
     const { data: row, error: insErr } = await supabase
@@ -202,7 +228,7 @@ export default function Calls() {
     const path = `${me.org_id}/${row.id}.${ext}`;
     const { error: upErr } = await supabase.storage
       .from("call-audio")
-      .upload(path, file, { contentType: file.type || "audio/mpeg", upsert: false });
+      .upload(path, upFile, { contentType: upFile.type || "audio/mpeg", upsert: false });
 
     if (upErr) {
       await supabase.from("calls").delete().eq("id", row.id);
@@ -288,7 +314,7 @@ export default function Calls() {
               <option value="">Choose&hellip;</option>
               {people.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.full_name || "Unnamed"}
+                  {nameOf(p)}
                 </option>
               ))}
             </select>
@@ -340,7 +366,7 @@ export default function Calls() {
               const a = avgFor(p.id);
               return (
                 <option key={p.id} value={p.id}>
-                  {p.full_name || "Unnamed"}
+                  {nameOf(p)}
                   {a !== null ? ` (avg ${a})` : ""}
                 </option>
               );
