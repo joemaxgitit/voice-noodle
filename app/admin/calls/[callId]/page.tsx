@@ -8,6 +8,7 @@ import { startJob } from "@/lib/callsClient";
 import {
   ROLE_LABEL,
   STATUS_LABEL,
+  money,
   clock,
   isStuck,
   resolveRoles,
@@ -16,6 +17,8 @@ import {
   type Grade,
   type Role,
   type Transcript,
+  type CallCost,
+  type GradeVersion,
 } from "@/lib/calls";
 import "../calls.css";
 
@@ -33,6 +36,8 @@ type Call = {
   speaker_roles: Record<string, Role> | null;
   grade: Grade | null;
   score: number | null;
+  grade_history: GradeVersion[] | null;
+  cost: CallCost | null;
   script_id: string | null;
   updated_at: string;
   profiles: { full_name: string | null } | null;
@@ -73,6 +78,8 @@ export default function CallDetail() {
   const [now, setNow] = useState(0);
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
+  // -1 = the current grade; 0.. = an earlier one from grade_history.
+  const [version, setVersion] = useState(-1);
   const audio = useRef<HTMLAudioElement>(null);
   const kicked = useRef(false);
 
@@ -80,7 +87,7 @@ export default function CallDetail() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, script_id, updated_at, profiles:rep_id(full_name), scripts(title)"
+        "id, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, grade_history, cost, script_id, updated_at, profiles:rep_id(full_name), scripts(title)"
       )
       .eq("id", callId)
       .single();
@@ -207,9 +214,30 @@ export default function CallDetail() {
     );
   }
 
-  const g = call.grade;
+  const history = call.grade_history ?? [];
+  const viewing: GradeVersion | null =
+    version >= 0 && history[version]
+      ? history[version]
+      : call.grade
+        ? { grade: call.grade, score: call.score }
+        : null;
+  const g = viewing?.grade ?? null;
+  const shownScore = viewing?.score ?? null;
+  const modelName = (m?: string) =>
+    !m ? "" : m.includes("haiku") ? "Haiku" : m.includes("sonnet") ? "Sonnet" : m.includes("opus") ? "Opus" : m;
+  const versionLabel = (v: GradeVersion, i: number) =>
+    `${i < 0 ? "Latest" : "Earlier"} \u00b7 ${v.score ?? "-"} \u00b7 ${modelName(v.grade.model)}${
+      v.grade.graded_at
+        ? ` \u00b7 ${new Date(v.grade.graded_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
+        : ""
+    }`;
+  const cost = call.cost;
+  const totalCost =
+    cost && (cost.transcribe_usd !== undefined || cost.grade_usd_total !== undefined)
+      ? (cost.transcribe_usd ?? 0) + (cost.grade_usd_total ?? 0)
+      : null;
   const stuck = isStuck(call.status, call.updated_at);
-  const band = scoreBand(call.score);
+  const band = scoreBand(shownScore);
   const utterances = call.transcript?.utterances ?? [];
   const speakers = call.transcript?.speakers ?? [];
   const flags = [...(g?.flags ?? [])].sort(
@@ -246,9 +274,9 @@ export default function CallDetail() {
             </span>
           )}
         </div>
-        {call.score !== null && (
+        {shownScore !== null && (
           <div style={{ textAlign: "right" }}>
-            <div className={`score-big ${band}`}>{call.score}</div>
+            <div className={`score-big ${band}`}>{shownScore}</div>
             <div className="muted" style={{ fontSize: 12 }}>
               script score
             </div>
@@ -295,6 +323,20 @@ export default function CallDetail() {
             onTimeUpdate={(e) => setNow(e.currentTarget.currentTime)}
           />
         </div>
+      )}
+
+      {history.length > 0 && call.grade && (
+        <label className="field" style={{ maxWidth: 420, marginTop: 18 }}>
+          <span>Grade shown</span>
+          <select value={version} onChange={(e) => setVersion(Number(e.target.value))}>
+            <option value={-1}>{versionLabel({ grade: call.grade, score: call.score }, -1)}</option>
+            {history.map((v, i) => (
+              <option key={i} value={i}>
+                {versionLabel(v, i)}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
 
       {g && (
@@ -396,7 +438,7 @@ export default function CallDetail() {
           )}
 
           <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>
-            Graded from the words only, not tone of voice. The score counts sections the call reached:
+            {g.model ? `Graded by ${modelName(g.model)}. ` : ""}Graded from the words only, not tone of voice. The score counts sections the call reached:
             hit = full credit, partial = half.
           </p>
         </>
@@ -464,6 +506,17 @@ export default function CallDetail() {
         After changing the script, press Re-grade.
         {call.file_name ? ` Original file: ${call.file_name}.` : ""}
       </p>
+      {totalCost !== null && cost && (
+        <p className="muted" style={{ marginTop: 0 }}>
+          Processing cost (estimate from list prices): <strong>{money(totalCost)}</strong>
+          {" \u2014 "}transcription {money(cost.transcribe_usd)}
+          {cost.grade_usd_total !== undefined ? `, grading ${money(cost.grade_usd_total)}` : ""}
+          {cost.grade_usd_total !== undefined && cost.grade_usd !== cost.grade_usd_total
+            ? ` across all grades (latest ${money(cost.grade_usd)})`
+            : ""}
+          {cost.grade_cache_read_tokens ? " \u00b7 script read from cache" : ""}
+        </p>
+      )}
       <div className="row">
         {call.audio_path && (
           <button className="danger" onClick={deleteAudio}>

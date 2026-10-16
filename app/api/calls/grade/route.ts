@@ -1,5 +1,14 @@
 import { NextResponse, after } from "next/server";
-import { isStuck, scoreOf, type CallStatus, type Grade, type Transcript } from "@/lib/calls";
+import {
+  gradeCostUsd,
+  isStuck,
+  scoreOf,
+  type CallCost,
+  type CallStatus,
+  type Grade,
+  type GradeVersion,
+  type Transcript,
+} from "@/lib/calls";
 import { requireAdmin, failCall, log, type Supa } from "@/lib/callsServer";
 
 export const runtime = "nodejs";
@@ -7,10 +16,12 @@ export const maxDuration = 300;
 
 const UPSTREAM_TIMEOUT_MS = 270_000;
 const MODEL = process.env.GRADER_MODEL || "claude-sonnet-5-5";
+const HISTORY_KEEP = 10;
 
 type ModuleRow = {
   title: string;
   kind: string | null;
+  language: string | null;
   sort_order: number;
   segments: {
     segment_code: string;
@@ -20,6 +31,12 @@ type ModuleRow = {
     active: boolean;
   }[];
 };
+
+/** "en" or "es" from whatever code the transcriber returned ("eng", "spa", "es-MX"...). */
+function langOf(code: string | null | undefined): "en" | "es" {
+  const c = (code || "").toLowerCase();
+  return c.startsWith("es") || c.startsWith("spa") ? "es" : "en";
+}
 
 /**
  * Grades a transcribed call against its script. Returns at once; the work
@@ -51,7 +68,9 @@ export async function POST(request: Request) {
 
   const { data: call, error } = await supabase
     .from("calls")
-    .select("id, status, updated_at, transcript, script_id, call_date, client_label, profiles:rep_id(full_name)")
+    .select(
+      "id, status, updated_at, transcript, script_id, grade, score, grade_history, cost, profiles:rep_id(full_name)"
+    )
     .eq("id", callId)
     .single();
 
@@ -74,7 +93,7 @@ export async function POST(request: Request) {
     supabase.from("scripts").select("title").eq("id", call.script_id).single(),
     supabase
       .from("modules")
-      .select("title, kind, sort_order, segments(segment_code, title, script_text, sort_order, active)")
+      .select("title, kind, language, sort_order, segments(segment_code, title, script_text, sort_order, active)")
       .eq("script_id", call.script_id)
       .eq("active", true)
       .order("sort_order"),
@@ -86,6 +105,18 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+
+  /*
+    The Options Script holds English and Spanish versions of every section.
+    Grade only against the language of the call: half the script tokens, and
+    no "Apertura -- not reached" rows on an English call. If a script has no
+    modules marked for that language, use them all.
+  */
+  const transcript = call.transcript as Transcript;
+  const lang = langOf(transcript.language);
+  const all = modules as unknown as ModuleRow[];
+  const sameLang = all.filter((m) => (m.language || "en") === lang);
+  const useModules = sameLang.length > 0 ? sameLang : all;
 
   const { error: claimErr } = await supabase
     .from("calls")
@@ -99,27 +130,32 @@ export async function POST(request: Request) {
     (call as unknown as { profiles: { full_name: string | null } | null }).profiles?.full_name ||
     "the rep";
 
-  const prompt = buildPrompt(
-    script?.title || "Script",
-    modules as unknown as ModuleRow[],
-    call.transcript as Transcript,
-    repName
+  const blocks = buildPrompt(script?.title || "Script", useModules, transcript, repName);
+
+  const previous: GradeVersion | null =
+    call.grade && call.score !== undefined
+      ? { grade: call.grade as Grade, score: call.score as number | null }
+      : null;
+
+  after(() =>
+    grade(supabase, callId, blocks, key, started, {
+      previous,
+      history: (call.grade_history as GradeVersion[] | null) || [],
+      cost: (call.cost as CallCost | null) || {},
+    })
   );
 
-  after(() => grade(supabase, callId, prompt, key, started));
-
-  log("grade", callId, started, "accepted");
+  log("grade", callId, started, `accepted (${lang}, ${useModules.length} modules)`);
   return NextResponse.json({ ok: true }, { status: 202 });
 }
 
-function scriptText(modules: ModuleRow[]): { text: string; sequence: string[]; loops: string[] } {
+function scriptText(modules: ModuleRow[]): { text: string; sequence: string[] } {
   const sequence: string[] = [];
-  const loops: string[] = [];
   const blocks: string[] = [];
 
   for (const m of modules) {
     const isLoop = m.kind === "loop";
-    (isLoop ? loops : sequence).push(m.title);
+    if (!isLoop) sequence.push(m.title);
     const segs = (m.segments || [])
       .filter((s) => s.active !== false)
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -128,7 +164,7 @@ function scriptText(modules: ModuleRow[]): { text: string; sequence: string[]; l
     blocks.push(`### ${isLoop ? "OBJECTION LOOP" : "SECTION"}: ${m.title}\n${segs}`);
   }
 
-  return { text: blocks.join("\n\n"), sequence, loops };
+  return { text: blocks.join("\n\n"), sequence };
 }
 
 function transcriptText(t: Transcript): string {
@@ -139,26 +175,31 @@ function transcriptText(t: Transcript): string {
   return out;
 }
 
-function buildPrompt(scriptTitle: string, modules: ModuleRow[], t: Transcript, repName: string): string {
+/**
+ * Two blocks. The first -- instructions plus script -- is identical for every
+ * call on the same script, so it is cached: calls graded within a few minutes
+ * of each other pay ~5% of the normal price for it. The second block is the
+ * part that changes per call. Keep anything call-specific OUT of the first
+ * block, or the cache never hits.
+ */
+function buildPrompt(scriptTitle: string, modules: ModuleRow[], t: Transcript, repName: string) {
   const s = scriptText(modules);
-  return `You are reviewing a recorded phone call for a sales manager who coaches reps on a script. Grade how well the rep followed the script, and flag anything a compliance reviewer should hear.
 
-The rep's name is ${repName}. The script is "${scriptTitle}".
+  const stable = `You are reviewing a recorded phone call for a sales manager who coaches reps on a script. Grade how well the rep followed the script, and flag anything a compliance reviewer should hear.
+
+The script is "${scriptTitle}".
 
 <script>
 ${s.text}
 </script>
 
-<transcript>
-Each line is [seconds from start] speaker_id: words.
-Speaker ids come from automatic diarization and can be imperfect. If the ids are "agent" and "customer", those are the transcriber's own guess -- check them against what is said.
+The transcript will follow. Each line is [seconds from start] speaker_id: words.
+Speaker ids come from automatic diarization and can be imperfect -- work out who is who from what is said.
 Banking and ID numbers have been removed and appear as [REDACTED] or [... REDACTED]. That is expected; never penalize it.
-${transcriptText(t)}
-</transcript>
 
 How to grade:
 
-speaker_roles: one entry per speaker id in the transcript. role is "rep" (${repName}), "client", "am" (an account manager conferenced in near the end), or "other".
+speaker_roles: one entry per speaker id in the transcript. role is "rep" (the rep named below), "client", "am" (an account manager conferenced in near the end), or "other".
 
 sections: exactly one entry for each SECTION below, in this order:
 ${s.sequence.map((x) => `- ${x}`).join("\n")}
@@ -186,6 +227,19 @@ strengths: 2-4 short items. coaching_priorities: the top 3 things for this rep t
 
 You are grading from words only. Do not judge tone of voice or pacing.
 Return only the JSON object described by the schema.`;
+
+  const perCall = `The rep on this call is ${repName}.
+
+<transcript>
+${transcriptText(t)}
+</transcript>
+
+Grade this call as instructed above.`;
+
+  return [
+    { type: "text", text: stable, cache_control: { type: "ephemeral" } },
+    { type: "text", text: perCall },
+  ];
 }
 
 /*
@@ -193,85 +247,97 @@ Return only the JSON object described by the schema.`;
   Every object must say additionalProperties: false.
 */
 const GRADE_SCHEMA = {
-  schema: {
-    type: "object",
-    required: [
-      "speaker_roles",
-      "summary",
-      "furthest_point",
-      "sections",
-      "compliance",
-      "flags",
-      "strengths",
-      "coaching_priorities",
-    ],
-    additionalProperties: false,
-    properties: {
-      speaker_roles: {
-        type: "array",
-        items: {
-          type: "object",
-          required: ["speaker", "role"],
-          additionalProperties: false,
-          properties: {
-            speaker: { type: "string" },
-            role: { type: "string", enum: ["rep", "client", "am", "other"] },
-          },
+  type: "object",
+  required: [
+    "speaker_roles",
+    "summary",
+    "furthest_point",
+    "sections",
+    "compliance",
+    "flags",
+    "strengths",
+    "coaching_priorities",
+  ],
+  additionalProperties: false,
+  properties: {
+    speaker_roles: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["speaker", "role"],
+        additionalProperties: false,
+        properties: {
+          speaker: { type: "string" },
+          role: { type: "string", enum: ["rep", "client", "am", "other"] },
         },
       },
-      summary: { type: "string" },
-      furthest_point: { type: "string" },
-      sections: {
-        type: "array",
-        items: {
-          type: "object",
-          required: ["section", "status", "evidence", "time", "coaching"],
-          additionalProperties: false,
-          properties: {
-            section: { type: "string" },
-            status: { type: "string", enum: ["hit", "partial", "missed", "not_reached"] },
-            evidence: { type: "string" },
-            time: { type: ["number", "null"] },
-            coaching: { type: "string" },
-          },
-        },
-      },
-      compliance: {
-        type: "array",
-        items: {
-          type: "object",
-          required: ["item", "status", "evidence", "time"],
-          additionalProperties: false,
-          properties: {
-            item: { type: "string" },
-            status: { type: "string", enum: ["yes", "no", "unclear", "not_reached"] },
-            evidence: { type: "string" },
-            time: { type: ["number", "null"] },
-          },
-        },
-      },
-      flags: {
-        type: "array",
-        items: {
-          type: "object",
-          required: ["time", "quote", "issue", "in_script", "severity"],
-          additionalProperties: false,
-          properties: {
-            time: { type: ["number", "null"] },
-            quote: { type: "string" },
-            issue: { type: "string" },
-            in_script: { type: "boolean" },
-            severity: { type: "string", enum: ["high", "medium", "low"] },
-          },
-        },
-      },
-      strengths: { type: "array", items: { type: "string" } },
-      coaching_priorities: { type: "array", items: { type: "string" } },
     },
+    summary: { type: "string" },
+    furthest_point: { type: "string" },
+    sections: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["section", "status", "evidence", "time", "coaching"],
+        additionalProperties: false,
+        properties: {
+          section: { type: "string" },
+          status: { type: "string", enum: ["hit", "partial", "missed", "not_reached"] },
+          evidence: { type: "string" },
+          time: { type: ["number", "null"] },
+          coaching: { type: "string" },
+        },
+      },
+    },
+    compliance: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["item", "status", "evidence", "time"],
+        additionalProperties: false,
+        properties: {
+          item: { type: "string" },
+          status: { type: "string", enum: ["yes", "no", "unclear", "not_reached"] },
+          evidence: { type: "string" },
+          time: { type: ["number", "null"] },
+        },
+      },
+    },
+    flags: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["time", "quote", "issue", "in_script", "severity"],
+        additionalProperties: false,
+        properties: {
+          time: { type: ["number", "null"] },
+          quote: { type: "string" },
+          issue: { type: "string" },
+          in_script: { type: "boolean" },
+          severity: { type: "string", enum: ["high", "medium", "low"] },
+        },
+      },
+    },
+    strengths: { type: "array", items: { type: "string" } },
+    coaching_priorities: { type: "array", items: { type: "string" } },
   },
 };
 
-async function grade(supabase: Supa, callId: string, prompt: string, key: string, started: number) {
+type Usage = {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+};
+
+async function grade(
+  supabase: Supa,
+  callId: string,
+  blocks: { type: string; text: string }[],
+  key: string,
+  started: number,
+  prior: { previous: GradeVersion | null; history: GradeVersion[]; cost: CallCost }
+) {
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -293,9 +359,9 @@ async function grade(supabase: Supa, callId: string, prompt: string, key: string
         thinking: { type: "between_tools" },
         output_config: {
           effort: "high",
-          format: { type: "json_schema", schema: GRADE_SCHEMA.schema },
+          format: { type: "json_schema", schema: GRADE_SCHEMA },
         },
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "user", content: blocks }],
       }),
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
@@ -315,6 +381,7 @@ async function grade(supabase: Supa, callId: string, prompt: string, key: string
     const data = (await res.json()) as {
       content?: { type: string; text?: string }[];
       stop_reason?: string;
+      usage?: Usage;
     };
 
     if (data.stop_reason === "refusal") {
@@ -350,6 +417,31 @@ async function grade(supabase: Supa, callId: string, prompt: string, key: string
     result.model = MODEL;
     result.graded_at = new Date().toISOString();
 
+    const u = data.usage || {};
+    const usd = gradeCostUsd(MODEL, u);
+    const cost: CallCost = {
+      ...prior.cost,
+      grade_model: MODEL,
+      grade_input_tokens: u.input_tokens ?? 0,
+      grade_cache_read_tokens: u.cache_read_input_tokens ?? 0,
+      grade_cache_write_tokens: u.cache_creation_input_tokens ?? 0,
+      grade_output_tokens: u.output_tokens ?? 0,
+      grade_usd: usd,
+      // Every grading run is a real charge, including re-grades.
+      grade_usd_total: (prior.cost.grade_usd_total ?? 0) + (usd ?? 0),
+    };
+
+    // The grade being replaced goes into history, newest first.
+    // (A failed attempt leaves the old grade in place, so a retry would
+    // otherwise file the same grade twice.)
+    const prev = prior.previous;
+    const alreadyFiled =
+      !!prev && prior.history[0]?.grade?.graded_at === prev.grade.graded_at;
+    const history =
+      prev && !alreadyFiled
+        ? [prev, ...prior.history].slice(0, HISTORY_KEEP)
+        : prior.history;
+
     const { error } = await supabase
       .from("calls")
       .update({
@@ -357,12 +449,19 @@ async function grade(supabase: Supa, callId: string, prompt: string, key: string
         error: null,
         grade: result,
         score: scoreOf(result),
+        grade_history: history,
+        cost,
         updated_at: new Date().toISOString(),
       })
       .eq("id", callId);
 
     if (error) throw new Error(`Could not save the grade. ${error.message}`);
-    log("grade", callId, started, "saved");
+    log(
+      "grade",
+      callId,
+      started,
+      `saved; in ${u.input_tokens} cache-read ${u.cache_read_input_tokens} cache-write ${u.cache_creation_input_tokens} out ${u.output_tokens}`
+    );
   } catch (e) {
     const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
     await failCall(

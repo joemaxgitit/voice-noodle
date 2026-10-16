@@ -1,5 +1,5 @@
 import { NextResponse, after } from "next/server";
-import { buildTranscript, isStuck, type CallStatus, type ScribeWord } from "@/lib/calls";
+import { buildTranscript, isStuck, transcribeCostUsd, type CallStatus, type ScribeWord } from "@/lib/calls";
 import { requireAdmin, failCall, log, type Supa } from "@/lib/callsServer";
 
 export const runtime = "nodejs";
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
 
   const { data: call, error } = await supabase
     .from("calls")
-    .select("id, status, updated_at, audio_path, rep_id, profiles:rep_id(full_name)")
+    .select("id, status, updated_at, audio_path, duration_secs, rep_id, profiles:rep_id(full_name)")
     .eq("id", callId)
     .single();
 
@@ -123,7 +123,11 @@ export async function POST(request: Request) {
   const repName = (call as unknown as { profiles: { full_name: string | null } | null }).profiles
     ?.full_name;
 
-  after(() => transcribe(supabase, callId, signed.signedUrl, key, repName || null, started));
+  const audioSecs = Number(call.duration_secs) || null;
+
+  after(() =>
+    transcribe(supabase, callId, signed.signedUrl, key, repName || null, audioSecs, started)
+  );
 
   log("transcribe", callId, started, "accepted");
   return NextResponse.json({ ok: true }, { status: 202 });
@@ -140,7 +144,8 @@ function scribeForm(
   form.append("model_id", "scribe_v2");
   form.append("source_url", sourceUrl);
   form.append("diarize", "true");
-  form.append("detect_speaker_roles", "true");
+  // No detect_speaker_roles: it adds ~10% to the cost, and the grader works
+  // out who the rep is from what is said. Labels can be fixed on the page.
   form.append("tag_audio_events", "false");
   form.append("timestamps_granularity", "word");
 
@@ -236,6 +241,7 @@ async function transcribe(
   sourceUrl: string,
   key: string,
   repName: string | null,
+  audioSecs: number | null,
   started: number
 ) {
   try {
@@ -254,6 +260,9 @@ async function transcribe(
 
     const { transcript, redactions } = buildTranscript(words, language);
     const last = transcript.utterances[transcript.utterances.length - 1];
+    // Billed on audio length: use the length measured at upload when we
+    // have it, else the last word (which ignores trailing silence).
+    const secs = audioSecs ?? (last ? Math.round(last.end) : 0);
 
     const { error } = await supabase
       .from("calls")
@@ -262,7 +271,8 @@ async function transcribe(
         error: note,
         transcript,
         redaction_count: redactions,
-        duration_secs: last ? Math.round(last.end) : null,
+        duration_secs: secs || null,
+        cost: { transcribe_secs: secs, transcribe_usd: transcribeCostUsd(secs) },
         updated_at: new Date().toISOString(),
       })
       .eq("id", callId);

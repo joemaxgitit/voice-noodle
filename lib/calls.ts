@@ -73,6 +73,64 @@ export type Grade = {
   graded_at?: string;
 };
 
+/** A grade that has since been replaced by a re-grade. */
+export type GradeVersion = { grade: Grade; score: number | null };
+
+/** What processing one call cost. Estimates from list prices. */
+export type CallCost = {
+  transcribe_secs?: number;
+  transcribe_usd?: number;
+  grade_model?: string;
+  grade_input_tokens?: number;
+  grade_cache_read_tokens?: number;
+  grade_cache_write_tokens?: number;
+  grade_output_tokens?: number;
+  grade_usd?: number | null; // the latest grading run
+  grade_usd_total?: number; // every grading run on this call, re-grades included
+};
+
+/*
+  List prices, USD. Update these if the providers change their pricing.
+  ElevenLabs: Scribe v2 $0.22/hour + keyterm prompting $0.05/hour.
+  Anthropic: per million tokens.
+*/
+export const TRANSCRIBE_USD_PER_HOUR = 0.22 + 0.05;
+
+const CLAUDE_PRICES: Record<string, { input: number; output: number; cacheWrite: number; cacheRead: number }> = {
+  "claude-sonnet-5-5": { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.1 },
+  "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheWrite: 0.125, cacheRead: 0.01 },
+};
+
+export function transcribeCostUsd(seconds: number): number {
+  return (seconds / 3600) * TRANSCRIBE_USD_PER_HOUR;
+}
+
+/** Null when the model is not in the price table. */
+export function gradeCostUsd(
+  model: string,
+  u: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  }
+): number | null {
+  const p = CLAUDE_PRICES[model];
+  if (!p) return null;
+  return (
+    ((u.input_tokens ?? 0) * p.input +
+      (u.output_tokens ?? 0) * p.output +
+      (u.cache_creation_input_tokens ?? 0) * p.cacheWrite +
+      (u.cache_read_input_tokens ?? 0) * p.cacheRead) /
+    1_000_000
+  );
+}
+
+export function money(usd: number | null | undefined): string {
+  if (usd === null || usd === undefined) return "?";
+  return usd < 0.01 ? "<$0.01" : `$${usd.toFixed(2)}`;
+}
+
 /** ElevenLabs Scribe word, as returned by /v1/speech-to-text. */
 export type ScribeWord = {
   text: string;

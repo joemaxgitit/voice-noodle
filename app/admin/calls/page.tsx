@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { startJob } from "@/lib/callsClient";
-import { STATUS_LABEL, clock, isStuck, scoreBand, type CallStatus } from "@/lib/calls";
+import { STATUS_LABEL, clock, isStuck, money, scoreBand, type CallCost, type CallStatus } from "@/lib/calls";
 import { shrinkAudio, SHRINK_OVER_BYTES } from "@/lib/shrinkAudio";
 import "./calls.css";
 
@@ -26,6 +26,7 @@ type CallRow = {
   script_id: string | null;
   updated_at: string;
   created_at: string;
+  cost: CallCost | null;
   profiles: { full_name: string | null } | null;
 };
 
@@ -94,7 +95,7 @@ export default function Calls() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, rep_id, client_label, call_date, duration_secs, status, score, error, script_id, updated_at, created_at, profiles:rep_id(full_name)"
+        "id, rep_id, client_label, call_date, duration_secs, status, score, error, script_id, updated_at, created_at, cost, profiles:rep_id(full_name)"
       )
       .order("created_at", { ascending: false })
       .limit(300);
@@ -268,6 +269,20 @@ export default function Calls() {
     return people.filter((p) => ids.has(p.id));
   }, [calls, people]);
 
+  // Estimated spend this calendar month, from each call's recorded cost.
+  const monthCost = useMemo(() => {
+    const now = new Date();
+    let usd = 0;
+    let n = 0;
+    for (const c of calls) {
+      const d = new Date(c.created_at);
+      if (d.getFullYear() !== now.getFullYear() || d.getMonth() !== now.getMonth() || !c.cost) continue;
+      usd += (c.cost.transcribe_usd ?? 0) + (c.cost.grade_usd_total ?? 0);
+      n += 1;
+    }
+    return { usd, n };
+  }, [calls]);
+
   // Average graded score per rep, for the filter view.
   const avgFor = (id: string) => {
     const s = calls.filter((c) => c.rep_id === id && c.score !== null).map((c) => c.score as number);
@@ -290,7 +305,10 @@ export default function Calls() {
         </Link>
       </div>
 
-      <div className="eyebrow">{calls.length} calls</div>
+      <div className="eyebrow">
+        {calls.length} calls
+        {monthCost.n > 0 ? ` \u00b7 this month ${monthCost.n} processed, about ${money(monthCost.usd)}` : ""}
+      </div>
       <h1>Call review</h1>
       <p className="muted">
         Upload a recording from the dialer. It is transcribed with bank, card and ID numbers
