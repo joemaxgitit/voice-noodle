@@ -347,8 +347,8 @@ export default function Calls() {
           (!filterOutcome ||
             (filterOutcome === "fragile"
               ? c.close_quality === "fragile"
-              : filterOutcome === "cancelled"
-                ? c.retention === "cancelled"
+              : filterOutcome === "cancelled" || filterOutcome === "graduated"
+                ? c.retention === filterOutcome
                 : outcomeOf(c) === filterOutcome))
       ),
     [calls, filterRep, filterOutcome]
@@ -382,7 +382,11 @@ export default function Calls() {
   // Of a rep's reviewed closes, how many cancelled.
   const cancelsFor = (key: string) => {
     const closes = calls.filter((c) => repKeyOf(c) === key && outcomeOf(c) === "enrolled");
-    return { closes: closes.length, cancelled: closes.filter((c) => c.retention === "cancelled").length };
+    return {
+      closes: closes.length,
+      cancelled: closes.filter((c) => c.retention === "cancelled").length,
+      graduated: closes.filter((c) => c.retention === "graduated").length,
+    };
   };
 
   /*
@@ -416,6 +420,9 @@ export default function Calls() {
       <div className="topbar">
         <Link className="btn" href="/admin" style={{ textDecoration: "none" }}>
           &larr; Admin
+        </Link>
+        <Link className="btn" href="/admin/calls/insights" style={{ textDecoration: "none" }}>
+          Insights &amp; tuning
         </Link>
       </div>
 
@@ -512,6 +519,7 @@ export default function Calls() {
           ))}
           <option value="fragile">Fragile closes</option>
           <option value="cancelled">Cancelled</option>
+          <option value="graduated">Graduated</option>
         </select>
         {repsWithCalls.length > 1 && (
           <select
@@ -528,7 +536,9 @@ export default function Calls() {
                   {a !== null ? ` (avg ${a})` : ""}
                   {(() => {
                     const k = cancelsFor(r.key);
-                    return k.closes ? ` \u00b7 ${k.cancelled}/${k.closes} closes cancelled` : "";
+                    return k.closes
+                      ? ` \u00b7 ${k.cancelled}/${k.closes} cancelled${k.graduated ? `, ${k.graduated} graduated` : ""}`
+                      : "";
                   })()}
                 </option>
               );
@@ -566,6 +576,7 @@ export default function Calls() {
                     {c.lang && langOf(c.lang) === "es" ? " · Spanish" : ""}
                     {c.close_quality === "fragile" && <span className="danger">{" · fragile close"}</span>}
                     {c.retention === "cancelled" && <strong className="danger">{" · cancelled"}</strong>}
+                    {c.retention === "graduated" && <strong className="good-text">{" · graduated"}</strong>}
                   </div>
                 </span>
                 {c.status === "graded" && c.score !== null ? (

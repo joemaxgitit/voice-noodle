@@ -16,6 +16,8 @@ import {
   scoreBand,
   slpScoreOf,
   OUTCOME_LABEL,
+  stageLabel,
+  stageTerm,
   CANCEL_REASONS,
   daysToCancel,
   type Retention,
@@ -56,6 +58,8 @@ type Call = {
   outcome: Outcome | null;
   outcome_manual: Outcome | null;
   retention: Retention | null;
+  graduated_date: string | null;
+  final_credit_score: number | null;
   cancel_date: string | null;
   cancel_reason: string | null;
   cancel_note: string | null;
@@ -137,6 +141,97 @@ function Fold({
   );
 }
 
+type Correction = { id: string; item_key: string; correction: string };
+
+type FixCtx = {
+  fixes: Map<string, Correction>;
+  save: (key: string, kind: string, label: string, original: string, text: string) => Promise<void>;
+  remove: (key: string) => Promise<void>;
+};
+
+/**
+ * "Not right?" on a report item. A manager's correction shows in place on
+ * this grade, and is added to every future grade so the grader learns it.
+ */
+function Fix({
+  ctx,
+  k,
+  kind,
+  label,
+  original,
+}: {
+  ctx: FixCtx;
+  k: string;
+  kind: string;
+  label: string;
+  original: string;
+}) {
+  const existing = ctx.fixes.get(k);
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  if (existing && !open) {
+    return (
+      <div className="fix-done">
+        <strong>Manager&rsquo;s correction:</strong> {existing.correction}
+        <span className="no-print">
+          {" "}
+          <button
+            className="link-btn"
+            onClick={() => {
+              setText(existing.correction);
+              setOpen(true);
+            }}
+          >
+            Edit
+          </button>{" "}
+          <button className="link-btn" onClick={() => void ctx.remove(k)}>
+            Remove
+          </button>
+        </span>
+      </div>
+    );
+  }
+
+  if (!open) {
+    return (
+      <div className="no-print fix-link">
+        <button className="link-btn" onClick={() => setOpen(true)}>
+          Not right?
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="no-print fix-edit">
+      <textarea
+        rows={2}
+        autoFocus
+        value={text}
+        placeholder="What should it say? This teaches the grader for future calls."
+        onChange={(e) => setText(e.target.value)}
+      />
+      <div className="row" style={{ marginTop: 6 }}>
+        <button
+          className="primary"
+          disabled={!text.trim() || saving}
+          onClick={async () => {
+            setSaving(true);
+            await ctx.save(k, kind, label, original, text.trim());
+            setSaving(false);
+            setOpen(false);
+          }}
+        >
+          Save correction
+        </button>
+        <button onClick={() => setOpen(false)}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 /** Shows [... REDACTED] markers as quiet chips rather than loud text. */
 function Said({ text }: { text: string }) {
   const parts = text.split(/(\[[A-Z ]*REDACTED\])/g);
@@ -176,6 +271,8 @@ export default function CallDetail() {
   const [showOriginal, setShowOriginal] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState("");
   const [voiceDone, setVoiceDone] = useState(false);
+  const [fixList, setFixList] = useState<Correction[]>([]);
+  const [myOrg, setMyOrg] = useState<string | null>(null);
   // Which part is being printed. The class it puts on <main> tells the print
   // stylesheet what to leave out; cleared again once the print dialog closes.
   const [printMode, setPrintMode] = useState<"report" | "transcript" | null>(null);
@@ -236,12 +333,31 @@ export default function CallDetail() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, retention, cancel_date, cancel_reason, cancel_note, grade_history, cost, translation, voice_v:voice->v, script_id, updated_at, rep_id, rep_name, profiles:rep_id(full_name), scripts(title, logo_url)"
+        "id, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, retention, cancel_date, cancel_reason, cancel_note, graduated_date, final_credit_score, grade_history, cost, translation, voice_v:voice->v, script_id, updated_at, rep_id, rep_name, profiles:rep_id(full_name), scripts(title, logo_url)"
       )
       .eq("id", callId)
       .single();
     if (error) setError(error.message);
     setCall((data as unknown as Call) || null);
+  }, [supabase, callId]);
+
+  // Corrections managers made on this call, and this manager's org for new ones.
+  useEffect(() => {
+    void supabase
+      .from("call_corrections")
+      .select("id, item_key, correction")
+      .eq("call_id", callId)
+      .then(({ data }) => setFixList((data || []) as Correction[]));
+    void supabase.auth.getSession().then(({ data }) => {
+      const uid = data.session?.user.id;
+      if (!uid) return;
+      void supabase
+        .from("profiles")
+        .select("org_id")
+        .eq("id", uid)
+        .single()
+        .then(({ data: p }) => setMyOrg((p?.org_id as string) ?? null));
+    });
   }, [supabase, callId]);
 
   useEffect(() => {
@@ -395,17 +511,26 @@ export default function CallDetail() {
     Did the client stay? Saved as soon as a field changes. Marking a client
     cancelled defaults the date to today; it can be changed.
   */
-  async function setRetention(patch: Partial<Pick<Call, "retention" | "cancel_date" | "cancel_reason" | "cancel_note">>) {
+  async function setRetention(
+    patch: Partial<
+      Pick<Call, "retention" | "cancel_date" | "cancel_reason" | "cancel_note" | "graduated_date" | "final_credit_score">
+    >
+  ) {
     if (!call) return;
     const next = { ...patch };
     if (patch.retention === "cancelled" && !call.cancel_date) {
       const d = new Date();
       next.cancel_date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     }
-    if (patch.retention === "active" || patch.retention === null) {
+    // Switching status clears the other status's details.
+    if (patch.retention !== undefined && patch.retention !== "cancelled") {
       next.cancel_date = null;
       next.cancel_reason = null;
       next.cancel_note = null;
+    }
+    if (patch.retention !== undefined && patch.retention !== "graduated") {
+      next.graduated_date = null;
+      next.final_credit_score = null;
     }
     setCall({ ...call, ...next });
     const { error } = await supabase.from("calls").update(next).eq("id", call.id);
@@ -511,6 +636,55 @@ export default function CallDetail() {
       : null;
   const stuck = isStuck(call.status, call.updated_at);
   const band = scoreBand(shownScore);
+
+  /*
+    Corrections belong to the grade they were made on: the key starts with
+    that grade's timestamp, so after a re-grade they stop showing here (they
+    still teach the grader on every future call).
+  */
+  const gradeKey = g?.graded_at ?? "";
+  const fixCtx: FixCtx = {
+    fixes: new Map(fixList.filter((f) => f.item_key.startsWith(gradeKey + "|")).map((f) => [f.item_key, f])),
+    save: async (k, kind, label, original, text) => {
+      setError("");
+      const key = k; // already carries the grade prefix (see fx)
+      const existing = fixList.find((f) => f.item_key === key);
+      if (existing) {
+        const { error } = await supabase.from("call_corrections").update({ correction: text }).eq("id", existing.id);
+        if (error) return setError(error.message);
+        setFixList((l) => l.map((f) => (f.id === existing.id ? { ...f, correction: text } : f)));
+        return;
+      }
+      if (!myOrg) return setError("Could not find your organization.");
+      const { data: session } = await supabase.auth.getSession();
+      const { data, error } = await supabase
+        .from("call_corrections")
+        .insert({
+          org_id: myOrg,
+          call_id: call.id,
+          item_kind: kind,
+          item_key: key,
+          item_label: label.slice(0, 200),
+          original: original.slice(0, 1000),
+          correction: text.slice(0, 2000),
+          created_by: session.session?.user.id ?? null,
+        })
+        .select("id, item_key, correction")
+        .single();
+      if (error) return setError(`${error.message} -- has the calls-learning SQL been run?`);
+      setFixList((l) => [...l, data as Correction]);
+    },
+    remove: async (k) => {
+      const key = k; // already carries the grade prefix (see fx)
+      const existing = fixList.find((f) => f.item_key === key);
+      if (!existing) return;
+      const { error } = await supabase.from("call_corrections").delete().eq("id", existing.id);
+      if (error) return setError(error.message);
+      setFixList((l) => l.filter((f) => f.id !== existing.id));
+    },
+  };
+  // fixCtx.fixes is keyed with the grade prefix; Fix looks up by the full key.
+  const fx = (k: string) => `${gradeKey}|${k}`;
   const printLogo = (call.scripts?.logo_url || "/proedge-logo.png")
     .replace(/\.png$/, "-light.png")
     .replace("/lionside-logo-light.png", "/lionside-logo-print.png");
@@ -563,6 +737,11 @@ export default function CallDetail() {
           {call.retention === "cancelled" && (
             <span className="pill failed" style={{ marginLeft: 8 }}>
               Cancelled
+            </span>
+          )}
+          {call.retention === "graduated" && (
+            <span className="pill good" style={{ marginLeft: 8 }}>
+              Graduated
             </span>
           )}
           {call.redaction_count > 0 && (
@@ -649,6 +828,7 @@ export default function CallDetail() {
         <>
           <h2>Summary</h2>
           <p style={{ lineHeight: 1.6, margin: 0 }}>{g.summary}</p>
+          <Fix ctx={fixCtx} k={fx("summary")} kind="Summary" label="Summary" original={g.summary} />
           <p className="muted" style={{ marginTop: 6 }}>
             Call ended: {g.furthest_point}
           </p>
@@ -682,6 +862,15 @@ export default function CallDetail() {
                 </div>
                 {g.outcome_note && <div className="grade-coach">{g.outcome_note}</div>}
                 {g.close_quality_reason && <div className="grade-coach">{g.close_quality_reason}</div>}
+                {g.close_quality && g.close_quality !== "n/a" && (
+                  <Fix
+                    ctx={fixCtx}
+                    k={fx("close")}
+                    kind="Close quality"
+                    label={g.close_quality}
+                    original={`${g.close_quality} close: ${g.close_quality_reason ?? ""}`}
+                  />
+                )}
                 {call.outcome_manual && (
                   <div className="calls-meta">
                     Corrected by a manager. The grader read it as{" "}
@@ -696,7 +885,13 @@ export default function CallDetail() {
                         Retention
                       </span>
                       <strong className="print-only">
-                        {call.retention === "cancelled" ? "Cancelled" : call.retention === "active" ? "Active" : "Not set"}
+                        {call.retention === "cancelled"
+                          ? "Cancelled"
+                          : call.retention === "graduated"
+                            ? "Graduated"
+                            : call.retention === "active"
+                              ? "Active"
+                              : "Not set"}
                       </strong>
                       <select
                         className="no-print"
@@ -708,8 +903,45 @@ export default function CallDetail() {
                         <option value="">Not set</option>
                         <option value="active">Active</option>
                         <option value="cancelled">Cancelled</option>
+                        <option value="graduated">Graduated</option>
                       </select>
                     </div>
+
+                    {call.retention === "graduated" && (
+                      <>
+                        <div className="retention-fields no-print">
+                          <label className="field">
+                            <span>Graduated on (optional)</span>
+                            <input
+                              type="date"
+                              value={call.graduated_date ?? ""}
+                              onChange={(e) => setRetention({ graduated_date: e.target.value || null })}
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Final credit score (optional)</span>
+                            <input
+                              type="number"
+                              min={300}
+                              max={850}
+                              defaultValue={call.final_credit_score ?? ""}
+                              placeholder="e.g. 712"
+                              onBlur={(e) => {
+                                const n = e.target.value ? Math.round(Number(e.target.value)) : null;
+                                if (n !== call.final_credit_score && (n === null || (n >= 300 && n <= 850)))
+                                  void setRetention({ final_credit_score: n });
+                              }}
+                            />
+                          </label>
+                        </div>
+                        <div className="grade-coach">
+                          Graduated
+                          {call.graduated_date ? ` on ${call.graduated_date}` : ""}
+                          {call.final_credit_score ? ` \u00b7 final credit score ${call.final_credit_score}` : ""}
+                          {" \u00b7 "}this call now counts as a graduate&rsquo;s enrollment call on the Insights page.
+                        </div>
+                      </>
+                    )}
 
                     {call.retention === "cancelled" && (
                       <>
@@ -803,7 +1035,10 @@ export default function CallDetail() {
               <h2>Coach on</h2>
               <ol className="plain-list">
                 {g.coaching_priorities.map((c, i) => (
-                  <li key={i}>{c}</li>
+                  <li key={i}>
+                    {c}
+                    <Fix ctx={fixCtx} k={fx(`coach:${i}`)} kind="Coaching" label={`Coach on #${i + 1}`} original={c} />
+                  </li>
                 ))}
               </ol>
             </>
@@ -848,7 +1083,10 @@ export default function CallDetail() {
               {g.emotional_arc!.map((a, i) => (
                 <div key={i} className={`grade-item arc ${a.landed}`}>
                   <div className="grade-item-head">
-                    <span>{a.stage}</span>
+                    <span>
+                      {stageLabel(a.stage, a.section)}
+                      <span className="stage-term">{stageTerm(a.stage)}</span>
+                    </span>
                     <span className={`pill ${ARC_PILL[a.landed] ?? ""}`}>{ARC_LABEL[a.landed] ?? a.landed}</span>
                   </div>
                   {a.landed !== "not_reached" && (
@@ -874,6 +1112,13 @@ export default function CallDetail() {
                       &ldquo;{a.evidence}&rdquo;
                     </div>
                   )}
+                  <Fix
+                    ctx={fixCtx}
+                    k={fx(`roadmap:${a.stage}`)}
+                    kind="Roadmap"
+                    label={`${stageLabel(a.stage, a.section)} (${stageTerm(a.stage)})`}
+                    original={`${ARC_LABEL[a.landed] ?? a.landed}. Client showed: ${a.observed}${a.voice ? `. Voice: ${a.voice}` : ""}`}
+                  />
                 </div>
               ))}
             </Fold>
@@ -932,6 +1177,13 @@ export default function CallDetail() {
                     </div>
                   )}
                   {k.coaching && <div className="grade-coach">{k.coaching}</div>}
+                  <Fix
+                    ctx={fixCtx}
+                    k={fx(`skill:${k.skill}`)}
+                    kind="Skill"
+                    label={k.skill}
+                    original={`${k.score ?? "n/a"}/10. ${k.coaching}`}
+                  />
                 </div>
               ))}
             </Fold>
@@ -991,6 +1243,13 @@ export default function CallDetail() {
                     <br />
                     <span className="muted">Measured:</span> {c.heard}
                   </div>
+                  <Fix
+                    ctx={fixCtx}
+                    k={fx(`tone:${i}`)}
+                    kind="Tone"
+                    label={c.tone}
+                    original={`${c.match}: should sound ${c.expected}; measured ${c.heard}`}
+                  />
                 </div>
               ))}
               <p className="muted" style={{ fontSize: 12 }}>
@@ -1026,6 +1285,13 @@ export default function CallDetail() {
                     &ldquo;{f.quote}&rdquo;
                   </div>
                   <div className="calls-meta">{f.in_script ? "Also in the script" : "Not in the script"}</div>
+                  <Fix
+                    ctx={fixCtx}
+                    k={fx(`flag:${f.issue.slice(0, 60)}`)}
+                    kind="Flag"
+                    label={`${f.severity} flag`}
+                    original={`${f.severity}: ${f.issue} -- "${f.quote}"`}
+                  />
                 </div>
               ))}
             </Fold>
@@ -1054,6 +1320,13 @@ export default function CallDetail() {
                 </div>
               )}
               {s.coaching && <div className="grade-coach">{s.coaching}</div>}
+              <Fix
+                ctx={fixCtx}
+                k={fx(`section:${s.section}`)}
+                kind="Section"
+                label={s.section}
+                original={`${s.status}. ${s.coaching || s.evidence}`}
+              />
             </div>
           ))}
           </Fold>
@@ -1083,6 +1356,13 @@ export default function CallDetail() {
                       &ldquo;{c.evidence}&rdquo;
                     </div>
                   )}
+                  <Fix
+                    ctx={fixCtx}
+                    k={fx(`disclosure:${c.item}`)}
+                    kind="Disclosure"
+                    label={c.item}
+                    original={`${c.status}${c.evidence ? `: "${c.evidence}"` : ""}`}
+                  />
                 </div>
               ))}
             </Fold>

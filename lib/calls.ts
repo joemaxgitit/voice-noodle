@@ -62,6 +62,7 @@ export type Flag = {
 
 export type ArcStage = {
   stage: string;
+  section?: string; // the script section this stage happened in, as the grader read it
   voice?: string; // how the rep's voice served this stage
   intended: string;
   observed: string;
@@ -110,7 +111,7 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
 /* Retention: whether an enrolled client stayed. Entered by a manager for
    now; the Bolton retention agent can fill it in later, matched on the
    lead ID in the Client field. */
-export type Retention = "active" | "cancelled";
+export type Retention = "active" | "cancelled" | "graduated";
 
 export const CANCEL_REASONS: Record<string, string> = {
   remorse: "Buyer's remorse",
@@ -170,23 +171,39 @@ export type Grade = {
   the call, not by script section ("Hopeless" happens inside SuperMoney).
   Edit here to change the roadmap; nothing else needs to change.
 */
-export const ROADMAP: { stage: string; feel: string }[] = [
-  { stage: "Intro", feel: "trust and comfort" },
-  { stage: "Intelligence gathering (hardship)", feel: "opens up, feels heard, the pain gets real" },
-  { stage: "Create the villain", feel: "anger at the system as a whole -- it's not my fault" },
-  { stage: "Hope spike", feel: "hope -- the SuperMoney loan might fix this" },
-  { stage: "Hopeless", feel: "the drop -- the loan isn't available" },
+export const ROADMAP: { stage: string; feel: string; label: string }[] = [
+  { stage: "Intro", label: "Opening", feel: "trust and comfort" },
+  { stage: "Intelligence gathering (hardship)", label: "Hardship", feel: "opens up, feels heard, the pain gets real" },
+  { stage: "Create the villain", label: "Create the Villain", feel: "anger at the system as a whole -- it's not my fault" },
+  { stage: "Hope spike", label: "SuperMoney (loan offer)", feel: "hope -- the SuperMoney loan might fix this" },
+  { stage: "Hopeless", label: "SuperMoney (no loan)", feel: "the drop -- the loan isn't available" },
   {
     stage: "Light at the end of the tunnel",
+    label: "Three Options",
     feel: "relief -- there are real options -- and empowered, because the choice is handed back to them",
   },
-  { stage: "The pitch", feel: "understands the program and believes it fits" },
-  { stage: "Credit review", feel: "urgency -- the pain made concrete by maxed-out accounts" },
-  { stage: "More about Bolton", feel: "certainty in the company" },
-  { stage: "The close", feel: "certain enough to act" },
-  { stage: "Contract and compliance", feel: "clear on exactly what they agreed to" },
-  { stage: "Button up", feel: "committed, and patient for the long haul" },
+  { stage: "The pitch", label: "The Pitch", feel: "understands the program and believes it fits" },
+  { stage: "Credit review", label: "Credit Review", feel: "urgency -- the pain made concrete by maxed-out accounts" },
+  { stage: "More about Bolton", label: "More About Bolton", feel: "certainty in the company" },
+  { stage: "The close", label: "The Close", feel: "certain enough to act" },
+  { stage: "Contract and compliance", label: "Contract & Compliance", feel: "clear on exactly what they agreed to" },
+  { stage: "Button up", label: "The Button Up", feel: "committed, and patient for the long haul" },
 ];
+
+/** Lowercase roadmap stage name for display beside the section label ("hope spike"). */
+export function stageTerm(stage: string): string {
+  return stage.replace(/\s*\(.*\)\s*$/, "").toLowerCase();
+}
+
+/**
+ * What managers see for a roadmap stage: the script section it happened in
+ * (as the grader recorded it), else the standard section for that stage.
+ * Grading still runs on the roadmap stage itself.
+ */
+export function stageLabel(stage: string, section?: string | null): string {
+  if (section && section.trim()) return section.trim();
+  return ROADMAP.find((r) => r.stage.toLowerCase() === stage.toLowerCase())?.label ?? stage;
+}
 
 /** "en" or "es" from whatever code the transcriber returned ("eng", "spa", "es-MX"...). */
 export function langOf(code: string | null | undefined): "en" | "es" {

@@ -148,6 +148,7 @@ export async function POST(request: Request) {
     the hand-off line onward, plus its objection loops.
   */
   const notes: string[] = [];
+  const guidance = await managerGuidance(supabase);
   if (script?.grading_note) notes.push(script.grading_note.trim());
 
   if (script?.continues_into) {
@@ -195,7 +196,16 @@ export async function POST(request: Request) {
     "the rep";
 
   const voice = (call.voice as VoiceTimeline | null) ?? null;
-  const blocks = buildPrompt(script?.title || "Script", useModules, transcript, repName, lang, voice, notes.join("\n"));
+  const blocks = buildPrompt(
+    script?.title || "Script",
+    useModules,
+    transcript,
+    repName,
+    lang,
+    voice,
+    notes.join("\n"),
+    guidance
+  );
 
   const previous: GradeVersion | null =
     call.grade && call.score !== undefined
@@ -216,6 +226,47 @@ export async function POST(request: Request) {
 
   log("grade", callId, started, `accepted (${lang}, ${useModules.length} modules)`);
   return NextResponse.json({ ok: true }, { status: 202 });
+}
+
+const CORRECTIONS_IN_PROMPT = 30;
+
+/*
+  What managers have taught the grader, added to every grade:
+  - lessons they approved on the Insights page (graduates vs cancels), and
+  - their most recent corrections to individual report items.
+  Kept in the cached part of the prompt; it only changes when a manager adds
+  something, so calls graded back to back still share the cache.
+*/
+async function managerGuidance(supabase: Supa): Promise<string> {
+  const [{ data: g }, { data: fixes }] = await Promise.all([
+    supabase.from("grading_guidance").select("lessons").maybeSingle(),
+    supabase
+      .from("call_corrections")
+      .select("item_kind, item_label, original, correction")
+      .order("created_at", { ascending: false })
+      .limit(CORRECTIONS_IN_PROMPT),
+  ]);
+
+  const parts: string[] = [];
+  const lessons = (g?.lessons as string | null)?.trim();
+  if (lessons) {
+    parts.push(
+      "Lessons the sales manager approved from comparing enrollment calls of clients who graduated with clients who cancelled. Use them to sharpen your judgment of the roadmap, close quality and coaching -- they are patterns, not rules:\n" +
+        lessons
+    );
+  }
+  if (fixes?.length) {
+    parts.push(
+      "Corrections managers made to earlier grades. Apply the principle behind each one wherever it fits this call; never copy a correction onto a call where it does not apply:\n" +
+        fixes
+          .map(
+            (f) =>
+              `- [${f.item_kind}${f.item_label ? `: ${f.item_label}` : ""}] the grader said: "${String(f.original).slice(0, 240)}" -- the manager corrected: "${String(f.correction).slice(0, 400)}"`
+          )
+          .join("\n")
+    );
+  }
+  return parts.length ? `\n<manager_guidance>\n${parts.join("\n\n")}\n</manager_guidance>\n` : "";
 }
 
 function scriptText(modules: ModuleRow[]): { text: string; sequence: string[] } {
@@ -274,7 +325,8 @@ function buildPrompt(
   repName: string,
   lang: "en" | "es",
   voice: VoiceTimeline | null,
-  scriptNote: string
+  scriptNote: string,
+  guidance: string
 ) {
   const s = scriptText(modules);
 
@@ -323,6 +375,7 @@ List at most 15 flags. If there are more, keep the most serious, and prefer clai
 emotional_arc: this is the backbone of the grade. Exactly one entry per roadmap stage, in roadmap order, using the stage names exactly as written. Find each stage wherever it actually happened on the call. intended: the roadmap feeling for that stage, sharpened with the script's "client should feel" lines where they apply. observed: what the client actually showed, in a few words, judged only from what the client said. landed: "yes" if the client's own words show they reached the feeling, "partial", "no", or "not_reached" if the call never got there.
 A stage only lands if the client genuinely understood. Agreement given while confused ("okay", "I guess") is not a landed pitch, close or contract stage -- mark it "partial" or "no" and say why in observed. If the loan was approved, "Hopeless" did not happen: mark it "not_reached".
 evidence: a short quote of the CLIENT (20 words or fewer) or "", and its time (-1 if none).
+section: the name of the script section where this stage actually happened, written exactly as that section is titled in the script above (for a Spanish call, the title followed by its English name in parentheses); "" if the stage was not reached.
 
 slp: exactly these eight skills, in this order, each scored 1-10 (1-3 weak, 4-6 developing, 7-8 solid, 9-10 textbook), or 0 if the call never gave the rep a chance to show it:
 - "Control and the straight line": the rep leads the conversation, brings tangents back, and moves the call forward on purpose.
@@ -374,6 +427,7 @@ If there are no measurements for this call, judge tonality from wording only and
 tonality: summary: two sentences on how the rep used tone and variety across the call. flat_stretches: each long flat stretch from the summary that matters, with start and end in seconds and a note on what was being said (empty if none). tone_checks: up to 8 of the most telling moments where the script marks a tone -- time, tone (the marker, for example "I CARE"), expected (what it should sound like, a few words), heard (what the measurements show, a few words), match ("yes", "partial" or "no").
 In emotional_arc, voice: a few words on how the rep's voice served that stage (for example "softened and slowed for the hardship -- I Care landed"), or "" if not reached.
 Judge content from the words and delivery from the measurements. Do not guess at tone of voice beyond what the measurements show.
+${guidance}
 Return only the JSON object described by the schema.`;
 
   // Kept out of the cached block: the cache is per script, not per language.
@@ -440,7 +494,7 @@ const GRADE_SCHEMA = {
       type: "array",
       items: {
         type: "object",
-        required: ["stage", "intended", "observed", "landed", "evidence", "time", "voice"],
+        required: ["stage", "section", "intended", "observed", "landed", "evidence", "time", "voice"],
         additionalProperties: false,
         properties: {
           stage: { type: "string" },
@@ -448,6 +502,7 @@ const GRADE_SCHEMA = {
           observed: { type: "string" },
           landed: { type: "string" },
           voice: { type: "string" },
+          section: { type: "string" },
           evidence: { type: "string" },
           time: { type: "number" },
         },
