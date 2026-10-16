@@ -39,8 +39,19 @@ type ModuleRow = {
     coaching: string | null;
     client_should_feel: string | null;
     script_note: string | null;
+    condition: string | null;
   }[];
 };
+
+type ScriptRow = {
+  title: string;
+  continues_into: string | null;
+  continues_from: string | null;
+  grading_note: string | null;
+};
+
+const MODULE_SELECT =
+  "title, kind, language, sort_order, segments(segment_code, title, script_text, sort_order, active, tones, tone_map, coaching, client_should_feel, script_note, condition)";
 
 
 /**
@@ -94,15 +105,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Pick which script this call should be graded against." }, { status: 400 });
   }
 
-  const [{ data: script }, { data: modules, error: modErr }] = await Promise.all([
-    supabase.from("scripts").select("title").eq("id", call.script_id).single(),
+  const [{ data: scriptData }, { data: modules, error: modErr }] = await Promise.all([
+    supabase
+      .from("scripts")
+      .select("title, continues_into, continues_from, grading_note")
+      .eq("id", call.script_id)
+      .single(),
     supabase
       .from("modules")
-      .select("title, kind, language, sort_order, segments(segment_code, title, script_text, sort_order, active, tones, tone_map, coaching, client_should_feel, script_note)")
+      .select(MODULE_SELECT)
       .eq("script_id", call.script_id)
       .eq("active", true)
       .order("sort_order"),
   ]);
+  const script = scriptData as ScriptRow | null;
 
   if (modErr || !modules || modules.length === 0) {
     return NextResponse.json(
@@ -119,9 +135,51 @@ export async function POST(request: Request) {
   */
   const transcript = call.transcript as Transcript;
   const lang = langOf(transcript.language);
-  const all = modules as unknown as ModuleRow[];
-  const sameLang = all.filter((m) => (m.language || "en") === lang);
-  const useModules = sameLang.length > 0 ? sameLang : all;
+  const pickLang = (ms: ModuleRow[]) => {
+    const same = ms.filter((m) => (m.language || "en") === lang);
+    return same.length > 0 ? same : ms;
+  };
+  let useModules = pickLang(modules as unknown as ModuleRow[]);
+
+  /*
+    A script that hands off to another one -- the Renew script opens the call
+    and then continues on the Options Script from Phase 2. Grade the whole
+    call as one script: this script's sections, then the other script's from
+    the hand-off line onward, plus its objection loops.
+  */
+  const notes: string[] = [];
+  if (script?.grading_note) notes.push(script.grading_note.trim());
+
+  if (script?.continues_into) {
+    const [{ data: cont }, { data: contModules }] = await Promise.all([
+      supabase.from("scripts").select("title").eq("id", script.continues_into).single(),
+      supabase
+        .from("modules")
+        .select(MODULE_SELECT)
+        .eq("script_id", script.continues_into)
+        .eq("active", true)
+        .order("sort_order"),
+    ]);
+    const next = pickLang((contModules || []) as unknown as ModuleRow[]);
+    const from = script.continues_from;
+    const startModule = from ? next.find((m) => m.segments?.some((g) => g.segment_code === from)) : null;
+    const startSeg = startModule?.segments.find((g) => g.segment_code === from);
+
+    const carried = next
+      .filter((m) => m.kind === "loop" || !startModule || m.sort_order >= startModule.sort_order)
+      .map((m) =>
+        m === startModule && startSeg
+          ? { ...m, segments: m.segments.filter((g) => g.sort_order >= startSeg.sort_order) }
+          : m
+      );
+    // This script's own loops (if any) stay; the other script's are added.
+    useModules = [...useModules, ...carried];
+    notes.push(
+      `After the sections above, the call continues on "${cont?.title ?? "the next script"}"` +
+        (from ? ` from ${from}` : "") +
+        ". Those sections are included above, in order, and are graded the same way."
+    );
+  }
 
   const { error: claimErr } = await supabase
     .from("calls")
@@ -137,7 +195,7 @@ export async function POST(request: Request) {
     "the rep";
 
   const voice = (call.voice as VoiceTimeline | null) ?? null;
-  const blocks = buildPrompt(script?.title || "Script", useModules, transcript, repName, lang, voice);
+  const blocks = buildPrompt(script?.title || "Script", useModules, transcript, repName, lang, voice, notes.join("\n"));
 
   const previous: GradeVersion | null =
     call.grade && call.score !== undefined
@@ -179,7 +237,7 @@ function scriptText(modules: ModuleRow[]): { text: string; sequence: string[] } 
               .map((t) => (t.tone ? `<${t.tone.toUpperCase()}> ` : "") + t.text.trim())
               .join(" ")
           : (s.tones?.length ? `<${s.tones.join("/").toUpperCase()}> ` : "") + s.script_text.trim();
-        const lines = [`  [${s.segment_code}] ${spoken}`];
+        const lines = [`  [${s.segment_code}]${s.condition ? ` (${s.condition})` : ""} ${spoken}`];
         if (s.script_note) lines.push(`      direction: ${s.script_note.trim()}`);
         if (s.client_should_feel) lines.push(`      client should feel: ${s.client_should_feel.trim()}`);
         if (s.coaching) lines.push(`      coaching: ${s.coaching.trim()}`);
@@ -215,14 +273,15 @@ function buildPrompt(
   t: Transcript,
   repName: string,
   lang: "en" | "es",
-  voice: VoiceTimeline | null
+  voice: VoiceTimeline | null,
+  scriptNote: string
 ) {
   const s = scriptText(modules);
 
   const stable = `You are reviewing a recorded phone call for a sales manager who coaches reps on a script. Grade how well the rep followed the script, and flag anything a compliance reviewer should hear.
 
 The script is "${scriptTitle}".
-
+${scriptNote ? `\n<about_this_script>\n${scriptNote}\n</about_this_script>\n` : ""}
 <script>
 ${s.text}
 </script>
