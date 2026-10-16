@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -68,6 +69,67 @@ const ARC_LABEL: Record<string, string> = { yes: "Landed", partial: "Partly", no
 const ARC_PILL: Record<string, string> = { yes: "good", partial: "fair", no: "poor", not_reached: "" };
 const COMPLIANCE_LABEL = { yes: "Yes", no: "No", unclear: "Unclear", not_reached: "Not reached" };
 
+const FOLD_KEY = "vn-call-folds";
+const FOLD_IDS = ["roadmap", "skills", "tonality", "flags", "sections", "disclosures", "speakers", "transcript"];
+
+/** "3 landed · 1 partly · 2 didn't land" -- counts in a fixed order, zeros left out. */
+function countLine(values: string[], labels: Record<string, string>): string {
+  return Object.entries(labels)
+    .map(([k, label]) => [values.filter((v) => v === k).length, label] as const)
+    .filter(([n]) => n > 0)
+    .map(([n, label]) => `${n} ${label}`)
+    .join(" \u00b7 ");
+}
+
+/** The lowest-scored Straight Line skill, as the preview for that section. */
+function weakest(g: Grade): string {
+  const scored = (g.slp ?? []).filter((k) => typeof k.score === "number");
+  if (!scored.length) return "";
+  const low = scored.reduce((a, b) => ((b.score as number) < (a.score as number) ? b : a));
+  return `lowest: ${low.skill} ${low.score}/10`;
+}
+
+/**
+ * A report section that opens and closes. The header line carries a score
+ * badge and a short preview, so a closed section still says how it went.
+ */
+function Fold({
+  title,
+  badge,
+  preview,
+  open,
+  forced,
+  onOpenChange,
+  children,
+}: {
+  title: string;
+  badge?: ReactNode;
+  preview?: string;
+  open: boolean;
+  forced: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <details
+      className="fold"
+      open={open}
+      onToggle={(e) => {
+        // While printing, sections are forced open; don't remember that.
+        const now = (e.currentTarget as HTMLDetailsElement).open;
+        if (!forced && now !== open) onOpenChange(now);
+      }}
+    >
+      <summary>
+        <span className="fold-title">{title}</span>
+        {badge}
+        {preview && <span className="fold-preview">{preview}</span>}
+      </summary>
+      <div className="fold-body">{children}</div>
+    </details>
+  );
+}
+
 /** Shows [... REDACTED] markers as quiet chips rather than loud text. */
 function Said({ text }: { text: string }) {
   const parts = text.split(/(\[[A-Z ]*REDACTED\])/g);
@@ -110,6 +172,47 @@ export default function CallDetail() {
   // Which part is being printed. The class it puts on <main> tells the print
   // stylesheet what to leave out; cleared again once the print dialog closes.
   const [printMode, setPrintMode] = useState<"report" | "transcript" | null>(null);
+
+  // Which report sections are open. Remembered per browser, so a manager who
+  // always reads flags first finds them open next time.
+  const [folds, setFolds] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(FOLD_KEY);
+      if (saved) setFolds(JSON.parse(saved));
+    } catch {
+      // private browsing or blocked storage: everything starts closed
+    }
+  }, []);
+  const saveFolds = (next: Record<string, boolean>) => {
+    setFolds(next);
+    try {
+      localStorage.setItem(FOLD_KEY, JSON.stringify(next));
+    } catch {
+      // not fatal
+    }
+  };
+  const setAllFolds = (open: boolean) =>
+    saveFolds(Object.fromEntries(FOLD_IDS.map((id) => [id, open])));
+
+  // Paper gets every section, closed or not -- including Ctrl+P.
+  const [printAll, setPrintAll] = useState(false);
+  useEffect(() => {
+    const before = () => flushSync(() => setPrintAll(true));
+    const after = () => setPrintAll(false);
+    window.addEventListener("beforeprint", before);
+    window.addEventListener("afterprint", after);
+    return () => {
+      window.removeEventListener("beforeprint", before);
+      window.removeEventListener("afterprint", after);
+    };
+  }, []);
+  const forced = printAll || printMode !== null;
+  const foldProps = (id: string) => ({
+    open: forced || !!folds[id],
+    forced,
+    onOpenChange: (open: boolean) => saveFolds({ ...folds, [id]: open }),
+  });
   useEffect(() => {
     if (!printMode) return;
     const done = () => setPrintMode(null);
@@ -610,16 +713,19 @@ export default function CallDetail() {
           </>
           )}
 
+          <div className="row no-print fold-all">
+            <button className="link-btn" onClick={() => setAllFolds(true)}>Expand all</button>
+            <span className="muted">&middot;</span>
+            <button className="link-btn" onClick={() => setAllFolds(false)}>Collapse all</button>
+          </div>
+
           {(g.emotional_arc?.length ?? 0) > 0 && (
-            <>
-              <h2>
-                Emotional roadmap
-                {arcScoreOf(g) !== null && (
-                  <span className={`pill ${scoreBand(arcScoreOf(g))}`} style={{ marginLeft: 10 }}>
-                    {arcScoreOf(g)}
-                  </span>
-                )}
-              </h2>
+            <Fold
+              {...foldProps("roadmap")}
+              title="Emotional roadmap"
+              badge={arcScoreOf(g) !== null && <span className={`pill ${scoreBand(arcScoreOf(g))}`}>{arcScoreOf(g)}</span>}
+              preview={countLine(g.emotional_arc!.map((a) => a.landed), { yes: "landed", partial: "partly", no: "didn't land" })}
+            >
               <p className="muted" style={{ marginTop: 0 }}>
                 The backbone of the sale: what each stage is built to make the client feel, and what the
                 client actually showed. Half of the Straight Line score.
@@ -655,19 +761,16 @@ export default function CallDetail() {
                   )}
                 </div>
               ))}
-            </>
+            </Fold>
           )}
 
           {(g.slp?.length ?? 0) > 0 && (
-            <>
-              <h2>
-                Straight Line skills
-                {skillsScoreOf(g) !== null && (
-                  <span className={`pill ${scoreBand(skillsScoreOf(g))}`} style={{ marginLeft: 10 }}>
-                    {skillsScoreOf(g)}
-                  </span>
-                )}
-              </h2>
+            <Fold
+              {...foldProps("skills")}
+              title="Straight Line skills"
+              badge={skillsScoreOf(g) !== null && <span className={`pill ${scoreBand(skillsScoreOf(g))}`}>{skillsScoreOf(g)}</span>}
+              preview={weakest(g)}
+            >
               <p className="muted" style={{ marginTop: 0 }}>The other half of the Straight Line score.</p>
 
               {g.three_tens && (
@@ -716,12 +819,24 @@ export default function CallDetail() {
                   {k.coaching && <div className="grade-coach">{k.coaching}</div>}
                 </div>
               ))}
-            </>
+            </Fold>
           )}
 
           {g.tonality && (
-            <>
-              <h2>Tonality</h2>
+            <Fold
+              {...foldProps("tonality")}
+              title="Tonality"
+              preview={[
+                g.tonality.flat_stretches.length
+                  ? `${g.tonality.flat_stretches.length} flat stretch${g.tonality.flat_stretches.length === 1 ? "" : "es"}`
+                  : "no flat stretches",
+                g.tonality.tone_checks.length
+                  ? `${g.tonality.tone_checks.filter((c) => c.match === "yes").length}/${g.tonality.tone_checks.length} tones matched`
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" \u00b7 ")}
+            >
               <p style={{ lineHeight: 1.6, marginTop: 0 }}>{g.tonality.summary}</p>
 
               {g.tonality.flat_stretches.length > 0 && (
@@ -767,12 +882,20 @@ export default function CallDetail() {
                 Measured from the recording: pitch movement, line endings, volume and pace. Phone audio makes
                 these approximate -- a good guide, not a verdict.
               </p>
-            </>
+            </Fold>
           )}
 
           {flags.length > 0 && (
-            <>
-              <h2>Flags for review ({flags.length})</h2>
+            <Fold
+              {...foldProps("flags")}
+              title="Flags for review"
+              badge={
+                <span className={`pill ${flags.some((f) => f.severity === "high") ? "high" : "medium"}`}>
+                  {flags.length}
+                </span>
+              }
+              preview={countLine(flags.map((f) => f.severity), { high: "high", medium: "medium", low: "low" })}
+            >
               {flags.map((f, i) => (
                 <div key={i} className="grade-item">
                   <div className="grade-item-head">
@@ -790,10 +913,15 @@ export default function CallDetail() {
                   <div className="calls-meta">{f.in_script ? "Also in the script" : "Not in the script"}</div>
                 </div>
               ))}
-            </>
+            </Fold>
           )}
 
-          <h2>Script sections</h2>
+          <Fold
+            {...foldProps("sections")}
+            title="Script sections"
+            badge={shownScore !== null && <span className={`pill ${band}`}>{shownScore}</span>}
+            preview={countLine(g.sections.map((x) => x.status), { hit: "hit", partial: "partial", missed: "missed" })}
+          >
           {g.sections.map((s, i) => (
             <div key={i} className="grade-item">
               <div className="grade-item-head">
@@ -813,10 +941,17 @@ export default function CallDetail() {
               {s.coaching && <div className="grade-coach">{s.coaching}</div>}
             </div>
           ))}
+          </Fold>
 
           {g.compliance.length > 0 && (
-            <>
-              <h2>Required disclosures</h2>
+            <Fold
+              {...foldProps("disclosures")}
+              title="Required disclosures"
+              badge={
+                g.compliance.some((c) => c.status === "no") && <span className="pill no">missing</span>
+              }
+              preview={countLine(g.compliance.map((c) => c.status), { yes: "yes", no: "no", unclear: "unclear" })}
+            >
               {g.compliance.map((c, i) => (
                 <div key={i} className="grade-item">
                   <div className="grade-item-head">
@@ -835,7 +970,7 @@ export default function CallDetail() {
                   )}
                 </div>
               ))}
-            </>
+            </Fold>
           )}
 
           <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>
@@ -849,7 +984,11 @@ export default function CallDetail() {
 
       {speakers.length > 0 && (
         <div className="no-print">
-          <h2>Speakers</h2>
+          <Fold
+            {...foldProps("speakers")}
+            title="Speakers"
+            preview={speakers.map((sp) => label(roles[sp] || "other")).join(" \u00b7 ")}
+          >
           <p className="muted" style={{ marginTop: 0 }}>
             Detected automatically. If the labels are swapped, fix them here.
           </p>
@@ -867,15 +1006,20 @@ export default function CallDetail() {
               </label>
             ))}
           </div>
+          </Fold>
         </div>
       )}
 
       {utterances.length > 0 && (
         <div className="transcript-part">
-          <div className="row" style={{ justifyContent: "space-between", marginTop: 28 }}>
-            <h2 style={{ margin: 0 }}>
-              Transcript{isSpanish && call.translation?.status === "done" ? " \u00b7 translated from Spanish" : ""}
-            </h2>
+          <Fold
+            {...foldProps("transcript")}
+            title="Transcript"
+            preview={`${utterances.length} lines${
+              isSpanish && call.translation?.status === "done" ? " \u00b7 translated from Spanish" : ""
+            }`}
+          >
+          <div className="row" style={{ justifyContent: "flex-end" }}>
             {isSpanish && call.translation?.status === "done" && (
               <button className="no-print" aria-pressed={showOriginal} onClick={() => setShowOriginal((v) => !v)}>
                 {showOriginal ? "Hide original Spanish" : "Show original Spanish"}
@@ -924,6 +1068,7 @@ export default function CallDetail() {
               );
             })}
           </div>
+          </Fold>
         </div>
       )}
 

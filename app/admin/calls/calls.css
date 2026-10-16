@@ -352,3 +352,84 @@ select {
   .print-only { display: inline !important; }
   .utt { grid-template-columns: 48px 140px 1fr; }
 }
+
+/* ---------- Collapsible report sections ---------- */
+
+.fold-all {
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 22px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 2px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tone);
+  cursor: pointer;
+}
+
+.link-btn:hover { text-decoration: underline; }
+
+details.fold {
+  border-top: 1px solid var(--line);
+}
+
+details.fold:last-of-type {
+  border-bottom: 1px solid var(--line);
+}
+
+details.fold > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 2px;
+  user-select: none;
+}
+
+details.fold > summary::-webkit-details-marker { display: none; }
+
+details.fold > summary::before {
+  content: "\25B8";
+  color: var(--muted);
+  font-size: 12px;
+  transition: transform 0.15s ease;
+}
+
+details.fold[open] > summary::before { transform: rotate(90deg); }
+
+details.fold > summary:hover .fold-title { color: var(--text); }
+
+.fold-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.fold-preview {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.fold-body { padding: 0 0 16px; }
+
+@media (max-width: 600px) {
+  details.fold > summary { flex-wrap: wrap; }
+  .fold-preview { margin-left: 22px; width: 100%; text-align: left; }
+}
+
+@media print {
+  details.fold,
+  details.fold:last-of-type { border: none; }
+  details.fold > summary { padding: 14px 0 6px; break-after: avoid; }
+  details.fold > summary::before,
+  .fold-preview { display: none; }
+}
