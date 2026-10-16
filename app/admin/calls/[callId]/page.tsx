@@ -130,6 +130,14 @@ export default function CallDetail() {
     }
   }, [call, supabase, load]);
 
+  // Transcript labels use the names entered at upload: the rep chosen in the
+  // dropdown, and the client name if one was typed.
+  const label = (r: Role): string => {
+    if (r === "rep") return call?.profiles?.full_name?.trim() || ROLE_LABEL.rep;
+    if (r === "client") return call?.client_label?.trim() || ROLE_LABEL.client;
+    return ROLE_LABEL[r];
+  };
+
   const roles = useMemo(
     () => resolveRoles(call?.transcript ?? null, call?.speaker_roles ?? null, call?.grade ?? null),
     [call]
@@ -407,7 +415,7 @@ export default function CallDetail() {
                 <select value={roles[s]} onChange={(e) => setRole(s, e.target.value as Role)}>
                   {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
                     <option key={r} value={r}>
-                      {ROLE_LABEL[r]}
+                      {label(r) !== ROLE_LABEL[r] ? `${ROLE_LABEL[r]} (${label(r)})` : ROLE_LABEL[r]}
                     </option>
                   ))}
                 </select>
@@ -429,7 +437,7 @@ export default function CallDetail() {
                   <button className="time-link" onClick={() => seek(u.start)}>
                     {clock(u.start)}
                   </button>
-                  <span className="who">{ROLE_LABEL[role]}</span>
+                  <span className="who">{label(role)}</span>
                   <span className="said">
                     <Said text={u.text} />
                   </span>
