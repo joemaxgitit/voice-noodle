@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { startJob } from "@/lib/callsClient";
 import {
   OUTCOME_LABEL,
+  langOf,
   STATUS_LABEL,
   clock,
   isStuck,
@@ -16,7 +17,8 @@ import {
   type CallStatus,
   type Outcome,
 } from "@/lib/calls";
-import { shrinkAudio, SHRINK_OVER_BYTES } from "@/lib/shrinkAudio";
+import { decodeMono, encodeMp3, SHRINK_OVER_BYTES, type Decoded } from "@/lib/shrinkAudio";
+import { measureVoice, type VoiceData } from "@/lib/voice";
 import "./calls.css";
 
 type Person = { id: string; full_name: string | null; email: string | null; team: string | null; org_id: string | null };
@@ -41,6 +43,9 @@ type CallRow = {
   updated_at: string;
   created_at: string;
   cost: CallCost | null;
+  lang: string | null;
+  translation_status: string | null;
+  translation_usd: number | null;
   profiles: { full_name: string | null } | null;
 };
 
@@ -105,12 +110,13 @@ export default function Calls() {
   // Grading is started from here once a transcript lands. Remember which
   // calls this tab has already kicked so a poll does not start it twice.
   const kicked = useRef(new Set<string>());
+  const kickedTranslate = useRef(new Set<string>());
 
   const loadCalls = useCallback(async () => {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, rep_id, client_label, call_date, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, error, script_id, updated_at, created_at, cost, profiles:rep_id(full_name)"
+        "id, rep_id, client_label, call_date, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, error, script_id, updated_at, created_at, cost, lang:transcript->>language, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
       )
       .order("created_at", { ascending: false })
       .limit(300);
@@ -169,6 +175,18 @@ export default function Calls() {
     }
   }, [calls, supabase, loadCalls]);
 
+  // Spanish transcript ready -> translate it, alongside grading.
+  useEffect(() => {
+    for (const c of calls) {
+      if (c.lang && langOf(c.lang) === "es" && !c.translation_status && !kickedTranslate.current.has(c.id)) {
+        kickedTranslate.current.add(c.id);
+        void startJob(supabase, "translate", c.id).then((err) => {
+          if (err) setError(err);
+        });
+      }
+    }
+  }, [calls, supabase]);
+
   // Picking a rep picks the script for their team.
   function chooseRep(id: string) {
     setRepId(id);
@@ -183,27 +201,50 @@ export default function Calls() {
       setError("Choose a recording, the rep, and the script.");
       return;
     }
-    // Long calls go over the storage limit, so big files are re-encoded to
-    // small speech-quality MP3 first. See lib/shrinkAudio.ts.
+    // The recording is decoded once, in this browser. That feeds two things:
+    // compressing long calls under the storage limit (lib/shrinkAudio.ts) and
+    // measuring the voice for tonality grading (lib/voice.ts).
     let upFile = file;
     let seconds: number | null = null;
+    let voice: VoiceData | null = null;
+    let decoded: Decoded | null = null;
 
-    if (file.size > SHRINK_OVER_BYTES) {
-      setBusy("Compressing 0%...");
-      try {
-        const out = await shrinkAudio(file, (f) =>
-          setBusy(`Compressing ${Math.round(f * 100)}%...`)
-        );
-        upFile = out.file;
-        seconds = out.seconds;
-      } catch (e) {
+    setBusy("Reading recording...");
+    try {
+      decoded = await decodeMono(file);
+      seconds = Math.round(decoded.seconds);
+    } catch (e) {
+      // A file this browser cannot decode can still be transcribed; it just
+      // gets no voice measurements. Too big to upload uncompressed, though.
+      if (file.size > SHRINK_OVER_BYTES) {
         setBusy("");
-        setError(e instanceof Error ? e.message : "Could not compress the recording.");
+        setError(e instanceof Error ? e.message : "Could not read the recording.");
         return;
       }
-    } else {
-      setBusy("Reading file...");
       seconds = await audioSeconds(file);
+    }
+
+    if (decoded) {
+      try {
+        voice = await measureVoice(decoded.pcm, decoded.rate, (f) =>
+          setBusy(`Measuring voice ${Math.round(f * 100)}%...`)
+        );
+      } catch {
+        voice = null; // grading still works, from the words alone
+      }
+
+      if (file.size > SHRINK_OVER_BYTES) {
+        try {
+          upFile = await encodeMp3(decoded, file.name, (f) =>
+            setBusy(`Compressing ${Math.round(f * 100)}%...`)
+          );
+        } catch (e) {
+          setBusy("");
+          setError(e instanceof Error ? e.message : "Could not compress the recording.");
+          return;
+        }
+      }
+      decoded = null; // let the browser free the decoded audio
     }
 
     if (upFile.size > MAX_MB * 1024 * 1024) {
@@ -229,6 +270,7 @@ export default function Calls() {
         call_date: callDate || null,
         file_name: file.name,
         duration_secs: seconds,
+        voice,
         status: "uploading",
       })
       .select("id")
@@ -300,7 +342,7 @@ export default function Calls() {
     for (const c of calls) {
       const d = new Date(c.created_at);
       if (d.getFullYear() !== now.getFullYear() || d.getMonth() !== now.getMonth() || !c.cost) continue;
-      usd += (c.cost.transcribe_usd ?? 0) + (c.cost.grade_usd_total ?? 0);
+      usd += (c.cost.transcribe_usd ?? 0) + (c.cost.grade_usd_total ?? 0) + (Number(c.translation_usd) || 0);
       n += 1;
     }
     return { usd, n };
@@ -450,6 +492,7 @@ export default function Calls() {
                     {dateLabel(c.call_date)}
                     {c.duration_secs ? ` · ${clock(c.duration_secs)}` : ""}
                     {outcomeOf(c) ? ` · ${OUTCOME_LABEL[outcomeOf(c) as Outcome]}` : ""}
+                    {c.lang && langOf(c.lang) === "es" ? " · Spanish" : ""}
                     {c.close_quality === "fragile" && <span className="danger">{" · fragile close"}</span>}
                   </div>
                 </span>

@@ -1,6 +1,9 @@
 import { NextResponse, after } from "next/server";
 import {
   ROADMAP,
+  voiceNotes,
+  type VoiceTimeline,
+  langOf,
   gradeCostUsd,
   isStuck,
   scoreOf,
@@ -11,7 +14,7 @@ import {
   type GradeVersion,
   type Transcript,
 } from "@/lib/calls";
-import { requireAdmin, failCall, log, type Supa } from "@/lib/callsServer";
+import { requireAdmin, failCall, log, thinkingFor, type Supa } from "@/lib/callsServer";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -39,11 +42,6 @@ type ModuleRow = {
   }[];
 };
 
-/** "en" or "es" from whatever code the transcriber returned ("eng", "spa", "es-MX"...). */
-function langOf(code: string | null | undefined): "en" | "es" {
-  const c = (code || "").toLowerCase();
-  return c.startsWith("es") || c.startsWith("spa") ? "es" : "en";
-}
 
 /**
  * Grades a transcribed call against its script. Returns at once; the work
@@ -76,7 +74,7 @@ export async function POST(request: Request) {
   const { data: call, error } = await supabase
     .from("calls")
     .select(
-      "id, status, updated_at, transcript, script_id, grade, score, slp_score, grade_history, cost, profiles:rep_id(full_name)"
+      "id, status, updated_at, transcript, voice, script_id, grade, score, slp_score, grade_history, cost, profiles:rep_id(full_name)"
     )
     .eq("id", callId)
     .single();
@@ -137,7 +135,8 @@ export async function POST(request: Request) {
     (call as unknown as { profiles: { full_name: string | null } | null }).profiles?.full_name ||
     "the rep";
 
-  const blocks = buildPrompt(script?.title || "Script", useModules, transcript, repName);
+  const voice = (call.voice as VoiceTimeline | null) ?? null;
+  const blocks = buildPrompt(script?.title || "Script", useModules, transcript, repName, lang, voice);
 
   const previous: GradeVersion | null =
     call.grade && call.score !== undefined
@@ -192,8 +191,10 @@ function scriptText(modules: ModuleRow[]): { text: string; sequence: string[] } 
   return { text: blocks.join("\n\n"), sequence };
 }
 
-function transcriptText(t: Transcript): string {
-  const lines = t.utterances.map((u) => `[${Math.round(u.start)}] ${u.speaker}: ${u.text}`);
+function transcriptText(t: Transcript, notes: (string | null)[]): string {
+  const lines = t.utterances.map(
+    (u, i) => `[${Math.round(u.start)}] ${u.speaker}${notes[i] ? ` {${notes[i]}}` : ""}: ${u.text}`
+  );
   let out = lines.join("\n");
   // A 90-minute call is ~90k characters. This only bites on something absurd.
   if (out.length > 300_000) out = out.slice(0, 300_000) + "\n[transcript truncated]";
@@ -207,7 +208,14 @@ function transcriptText(t: Transcript): string {
  * part that changes per call. Keep anything call-specific OUT of the first
  * block, or the cache never hits.
  */
-function buildPrompt(scriptTitle: string, modules: ModuleRow[], t: Transcript, repName: string) {
+function buildPrompt(
+  scriptTitle: string,
+  modules: ModuleRow[],
+  t: Transcript,
+  repName: string,
+  lang: "en" | "es",
+  voice: VoiceTimeline | null
+) {
   const s = scriptText(modules);
 
   const stable = `You are reviewing a recorded phone call for a sales manager who coaches reps on a script. Grade how well the rep followed the script, and flag anything a compliance reviewer should hear.
@@ -264,7 +272,7 @@ slp: exactly these eight skills, in this order, each scored 1-10 (1-3 weak, 4-6 
 - "Company certainty (Ten 3)": the client's certainty in Bolton and Lionside.
 - "Looping": recognizing which Ten is low when the client stalls and running the matching loop.
 - "Action and pain thresholds": raising the client's urgency honestly and lowering the risk they feel about acting.
-- "Tonality cues (from words)": whether the wording fits the tones the script marks, for example I Care language where the script calls for it. Tone of voice cannot be heard here; judge wording only and say so.
+- "Tonality and tonal variety": whether the rep's voice matched the tones the script marks and kept moving between them, judged from the voice measurements (see Tonality below).
 evidence: a short quote (20 words or fewer) and its time (-1 if none), or "". coaching: one specific sentence.
 
 How Straight Line is scored here -- this matters:
@@ -284,13 +292,47 @@ furthest_point: one short phrase for where the call ended (for example "Enrolled
 summary: 2-3 plain sentences a busy manager can read in ten seconds.
 strengths: 2-4 short items. coaching_priorities: the top 3 things for this rep to work on, most important first -- draw on the roadmap stage where the arc broke first, the Straight Line scorecard, the script sections and the flags together.
 
-You are grading from words only. Do not judge tone of voice or pacing.
+Tonality. Straight Line tonality is half of how the rep is graded, so judge it on every part of the call.
+Most transcript lines carry measurements taken from the recording itself, in braces, for example {pitch moves 6.2st, ends falling, quieter by 4dB, 168wpm, after 1.3s pause}:
+- pitch moves Xst: how much the voice rose and fell within that line, in semitones. Under ~2 is flat; 4-8 is normal expressive speech; 10+ is very animated.
+- higher / lower than usual: the line's pitch against that speaker's own normal voice.
+- ends rising / falling / level: the pitch at the end of the line against the rest of it.
+- louder / quieter by XdB: against that speaker's own normal volume. 3dB is noticeable, 6dB is a clear change, 10dB+ is dramatic.
+- wpm: speaking pace for that line. after Xs pause: silence before it.
+A summary per speaker comes before the transcript, including long flat stretches. These are measured from phone audio, so treat them as good evidence rather than exact -- one odd reading is noise; a pattern is real.
+What each tone sounds like, measured that way (from the Tone Key):
+- AC (Absolute Certainty): hard and definitive -- firm, steady or louder volume, falling ends, no rush, no hesitation.
+- I CARE: genuine empathy, then stop talking -- softer and often slower or lower than usual, then a pause for the client.
+- PT (Presupposing): said like it goes without saying -- matter-of-fact, level or falling ends, even pace.
+- RM (Reasonable Man): calm and level on small asks -- relaxed, with the ask ending rising ("Sound good?").
+- S (Scarcity): drop toward a near-whisper -- clearly quieter.
+- CALM: reassuring and steady -- slow, even, little movement. Flat is RIGHT here; never call CALM monotone.
+- PREACHER: Absolute Certainty with annoyance and the spirit of the pulpit -- louder and more animated.
+The Tone Key's own rule: never sit in one tone for long; the movement between tones is what clients respond to. Long flat stretches outside CALM, rushing (well above that rep's usual pace) through key moments, and statements that end rising (sounding unsure) all count against tonality.
+If there are no measurements for this call, judge tonality from wording only and say so in tonality.summary.
+
+tonality: summary: two sentences on how the rep used tone and variety across the call. flat_stretches: each long flat stretch from the summary that matters, with start and end in seconds and a note on what was being said (empty if none). tone_checks: up to 8 of the most telling moments where the script marks a tone -- time, tone (the marker, for example "I CARE"), expected (what it should sound like, a few words), heard (what the measurements show, a few words), match ("yes", "partial" or "no").
+In emotional_arc, voice: a few words on how the rep's voice served that stage (for example "softened and slowed for the hardship -- I Care landed"), or "" if not reached.
+Judge content from the words and delivery from the measurements. Do not guess at tone of voice beyond what the measurements show.
 Return only the JSON object described by the schema.`;
 
-  const perCall = `The rep on this call is ${repName}.
+  // Kept out of the cached block: the cache is per script, not per language.
+  const spanish =
+    lang === "es"
+      ? `
+This call is in Spanish and is graded against the Spanish script above. Read the original Spanish carefully -- judge what was actually said, not a paraphrase. Write ALL of your output in English, for an English-speaking manager: translate every quote and piece of evidence into faithful English. Name each script section by its title as listed, followed by its English name in parentheses, for example "La dificultad (Hardship)".
+`
+      : "";
 
+  const notes = voiceNotes(voice, t);
+  const voiceSummary = notes.header
+    ? `\n<voice_summary>\n${notes.header}\n</voice_summary>\n`
+    : "\nNo voice measurements were taken for this call.\n";
+
+  const perCall = `The rep on this call is ${repName}.
+${spanish}${voiceSummary}
 <transcript>
-${transcriptText(t)}
+${transcriptText(t, notes.lines)}
 </transcript>
 
 Grade this call as instructed above.`;
@@ -325,6 +367,7 @@ const GRADE_SCHEMA = {
     "slp",
     "three_tens",
     "slp_summary",
+    "tonality",
     "outcome",
     "outcome_note",
     "turning_points",
@@ -337,13 +380,14 @@ const GRADE_SCHEMA = {
       type: "array",
       items: {
         type: "object",
-        required: ["stage", "intended", "observed", "landed", "evidence", "time"],
+        required: ["stage", "intended", "observed", "landed", "evidence", "time", "voice"],
         additionalProperties: false,
         properties: {
           stage: { type: "string" },
           intended: { type: "string" },
           observed: { type: "string" },
           landed: { type: "string" },
+          voice: { type: "string" },
           evidence: { type: "string" },
           time: { type: "number" },
         },
@@ -376,6 +420,38 @@ const GRADE_SCHEMA = {
       },
     },
     slp_summary: { type: "string" },
+    tonality: {
+      type: "object",
+      required: ["summary", "flat_stretches", "tone_checks"],
+      additionalProperties: false,
+      properties: {
+        summary: { type: "string" },
+        flat_stretches: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["start", "end", "note"],
+            additionalProperties: false,
+            properties: { start: { type: "number" }, end: { type: "number" }, note: { type: "string" } },
+          },
+        },
+        tone_checks: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["time", "tone", "expected", "heard", "match"],
+            additionalProperties: false,
+            properties: {
+              time: { type: "number" },
+              tone: { type: "string" },
+              expected: { type: "string" },
+              heard: { type: "string" },
+              match: { type: "string" },
+            },
+          },
+        },
+      },
+    },
     outcome: { type: "string" },
     outcome_note: { type: "string" },
     turning_points: {
@@ -457,21 +533,6 @@ const GRADE_SCHEMA = {
   },
 };
 
-/*
-  How to switch off up-front thinking differs by model, and sending the wrong
-  one is a 400 error:
-    Sonnet 5.5 -- "between_tools" (no tools here, so no thinking happens)
-    Haiku 5.5  -- "disabled"
-    others     -- leave it out and let the model decide (it still fits:
-                  max_tokens is 32000)
-  All of these are only accepted at effort "high" or below, which we use.
-*/
-function thinkingFor(model: string): { thinking?: { type: string } } {
-  if (model.includes("sonnet-5-5")) return { thinking: { type: "between_tools" } };
-  if (model.includes("haiku-5-5")) return { thinking: { type: "disabled" } };
-  return {};
-}
-
 function askClaude(blocks: { type: string; text: string }[], key: string, strict: boolean) {
   const content = strict
     ? blocks
@@ -544,6 +605,14 @@ function clean(g: Grade) {
     g.three_tens.product = ten(g.three_tens.product);
     g.three_tens.rep = ten(g.three_tens.rep);
     g.three_tens.company = ten(g.three_tens.company);
+  }
+  if (g.tonality) {
+    g.tonality.flat_stretches ||= [];
+    g.tonality.tone_checks ||= [];
+    for (const x of g.tonality.tone_checks) {
+      x.time = t(x.time);
+      x.match = one(String(x.match).toLowerCase(), ["yes", "partial", "no"] as const, "partial");
+    }
   }
   for (const x of g.turning_points ?? []) {
     x.time = t(x.time);

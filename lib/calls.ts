@@ -62,6 +62,7 @@ export type Flag = {
 
 export type ArcStage = {
   stage: string;
+  voice?: string; // how the rep's voice served this stage
   intended: string;
   observed: string;
   landed: "yes" | "partial" | "no" | "not_reached";
@@ -75,6 +76,18 @@ export type SlpSkill = {
   evidence: string;
   time: number | null;
   coaching: string;
+};
+
+export type Tonality = {
+  summary: string;
+  flat_stretches: { start: number; end: number; note: string }[];
+  tone_checks: {
+    time: number | null;
+    tone: string;
+    expected: string;
+    heard: string;
+    match: "yes" | "partial" | "no";
+  }[];
 };
 
 export type ThreeTens = {
@@ -115,6 +128,7 @@ export type Grade = {
   slp?: SlpSkill[];
   three_tens?: ThreeTens;
   slp_summary?: string;
+  tonality?: Tonality;
   // Outcome. Explains the result; never adds points to either score.
   outcome?: Outcome;
   outcome_note?: string;
@@ -150,6 +164,31 @@ export const ROADMAP: { stage: string; feel: string }[] = [
   { stage: "Contract and compliance", feel: "clear on exactly what they agreed to" },
   { stage: "Button up", feel: "committed, and patient for the long haul" },
 ];
+
+/** "en" or "es" from whatever code the transcriber returned ("eng", "spa", "es-MX"...). */
+export function langOf(code: string | null | undefined): "en" | "es" {
+  const c = (code || "").toLowerCase();
+  return c.startsWith("es") || c.startsWith("spa") ? "es" : "en";
+}
+
+/** English version of a Spanish transcript, one line per utterance. */
+export type Translation = {
+  status: "working" | "done" | "failed";
+  lines?: string[]; // same length and order as transcript.utterances
+  model?: string;
+  usd?: number | null;
+  error?: string;
+  started_at?: string;
+};
+
+/** A translation job is presumed dead after this long. */
+export function translationStuck(t: Translation | null): boolean {
+  return (
+    t?.status === "working" &&
+    !!t.started_at &&
+    Date.now() - new Date(t.started_at).getTime() > STUCK_AFTER_MS
+  );
+}
 
 /** A grade that has since been replaced by a re-grade. */
 export type GradeVersion = { grade: Grade; score: number | null; slp_score?: number | null };
@@ -234,10 +273,13 @@ export type ScribeWord = {
    this use that is the right side to err on.
    ------------------------------------------------------------------------ */
 
+// English and Spanish. Keys are lowercase with accents removed (see clean()).
 const DIGIT_WORDS: Record<string, string> = {
   zero: "0", oh: "0", o: "0",
   one: "1", two: "2", three: "3", four: "4", five: "5",
   six: "6", seven: "7", eight: "8", nine: "9",
+  cero: "0", uno: "1", una: "1", un: "1", dos: "2", tres: "3", cuatro: "4",
+  cinco: "5", seis: "6", siete: "7", ocho: "8", nueve: "9",
 };
 
 const TENS_WORDS: Record<string, string> = {
@@ -245,6 +287,13 @@ const TENS_WORDS: Record<string, string> = {
   fifteen: "15", sixteen: "16", seventeen: "17", eighteen: "18", nineteen: "19",
   twenty: "20", thirty: "30", forty: "40", fifty: "50",
   sixty: "60", seventy: "70", eighty: "80", ninety: "90",
+  diez: "10", once: "11", doce: "12", trece: "13", catorce: "14", quince: "15",
+  dieciseis: "16", diecisiete: "17", dieciocho: "18", diecinueve: "19",
+  veinte: "20", veintiuno: "21", veintiun: "21", veintidos: "22", veintitres: "23",
+  veinticuatro: "24", veinticinco: "25", veintiseis: "26", veintisiete: "27",
+  veintiocho: "28", veintinueve: "29",
+  treinta: "30", cuarenta: "40", cincuenta: "50", sesenta: "60",
+  setenta: "70", ochenta: "80", noventa: "90",
 };
 
 // Said between digits without ending the number -- by either party, since
@@ -252,15 +301,26 @@ const TENS_WORDS: Record<string, string> = {
 const CONNECTORS = new Set([
   "dash", "-", "hyphen", "um", "uh", "and", "then",
   "yes", "yeah", "yep", "ok", "okay", "right", "correct", "uh-huh", "mm-hmm", "mhm", "got", "it",
+  // Spanish: "y" (and), "guion" (dash), and the confirmations said between chunks.
+  "y", "guion", "este", "eh", "si", "aja", "okey", "vale", "bueno", "correcto", "exacto", "listo", "perfecto",
 ]);
 const MAX_GAP = 3; // connector tokens allowed between two numeric chunks
 
-const MONEY_AFTER = new Set(["dollars", "dollar", "bucks", "cents", "grand", "k"]);
+const MONEY_AFTER = new Set([
+  "dollars", "dollar", "bucks", "cents", "grand", "k",
+  "dolares", "dolar", "centavos", "pesos", "mil",
+]);
 
 const REDACTED = "[REDACTED]";
 
 function clean(token: string): string {
-  return token.toLowerCase().replace(/^[^\w$]+|[^\w]+$/g, "");
+  // Accents off first ("sí" -> "si", "veintidós" -> "veintidos"); otherwise
+  // the edge-trim below would cut accented letters as punctuation.
+  return token
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/^[^\w$]+|[^\w]+$/g, "");
 }
 
 /** Digits a token contributes to a number, or null if it is not numeric. */
@@ -535,4 +595,160 @@ export const STUCK_AFTER_MS = 6 * 60 * 1000;
 export function isStuck(status: CallStatus, updatedAt: string): boolean {
   if (!["uploading", "uploaded", "transcribing", "grading"].includes(status)) return false;
   return Date.now() - new Date(updatedAt).getTime() > STUCK_AFTER_MS;
+}
+
+/* ------------------------------------------------------------------------
+   Voice measurements -> per-line notes the grader can read.
+
+   Turns the quarter-second pitch/loudness timeline from lib/voice.ts into a
+   short note on each transcript line, plus a per-speaker summary. Every
+   number is relative to that speaker's own voice, so a deep voice and a high
+   one are judged the same way.
+   ------------------------------------------------------------------------ */
+
+export type VoiceTimeline = { v: 1; bin: number; f0: number[]; db: number[] };
+
+const semitones = (f: number, ref: number) => 12 * Math.log2(f / ref);
+
+const pct = (xs: number[], p: number) => {
+  if (!xs.length) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.max(0, Math.round((s.length - 1) * p)))];
+};
+
+/* Under this many semitones of movement for this long reads as monotone.
+   Set by judgment, not tuned on real calls yet -- spot-check before trusting. */
+const FLAT_ST = 2.5;
+const FLAT_MIN_SECS = 90;
+
+export function voiceNotes(
+  voice: VoiceTimeline | null,
+  t: Transcript
+): { header: string; lines: (string | null)[] } {
+  const lines: (string | null)[] = t.utterances.map(() => null);
+  if (!voice?.f0?.length) return { header: "", lines };
+
+  const binsOf = (u: Utterance) => {
+    const a = Math.max(0, Math.floor(u.start / voice.bin));
+    const b = Math.min(voice.f0.length, Math.ceil(u.end / voice.bin));
+    const f: number[] = [];
+    const d: number[] = [];
+    for (let i = a; i < b; i++) {
+      if (voice.f0[i] > 0) {
+        f.push(voice.f0[i]);
+        d.push(voice.db[i]);
+      }
+    }
+    return { f, d };
+  };
+
+  // Each speaker's own baseline: typical pitch and typical loudness.
+  const base = new Map<string, { hz: number; db: number }>();
+  for (const s of t.speakers) {
+    const f: number[] = [];
+    const d: number[] = [];
+    for (const u of t.utterances) {
+      if (u.speaker !== s) continue;
+      const b = binsOf(u);
+      f.push(...b.f);
+      d.push(...b.d);
+    }
+    if (f.length >= 20) base.set(s, { hz: pct(f, 0.5), db: pct(d, 0.5) });
+  }
+
+  type Stat = { range: number | null; st: number[]; wpm: number | null };
+  const stats: Stat[] = [];
+
+  t.utterances.forEach((u, i) => {
+    const ref = base.get(u.speaker);
+    const dur = u.end - u.start;
+    const words = u.text.replace(/\[[^\]]*\]/g, " ").split(/\s+/).filter(Boolean).length;
+    const wpm = dur >= 1.5 && words >= 4 ? Math.round((words / dur) * 60) : null;
+    const prevEnd = i > 0 ? t.utterances[i - 1].end : null;
+    const pause = prevEnd !== null && u.start - prevEnd >= 1 ? u.start - prevEnd : null;
+
+    const parts: string[] = [];
+    let range: number | null = null;
+    let st: number[] = [];
+
+    if (ref) {
+      const b = binsOf(u);
+      st = b.f.map((f) => semitones(f, ref.hz));
+      // Drop octave slips: a jump of ~12 semitones from the line's own
+      // middle is the detector, not the voice.
+      const mid = pct(st, 0.5);
+      st = st.filter((x) => Math.abs(x - mid) < 9);
+      if (st.length >= 4) {
+        range = pct(st, 0.9) - pct(st, 0.1);
+        parts.push(`pitch moves ${range.toFixed(1)}st`);
+        const level = pct(st, 0.5);
+        if (Math.abs(level) >= 2) parts.push(`${level > 0 ? "higher" : "lower"} than usual by ${Math.abs(level).toFixed(0)}st`);
+      }
+      if (dur >= 1.5 && st.length >= 8) {
+        const end = pct(st.slice(-4), 0.5);
+        const rest = pct(st.slice(0, -4), 0.5);
+        const diff = end - rest;
+        parts.push(`ends ${diff >= 1.5 ? "rising" : diff <= -1.5 ? "falling" : "level"}`);
+      }
+      if (b.d.length >= 4) {
+        const vol = pct(b.d, 0.5) - ref.db;
+        if (Math.abs(vol) >= 3) parts.push(`${vol > 0 ? "louder" : "quieter"} by ${Math.abs(vol).toFixed(0)}dB`);
+      }
+    }
+    if (wpm !== null) parts.push(`${wpm}wpm`);
+    if (pause !== null) parts.push(`after ${pause.toFixed(1)}s pause`);
+
+    lines[i] = parts.length ? parts.join(", ") : null;
+    stats.push({ range, st, wpm });
+  });
+
+  // Per speaker: typical movement, pace, and long flat stretches.
+  const summary: string[] = [];
+  for (const s of t.speakers) {
+    if (!base.has(s)) continue;
+    const idx = t.utterances.map((u, i) => (u.speaker === s ? i : -1)).filter((i) => i >= 0);
+    const ranges = idx.map((i) => stats[i].range).filter((x): x is number => x !== null);
+    const wpms = idx.map((i) => stats[i].wpm).filter((x): x is number => x !== null);
+
+    // Each line is judged with its neighbours: a rolling window of ~30 s of
+    // this speaker's own talking, centred on the line. Runs of flat lines
+    // then merge into stretches.
+    const talkOf = (i: number) => t.utterances[i].end - t.utterances[i].start;
+    const flatAt = idx.map((_, k) => {
+      let lo = k;
+      let hi = k;
+      let talk = talkOf(idx[k]);
+      while (talk < 30 && (lo > 0 || hi < idx.length - 1)) {
+        if (hi < idx.length - 1) talk += talkOf(idx[++hi]);
+        if (talk < 30 && lo > 0) talk += talkOf(idx[--lo]);
+      }
+      const all = idx.slice(lo, hi + 1).flatMap((i) => stats[i].st);
+      if (all.length < 40) return null; // not enough voice to say
+      return pct(all, 0.9) - pct(all, 0.1);
+    });
+    const flats: [number, number, number][] = [];
+    idx.forEach((i, k) => {
+      const r = flatAt[k];
+      if (r === null || r >= FLAT_ST) return;
+      const u = t.utterances[i];
+      const last = flats[flats.length - 1];
+      if (last && k > 0 && flatAt[k - 1] !== null && flatAt[k - 1]! < FLAT_ST) {
+        last[1] = u.end;
+        last[2] = Math.max(last[2], r);
+      } else flats.push([u.start, u.end, r]);
+    });
+
+    const long = flats.filter(([a, b]) => b - a >= FLAT_MIN_SECS);
+    summary.push(
+      `${s}: typical pitch movement per line ${ranges.length ? pct(ranges, 0.5).toFixed(1) : "?"}st, ` +
+        `typical pace ${wpms.length ? pct(wpms, 0.5) : "?"}wpm. ` +
+        (long.length
+          ? `Flat stretches (under ${FLAT_ST}st of movement): ` +
+            long.map(([a, b, r]) => `[${Math.round(a)}]-[${Math.round(b)}] (${r.toFixed(1)}st)`).join(", ") +
+            "."
+          : "No long flat stretches.")
+    );
+  }
+
+  return { header: summary.join("\n"), lines };
 }

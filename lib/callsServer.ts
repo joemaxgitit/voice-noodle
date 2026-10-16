@@ -75,3 +75,17 @@ export async function failCall(supabase: Supa, callId: string, message: string) 
 
 export const log = (tag: string, callId: string, started: number, msg: string) =>
   console.log(`[${tag}] ${callId.slice(0, 8)} ${msg} @ ${Date.now() - started}ms`);
+
+/*
+  How to switch off up-front thinking differs by model, and sending the wrong
+  one is a 400 error:
+    Sonnet 5.5 -- "between_tools" (no tools here, so no thinking happens)
+    Haiku 5.5  -- "disabled"
+    others     -- leave it out and let the model decide
+  All of these are only accepted at effort "high" or below, which we use.
+*/
+export function thinkingFor(model: string): { thinking?: { type: string } } {
+  if (model.includes("sonnet-5-5")) return { thinking: { type: "between_tools" } };
+  if (model.includes("haiku-5-5")) return { thinking: { type: "disabled" } };
+  return {};
+}

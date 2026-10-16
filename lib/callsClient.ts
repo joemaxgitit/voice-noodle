@@ -7,7 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  */
 export async function startJob(
   supabase: SupabaseClient,
-  route: "transcribe" | "grade",
+  route: "transcribe" | "grade" | "translate",
   callId: string
 ): Promise<string> {
   const {

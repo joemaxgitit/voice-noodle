@@ -22,9 +22,14 @@ import {
   type Grade,
   type Role,
   type Transcript,
+  type Translation,
+  langOf,
+  translationStuck,
   type CallCost,
   type GradeVersion,
 } from "@/lib/calls";
+import { decodeMono } from "@/lib/shrinkAudio";
+import { measureVoice } from "@/lib/voice";
 import "../calls.css";
 
 type Call = {
@@ -37,6 +42,8 @@ type Call = {
   status: CallStatus;
   error: string | null;
   transcript: Transcript | null;
+  translation: Translation | null;
+  voice_v: number | null; // set when voice measurements exist
   redaction_count: number;
   speaker_roles: Record<string, Role> | null;
   grade: Grade | null;
@@ -49,7 +56,7 @@ type Call = {
   script_id: string | null;
   updated_at: string;
   profiles: { full_name: string | null } | null;
-  scripts: { title: string } | null;
+  scripts: { title: string; logo_url: string | null } | null;
 };
 
 const BUSY: CallStatus[] = ["uploading", "uploaded", "transcribing", "grading"];
@@ -92,12 +99,30 @@ export default function CallDetail() {
   const [version, setVersion] = useState(-1);
   const audio = useRef<HTMLAudioElement>(null);
   const kicked = useRef(false);
+  const kickedTranslate = useRef(false);
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState("");
+  const [voiceDone, setVoiceDone] = useState(false);
+  // Which part is being printed. The class it puts on <main> tells the print
+  // stylesheet what to leave out; cleared again once the print dialog closes.
+  const [printMode, setPrintMode] = useState<"report" | "transcript" | null>(null);
+  useEffect(() => {
+    if (!printMode) return;
+    const done = () => setPrintMode(null);
+    window.addEventListener("afterprint", done);
+    // One frame so the class is on the page before the dialog snapshots it.
+    const id = requestAnimationFrame(() => window.print());
+    return () => {
+      cancelAnimationFrame(id);
+      window.removeEventListener("afterprint", done);
+    };
+  }, [printMode]);
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, grade_history, cost, script_id, updated_at, profiles:rep_id(full_name), scripts(title)"
+        "id, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, grade_history, cost, translation, voice_v:voice->v, script_id, updated_at, profiles:rep_id(full_name), scripts(title, logo_url)"
       )
       .eq("id", callId)
       .single();
@@ -128,13 +153,17 @@ export default function CallDetail() {
       .then(({ data }) => setAudioUrl(data?.signedUrl || ""));
   }, [audioPath, supabase]);
 
+  const isSpanish = langOf(call?.transcript?.language) === "es";
+  const translating =
+    isSpanish && call?.translation?.status === "working" && !translationStuck(call.translation);
+
   // Poll while a job runs.
   const running = !!call && BUSY.includes(call.status) && !isStuck(call.status, call.updated_at);
   useEffect(() => {
-    if (!running) return;
+    if (!running && !translating) return;
     const t = setInterval(load, 4000);
     return () => clearInterval(t);
-  }, [running, load]);
+  }, [running, translating, load]);
 
   // Transcript just landed -> grade it (the list page does the same).
   useEffect(() => {
@@ -146,6 +175,55 @@ export default function CallDetail() {
       });
     }
   }, [call, supabase, load]);
+
+  // Spanish transcript just landed -> translate it. Runs alongside grading;
+  // the grade reads the original Spanish and never waits for this.
+  useEffect(() => {
+    if (call?.transcript && isSpanish && !call.translation && !kickedTranslate.current) {
+      kickedTranslate.current = true;
+      void startJob(supabase, "translate", call.id).then((err) => {
+        if (err) setError(err);
+        void load();
+      });
+    }
+  }, [call, isSpanish, supabase, load]);
+
+  /*
+    For calls uploaded before voice measurement existed: pull the saved
+    recording into this browser and measure it, the same as an upload does.
+    Runs here rather than on the server because it is free here.
+  */
+  async function analyzeVoice() {
+    if (!call || !audioUrl) return;
+    setError("");
+    try {
+      setVoiceBusy("Downloading recording...");
+      const res = await fetch(audioUrl);
+      if (!res.ok) throw new Error(`Could not download the recording (${res.status}).`);
+      const buf = await res.arrayBuffer();
+      setVoiceBusy("Reading recording...");
+      const decoded = await decodeMono(buf);
+      const voice = await measureVoice(decoded.pcm, decoded.rate, (f) =>
+        setVoiceBusy(`Measuring voice ${Math.round(f * 100)}%...`)
+      );
+      setVoiceBusy("Saving...");
+      const { error } = await supabase.from("calls").update({ voice }).eq("id", call.id);
+      if (error) throw new Error(error.message);
+      setVoiceDone(true);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not measure the voice.");
+    }
+    setVoiceBusy("");
+  }
+
+  async function retranslate() {
+    if (!call) return;
+    kickedTranslate.current = true;
+    const err = await startJob(supabase, "translate", call.id);
+    if (err) setError(err);
+    await load();
+  }
 
   // Transcript labels use the names entered at upload: the rep chosen in the
   // dropdown, and the client name if one was typed.
@@ -256,12 +334,21 @@ export default function CallDetail() {
         : ""
     }`;
   const cost = call.cost;
+  const translateUsd = call.translation?.usd ?? null;
   const totalCost =
     cost && (cost.transcribe_usd !== undefined || cost.grade_usd_total !== undefined)
-      ? (cost.transcribe_usd ?? 0) + (cost.grade_usd_total ?? 0)
+      ? (cost.transcribe_usd ?? 0) + (cost.grade_usd_total ?? 0) + (translateUsd ?? 0)
+      : null;
+  // The English line for utterance i, when a finished translation exists.
+  const englishOf = (i: number): string | null =>
+    call.translation?.status === "done" && call.translation.lines?.length === utterances.length
+      ? call.translation.lines[i] ?? null
       : null;
   const stuck = isStuck(call.status, call.updated_at);
   const band = scoreBand(shownScore);
+  const printLogo = (call.scripts?.logo_url || "/proedge-logo.png")
+    .replace(/\.png$/, "-light.png")
+    .replace("/lionside-logo-light.png", "/lionside-logo-print.png");
   const utterances = call.transcript?.utterances ?? [];
   const speakers = call.transcript?.speakers ?? [];
   const flags = [...(g?.flags ?? [])].sort(
@@ -269,11 +356,27 @@ export default function CallDetail() {
   );
 
   return (
-    <main className="shell calls-shell">
-      <div className="topbar">
+    <main className={`shell calls-shell${printMode ? ` printing-${printMode}` : ""}`}>
+      <div className="topbar no-print">
         <Link className="btn" href="/admin/calls" style={{ textDecoration: "none" }}>
           &larr; Calls
         </Link>
+        <div className="row">
+          {g && <button onClick={() => setPrintMode("report")}>Print report</button>}
+          {utterances.length > 0 && <button onClick={() => setPrintMode("transcript")}>Print transcript</button>}
+        </div>
+      </div>
+
+      <div className="print-header">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={printLogo} alt="" />
+        <span>
+          {printMode === "transcript" ? "Call transcript" : "Call review"}
+          {" \u00b7 printed "}
+          {new Date().toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}
+          <br />
+          Confidential &mdash; internal use only
+        </span>
       </div>
 
       <div className="call-head">
@@ -325,11 +428,11 @@ export default function CallDetail() {
         </p>
       )}
 
-      {call.status === "failed" && call.error && <div className="error">{call.error}</div>}
-      {call.status !== "failed" && call.error && <div className="note">{call.error}</div>}
-      {error && <div className="error">{error}</div>}
+      {call.status === "failed" && call.error && <div className="error no-print">{call.error}</div>}
+      {call.status !== "failed" && call.error && <div className="note no-print">{call.error}</div>}
+      {error && <div className="error no-print">{error}</div>}
 
-      <div className="row" style={{ marginTop: 14 }}>
+      <div className="row no-print" style={{ marginTop: 14 }}>
         {(call.status === "failed" || stuck) && (
           <button className="primary" disabled={working} onClick={() => run(call.transcript ? "grade" : "transcribe")}>
             Try again
@@ -346,7 +449,7 @@ export default function CallDetail() {
       </div>
 
       {audioUrl && (
-        <div className="call-audio">
+        <div className="call-audio no-print">
           <audio
             ref={audio}
             src={audioUrl}
@@ -358,7 +461,7 @@ export default function CallDetail() {
       )}
 
       {history.length > 0 && call.grade && (
-        <label className="field" style={{ maxWidth: 420, marginTop: 18 }}>
+        <label className="field no-print" style={{ maxWidth: 420, marginTop: 18 }}>
           <span>Grade shown</span>
           <select value={version} onChange={(e) => setVersion(Number(e.target.value))}>
             <option value={-1}>{versionLabel({ grade: call.grade, score: call.score }, -1)}</option>
@@ -371,6 +474,7 @@ export default function CallDetail() {
         </label>
       )}
 
+      <div className="report-part">
       {g && (
         <>
           <h2>Summary</h2>
@@ -384,7 +488,11 @@ export default function CallDetail() {
               <h2>Outcome</h2>
               <div className="grade-item">
                 <div className="grade-item-head" style={{ alignItems: "center" }}>
+                  <strong className="print-only">
+                    {OUTCOME_LABEL[(call.outcome_manual ?? call.outcome ?? g.outcome ?? "other") as Outcome]}
+                  </strong>
                   <select
+                    className="no-print"
                     value={call.outcome_manual ?? call.outcome ?? g.outcome ?? ""}
                     onChange={(e) => setOutcome(e.target.value)}
                     style={{ width: "auto", fontSize: 15, padding: "8px 10px" }}
@@ -493,6 +601,12 @@ export default function CallDetail() {
                       <span className="muted">Built to feel:</span> {a.intended}
                       <br />
                       <span className="muted">Client showed:</span> {a.observed}
+                      {a.voice && (
+                        <>
+                          <br />
+                          <span className="muted">Rep&rsquo;s voice:</span> {a.voice}
+                        </>
+                      )}
                     </div>
                   )}
                   {a.evidence && (
@@ -571,6 +685,57 @@ export default function CallDetail() {
             </>
           )}
 
+          {g.tonality && (
+            <>
+              <h2>Tonality</h2>
+              <p style={{ lineHeight: 1.6, marginTop: 0 }}>{g.tonality.summary}</p>
+
+              {g.tonality.flat_stretches.length > 0 && (
+                <div className="grade-item">
+                  <div className="grade-item-head">
+                    <span>Flat stretches</span>
+                    <span className="pill poor">{g.tonality.flat_stretches.length}</span>
+                  </div>
+                  {g.tonality.flat_stretches.map((f, i) => (
+                    <div key={i} className="grade-coach">
+                      <button className="time-link" onClick={() => seek(f.start)}>
+                        {clock(f.start)}&ndash;{clock(f.end)}
+                      </button>
+                      {f.note}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {g.tonality.tone_checks.map((c, i) => (
+                <div key={i} className="grade-item">
+                  <div className="grade-item-head">
+                    <span>
+                      {c.time !== null && (
+                        <button className="time-link" onClick={() => seek(c.time)}>
+                          {clock(c.time)}
+                        </button>
+                      )}
+                      <span className="tone-chip">{c.tone}</span>
+                    </span>
+                    <span className={`pill ${c.match === "yes" ? "good" : c.match === "partial" ? "fair" : "poor"}`}>
+                      {c.match === "yes" ? "Matched" : c.match === "partial" ? "Partly" : "Missed"}
+                    </span>
+                  </div>
+                  <div className="arc-feel">
+                    <span className="muted">Should sound:</span> {c.expected}
+                    <br />
+                    <span className="muted">Measured:</span> {c.heard}
+                  </div>
+                </div>
+              ))}
+              <p className="muted" style={{ fontSize: 12 }}>
+                Measured from the recording: pitch movement, line endings, volume and pace. Phone audio makes
+                these approximate -- a good guide, not a verdict.
+              </p>
+            </>
+          )}
+
           {flags.length > 0 && (
             <>
               <h2>Flags for review ({flags.length})</h2>
@@ -640,14 +805,16 @@ export default function CallDetail() {
           )}
 
           <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>
-            {g.model ? `Graded by ${modelName(g.model)}. ` : ""}Graded from the words only, not tone of voice. The Straight Line score is half the emotional roadmap, half the skills. The script score counts sections the call reached:
-            hit = full credit, partial = half.
+            {g.model ? `Graded by ${modelName(g.model)}. ` : ""}Content is graded from the words; tonality from voice
+            measurements when the call has them. The Straight Line score is half the emotional roadmap, half the
+            skills. The script score counts sections the call reached: hit = full credit, partial = half.
           </p>
         </>
       )}
+      </div>
 
       {speakers.length > 0 && (
-        <>
+        <div className="no-print">
           <h2>Speakers</h2>
           <p className="muted" style={{ marginTop: 0 }}>
             Detected automatically. If the labels are swapped, fix them here.
@@ -666,13 +833,36 @@ export default function CallDetail() {
               </label>
             ))}
           </div>
-        </>
+        </div>
       )}
 
       {utterances.length > 0 && (
-        <>
-          <h2>Transcript</h2>
-          <div className="transcript">
+        <div className="transcript-part">
+          <div className="row" style={{ justifyContent: "space-between", marginTop: 28 }}>
+            <h2 style={{ margin: 0 }}>
+              Transcript{isSpanish && call.translation?.status === "done" ? " \u00b7 translated from Spanish" : ""}
+            </h2>
+            {isSpanish && call.translation?.status === "done" && (
+              <button className="no-print" aria-pressed={showOriginal} onClick={() => setShowOriginal((v) => !v)}>
+                {showOriginal ? "Hide original Spanish" : "Show original Spanish"}
+              </button>
+            )}
+          </div>
+          {isSpanish && translating && (
+            <p className="muted no-print">Translating to English&hellip; showing the original Spanish until it&rsquo;s ready.</p>
+          )}
+          {isSpanish && (call.translation?.status === "failed" || translationStuck(call.translation)) && (
+            <div className="error no-print">
+              {call.translation?.error || "The translation stopped."}{" "}
+              <button onClick={retranslate} style={{ marginLeft: 8 }}>
+                Translate again
+              </button>
+            </div>
+          )}
+          {isSpanish && call.translation?.status === "done" && call.translation.error && (
+            <div className="note">{call.translation.error}</div>
+          )}
+          <div className="transcript" style={{ marginTop: 10 }}>
             {utterances.map((u, i) => {
               const role = roles[u.speaker] || "other";
               const isNow = now >= u.start && now < u.end + 0.5;
@@ -683,16 +873,39 @@ export default function CallDetail() {
                   </button>
                   <span className="who">{label(role)}</span>
                   <span className="said">
-                    <Said text={u.text} />
+                    {englishOf(i) !== null ? (
+                      <>
+                        <Said text={englishOf(i)!} />
+                        {showOriginal && (
+                          <span className="original">
+                            <Said text={u.text} />
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <Said text={u.text} />
+                    )}
                   </span>
                 </div>
               );
             })}
           </div>
-        </>
+        </div>
       )}
 
+      <div className="no-print">
       <h2>Settings</h2>
+      {voiceDone && (
+        <div className="note" style={{ marginBottom: 12 }}>
+          Voice measured. Press <strong>Re-grade</strong> at the top to grade tonality from it.
+        </div>
+      )}
+      {!call.voice_v && call.audio_path && call.transcript && !voiceDone && (
+        <p className="muted" style={{ marginTop: 0 }}>
+          This call has no voice measurements, so tonality is graded from the words only. Press Analyze voice
+          below, then Re-grade.
+        </p>
+      )}
       <label className="field" style={{ maxWidth: 360 }}>
         <span>Grade against</span>
         <select value={call.script_id || ""} onChange={(e) => setScript(e.target.value)}>
@@ -716,10 +929,16 @@ export default function CallDetail() {
           {cost.grade_usd_total !== undefined && cost.grade_usd !== cost.grade_usd_total
             ? ` across all grades (latest ${money(cost.grade_usd)})`
             : ""}
+          {translateUsd !== null ? `, translation ${money(translateUsd)}` : ""}
           {cost.grade_cache_read_tokens ? " \u00b7 script read from cache" : ""}
         </p>
       )}
       <div className="row">
+        {call.audio_path && !call.voice_v && call.transcript && (
+          <button disabled={!!voiceBusy || !audioUrl} onClick={analyzeVoice}>
+            {voiceBusy || "Analyze voice"}
+          </button>
+        )}
         {call.audio_path && (
           <button className="danger" onClick={deleteAudio}>
             Delete recording, keep transcript
@@ -728,6 +947,7 @@ export default function CallDetail() {
         <button className="danger" onClick={deleteCall}>
           Delete call
         </button>
+      </div>
       </div>
     </main>
   );

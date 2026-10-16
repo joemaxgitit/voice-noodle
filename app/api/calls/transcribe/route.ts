@@ -112,6 +112,8 @@ export async function POST(request: Request) {
       error: null,
       grade: null,
       score: null,
+      // A new transcript needs a new translation.
+      translation: null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", callId);
