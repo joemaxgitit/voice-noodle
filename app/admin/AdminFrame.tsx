@@ -29,6 +29,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
   {
     title: "Training",
     items: [
+      { href: "/admin/training", label: "Training hub", icon: "calendar", match: (p) => p.startsWith("/admin/training") },
       { href: "/admin/roleplay", label: "Practice calls", icon: "headset", match: (p) => p.startsWith("/admin/roleplay") },
       { href: "/admin", label: "Segments", icon: "script", match: (p) => p === "/admin" || p.startsWith("/admin/timing") },
       { href: "/admin/attempts", label: "Attempts", icon: "mic", match: (p) => p.startsWith("/admin/attempts") },
@@ -43,6 +44,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
 ];
 
 const ICONS = {
+  calendar: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4",
   phone: "M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2",
   chart: "M4 20V10M10 20V4M16 20v-7M22 20H2",
   headset: "M4 14v-2a8 8 0 0 1 16 0v2M4 14h3v6H5a1 1 0 0 1-1-1zM20 14h-3v6h2a1 1 0 0 0 1-1zM17 20a4 4 0 0 1-4 2h-1",

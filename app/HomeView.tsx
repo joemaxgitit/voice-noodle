@@ -168,6 +168,9 @@ export default function HomeView() {
           alt=""
         />
         <div className="site-header-actions">
+          <Link className="btn" href="/training" style={{ textDecoration: "none" }}>
+            {lang === "es" ? "Mi capacitación" : "My training"}
+          </Link>
           {roleplayOn && (
             <Link className="btn" href="/roleplay" style={{ textDecoration: "none" }}>
               {lang === "es" ? "Llamada de práctica" : "Practice call"}
