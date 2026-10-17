@@ -73,3 +73,21 @@ button.tr-sm { padding: 7px 11px; font-size: 13px; }
 button.tr-icon { padding: 7px 10px; min-width: 36px; }
 .tr-two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 @media (max-width: 520px) { .tr-two { grid-template-columns: 1fr; } }
+
+/* ---------- knowledge checks ---------- */
+.my-quiz { display: grid; gap: 14px; margin-top: 8px; }
+.my-q { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin: 0; background: var(--ink-2); }
+.my-q legend { font-weight: 650; padding: 0 4px; line-height: 1.45; }
+.my-opt { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; margin-top: 6px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; line-height: 1.4; }
+.my-opt:hover { background: var(--ink-3); }
+.my-opt input { width: auto; margin-top: 3px; }
+.my-opt.right { border-color: var(--ok); background: rgba(111, 191, 139, 0.12); }
+.my-opt.wrong { border-color: var(--bad); background: rgba(224, 104, 95, 0.1); }
+.my-q:disabled .my-opt { cursor: default; }
+.my-explain { margin: 10px 0 0; font-size: 14px; color: var(--muted); }
+.my-result { display: flex; gap: 14px; align-items: center; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line); }
+.my-result b { font-size: 30px; }
+.my-result.pass { border-color: var(--ok); }
+.my-result.pass b { color: var(--ok); }
+.my-result.fail { border-color: var(--bad); }
+.my-result.fail b { color: var(--bad); }

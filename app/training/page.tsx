@@ -27,6 +27,11 @@ import {
   type Person,
   type Progress,
   type TrainingEvent,
+  assignmentsFor,
+  KIND_ICON,
+  type Enrollment,
+  type Track,
+  type TrackItem,
 } from "@/lib/training";
 import "../admin/calls/calls.css";
 import "./training.css";
@@ -50,6 +55,9 @@ export default function MyTraining() {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [progress, setProgress] = useState<Map<string, Progress>>(new Map());
   const [requests, setRequests] = useState<MasteryRequest[]>([]);
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [trackItems, setTrackItems] = useState<TrackItem[]>([]);
+  const [tracks, setTracks] = useState<Track[]>([]);
   const [asking, setAsking] = useState(false);
   const [askDay, setAskDay] = useState(1);
   const [askNote, setAskNote] = useState("");
@@ -65,6 +73,8 @@ export default function MyTraining() {
       return;
     }
     const uid = session.user.id;
+    // Script-practice and practice-call assignments complete from what was done.
+    await supabase.rpc("training_sync_links");
     const thu = addDays(week, 3);
     const [prof, ppl, ev, mw, reg, mv, mt, mats, prog, rq] = await Promise.all([
       supabase.from("profiles").select("id, org_id, team, created_at").eq("id", uid).single(),
@@ -78,6 +88,15 @@ export default function MyTraining() {
       supabase.from("training_progress").select("*").eq("user_id", uid),
       supabase.from("mastery_requests").select("*").eq("rep_id", uid).gte("week_start", mondayOf(today())).order("created_at", { ascending: false }),
     ]);
+    // New-hire tracks (missing tables before training-2.sql: just none).
+    const [en, ti, tr] = await Promise.all([
+      supabase.from("training_enrollments").select("*").eq("rep_id", uid),
+      supabase.from("training_track_items").select("*"),
+      supabase.from("training_tracks").select("*"),
+    ]);
+    setEnrollments((en.data || []) as Enrollment[]);
+    setTrackItems((ti.data || []) as TrackItem[]);
+    setTracks((tr.data || []) as Track[]);
     const err = prof.error || ev.error || mats.error;
     if (err) setError(/relation|does not exist/i.test(err.message) ? "Training isn't set up yet." : err.message);
     setMe((prof.data as typeof me) ?? null);
@@ -155,9 +174,9 @@ export default function MyTraining() {
     const p = progress.get(m.id);
     return p && p.version === m.version ? p : null;
   };
-  const todo = materials
-    .filter((m) => m.required && forMe(m.audience) && !current(m)?.completed_at)
-    .sort((a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"));
+  const todo = me
+    ? assignmentsFor({ id: me.id, team: me.team }, materials, [...progress.values()], enrollments, trackItems, tracks, nowDate).filter((a) => !a.done)
+    : [];
   const done = materials.filter((m) => current(m)?.completed_at);
   const byId = new Map(materials.map((m) => [m.id, m]));
 
@@ -228,29 +247,26 @@ export default function MyTraining() {
       {todo.length > 0 && (
         <section className="my-section">
           <h2>To do ({todo.length})</h2>
-          {todo.map((m) => {
-            const p = current(m);
-            const late = m.due_date && m.due_date < nowDate;
-            return (
-              <Link key={m.id} href={`/training/${m.id}`} className="my-mat">
-                <span className="ico">{m.kind === "video" ? "▶" : m.kind === "slides" ? "PPT" : m.kind.toUpperCase()}</span>
-                <span>
-                  <b>{m.title}</b>
-                  <small>
-                    {KIND_LABEL[m.kind]}
-                    {m.duration_secs ? ` · ${fmtDuration(m.duration_secs)}` : ""}
-                    {m.due_date ? ` · ${late ? "was due" : "due"} ${fmtDate(m.due_date, { month: "short", day: "numeric" })}` : ""}
-                  </small>
-                  {p && p.pct > 0 && (
-                    <span className="tr-progress" style={{ marginTop: 6 }}>
-                      <i style={{ width: `${p.pct}%` }} />
-                    </span>
-                  )}
-                </span>
-                {late ? <span className="pill poor">Overdue</span> : p && p.pct > 0 ? <span className="pill">{p.pct}%</span> : <span className="pill fair">Start</span>}
-              </Link>
-            );
-          })}
+          {todo.map(({ material: m, due, from, pct, overdue }) => (
+            <Link key={m.id} href={`/training/${m.id}`} className="my-mat">
+              <span className="ico">{KIND_ICON[m.kind]}</span>
+              <span>
+                <b>{m.title}</b>
+                <small>
+                  {KIND_LABEL[m.kind]}
+                  {m.duration_secs ? ` · ${fmtDuration(m.duration_secs)}` : ""}
+                  {due ? ` · ${overdue ? "was due" : "due"} ${fmtDate(due, { month: "short", day: "numeric" })}` : ""}
+                  {from !== "Required" ? ` · ${from}` : ""}
+                </small>
+                {pct > 0 && (
+                  <span className="tr-progress" style={{ marginTop: 6 }}>
+                    <i style={{ width: `${pct}%` }} />
+                  </span>
+                )}
+              </span>
+              {overdue ? <span className="pill poor">Overdue</span> : pct > 0 ? <span className="pill">{pct}%</span> : <span className="pill fair">Start</span>}
+            </Link>
+          ))}
         </section>
       )}
 
@@ -359,7 +375,7 @@ export default function MyTraining() {
             const p = current(m);
             return (
               <Link key={m.id} href={`/training/${m.id}`} className="my-mat">
-                <span className="ico">{m.kind === "video" ? "▶" : m.kind === "slides" ? "PPT" : m.kind.toUpperCase()}</span>
+                <span className="ico">{KIND_ICON[m.kind]}</span>
                 <span>
                   <b>{m.title}</b>
                   <small>

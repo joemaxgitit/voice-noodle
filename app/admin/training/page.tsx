@@ -8,15 +8,17 @@ import CalendarTab from "./CalendarTab";
 import MasteryTab from "./MasteryTab";
 import MeetingTab from "./MeetingTab";
 import LibraryTab from "./LibraryTab";
+import ProgressTab from "./ProgressTab";
 import "../calls/calls.css";
 import "./training.css";
 
-type Tab = "calendar" | "mastery" | "meeting" | "library";
+type Tab = "calendar" | "mastery" | "meeting" | "library" | "progress";
 const TABS: { id: Tab; label: string }[] = [
   { id: "calendar", label: "Calendar" },
   { id: "mastery", label: "Master Your Craft" },
   { id: "meeting", label: "Thursday meeting" },
   { id: "library", label: "Library" },
+  { id: "progress", label: "Rep progress" },
 ];
 const TAB_KEY = "vn-training-tab";
 
@@ -122,6 +124,7 @@ export default function TrainingHub() {
           {tab === "mastery" && <MasteryTab />}
           {tab === "meeting" && <MeetingTab />}
           {tab === "library" && <LibraryTab />}
+          {tab === "progress" && <ProgressTab />}
         </HubContext.Provider>
       )}
     </main>

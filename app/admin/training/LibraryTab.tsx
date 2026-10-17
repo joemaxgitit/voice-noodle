@@ -8,6 +8,7 @@ import {
   fmtDate,
   fmtDuration,
   guessKind,
+  KIND_ICON,
   KIND_LABEL,
   MAX_UPLOAD_BYTES,
   titleFromFile,
@@ -16,6 +17,10 @@ import {
   type Progress,
 } from "@/lib/training";
 import { Drawer, useHub } from "./shared";
+import QuizEditor from "./QuizEditor";
+
+type ModuleRef = { id: string; title: string; language: string | null; scripts: { title: string } | null };
+type PersonaRef = { id: string; name: string; title: string };
 
 const safeName = (n: string) => n.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(-120);
 
@@ -34,6 +39,8 @@ export default function LibraryTab() {
   const [link, setLink] = useState({ title: "", url: "" });
   const [topicForm, setTopicForm] = useState({ title: "", category: CATEGORIES[0] });
   const [filter, setFilter] = useState("");
+  const [modules, setModules] = useState<ModuleRef[]>([]);
+  const [personas, setPersonas] = useState<PersonaRef[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
   const replaceFor = useRef<Material | null>(null);
 
@@ -44,7 +51,33 @@ export default function LibraryTab() {
 
   useEffect(() => {
     loadProgress();
-  }, [loadProgress]);
+    // What a script-practice or practice-call assignment can point at.
+    supabase
+      .from("modules")
+      .select("id, title, language, scripts(title)")
+      .eq("active", true)
+      .order("sort_order")
+      .then(({ data }) => setModules((data || []) as unknown as ModuleRef[]));
+    supabase
+      .from("roleplay_personas")
+      .select("id, name, title")
+      .order("sort_order")
+      .then(({ data }) => setPersonas((data || []) as PersonaRef[]));
+  }, [loadProgress, supabase]);
+
+  /** Knowledge checks, script practice and practice calls start as an empty, unpublished item. */
+  async function create(kind: "quiz" | "module" | "practice") {
+    setError("");
+    const title = kind === "quiz" ? "New knowledge check" : kind === "module" ? "Script practice" : "Practice call";
+    const { data, error } = await supabase
+      .from("training_materials")
+      .insert({ org_id: orgId, title, kind, published: false, created_by: me })
+      .select("*")
+      .single();
+    if (error || !data) return setError(error?.message || "Could not create it.");
+    await reloadLibrary();
+    setEditing(data as Material);
+  }
 
   const repIds = useMemo(() => new Set(reps.map((r) => r.id)), [reps]);
   const doneCount = (m: Material) =>
@@ -155,6 +188,10 @@ export default function LibraryTab() {
         audience: m.audience,
         due_date: m.due_date || null,
         complete_pct: m.complete_pct,
+        module_id: m.module_id ?? null,
+        persona_id: m.persona_id ?? null,
+        pass_pct: m.pass_pct ?? 80,
+        min_score: m.min_score ?? null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", m.id);
@@ -240,6 +277,12 @@ export default function LibraryTab() {
         <button type="submit" disabled={!link.url.trim()}>Add link</button>
       </form>
 
+      <div className="row" style={{ marginTop: 10 }}>
+        <button className="tr-sm" onClick={() => create("quiz")}>+ Knowledge check</button>
+        <button className="tr-sm" onClick={() => create("module")}>+ Script practice assignment</button>
+        <button className="tr-sm" onClick={() => create("practice")}>+ Practice call assignment</button>
+      </div>
+
       <div className="tr-bar" style={{ marginTop: 22 }}>
         <h2 style={{ margin: 0, fontSize: 17 }}>Materials ({materials.length})</h2>
         <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search" style={{ maxWidth: 240, padding: "8px 10px", fontSize: 14 }} />
@@ -249,7 +292,7 @@ export default function LibraryTab() {
         {shown.length === 0 && <p className="muted">Nothing here yet.</p>}
         {shown.map((m) => (
           <div key={m.id} className="tr-mat" style={{ opacity: m.published ? 1 : 0.75 }}>
-            <span className="ico">{m.kind === "slides" ? "PPT" : m.kind === "video" ? "▶" : m.kind.toUpperCase()}</span>
+            <span className="ico">{KIND_ICON[m.kind]}</span>
             <div>
               <div className="title">{m.title}</div>
               <div className="meta">
@@ -329,6 +372,8 @@ export default function LibraryTab() {
 
       {editing && (
         <MaterialEditor
+          modules={modules}
+          personas={personas}
           m={editing}
           setM={setEditing}
           progress={progress.filter((p) => p.material_id === editing.id)}
@@ -345,6 +390,8 @@ export default function LibraryTab() {
 }
 
 function MaterialEditor({
+  modules,
+  personas,
   m,
   setM,
   progress,
@@ -352,6 +399,8 @@ function MaterialEditor({
   onDelete,
   onReplace,
 }: {
+  modules: ModuleRef[];
+  personas: PersonaRef[];
   m: Material;
   setM: (m: Material | null) => void;
   progress: Progress[];
@@ -377,7 +426,7 @@ function MaterialEditor({
             <button onClick={close}>Cancel</button>
           </div>
           <div className="row">
-            {m.kind !== "link" && <button onClick={onReplace}>Replace file</button>}
+            {["video", "pdf", "doc", "slides"].includes(m.kind) && <button onClick={onReplace}>Replace file</button>}
             <button className="danger" onClick={onDelete}>Delete</button>
           </div>
         </div>
@@ -400,6 +449,70 @@ function MaterialEditor({
           ))}
         </select>
       </label>
+      {m.kind === "module" && (
+        <label className="field">
+          <span>Script section to practice</span>
+          <select
+            value={m.module_id ?? ""}
+            onChange={(e) => {
+              const mod = modules.find((x) => x.id === e.target.value);
+              setM({ ...m, module_id: mod?.id ?? null, title: mod && (m.title === "Script practice" || !m.title) ? `Practice: ${mod.title}` : m.title });
+            }}
+          >
+            <option value="">-- pick a section --</option>
+            {modules.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.scripts?.title ? `${x.scripts.title} · ` : ""}
+                {x.title}
+                {x.language === "es" ? " (ES)" : ""}
+              </option>
+            ))}
+          </select>
+          <p className="hint" style={{ marginTop: 6 }}>Done when the rep has completed every line of the section in the karaoke trainer.</p>
+        </label>
+      )}
+      {m.kind === "practice" && (
+        <div className="tr-two">
+          <label className="field">
+            <span>Practice client</span>
+            <select
+              value={m.persona_id ?? ""}
+              onChange={(e) => {
+                const p = personas.find((x) => x.id === e.target.value);
+                setM({ ...m, persona_id: p?.id ?? null, title: p && (m.title === "Practice call" || !m.title) ? `Practice call: ${p.title}` : m.title });
+              }}
+            >
+              <option value="">-- pick a client --</option>
+              {personas.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.title} ({x.name})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Lowest Straight Line score that counts</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={m.min_score ?? ""}
+              placeholder="Any graded call"
+              onChange={(e) => set("min_score", e.target.value === "" ? null : Math.max(0, Math.min(100, Number(e.target.value))))}
+            />
+          </label>
+        </div>
+      )}
+      {m.kind === "quiz" && (
+        <>
+          <label className="field" style={{ maxWidth: 220 }}>
+            <span>Pass mark (%)</span>
+            <input type="number" min={1} max={100} value={m.pass_pct ?? 80} onChange={(e) => set("pass_pct", Math.max(1, Math.min(100, Number(e.target.value) || 80)))} />
+          </label>
+          <QuizEditor materialId={m.id} />
+        </>
+      )}
+
       <label className="row" style={{ gap: 8, marginBottom: 10 }}>
         <input type="checkbox" checked={m.published} onChange={(e) => set("published", e.target.checked)} /> Published -- reps can find it in their library
       </label>

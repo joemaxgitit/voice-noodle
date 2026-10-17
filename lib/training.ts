@@ -16,7 +16,7 @@ export type Topic = {
   archived: boolean;
 };
 
-export type MaterialKind = "video" | "pdf" | "doc" | "slides" | "link";
+export type MaterialKind = "video" | "pdf" | "doc" | "slides" | "link" | "quiz" | "module" | "practice";
 
 export type Material = {
   id: string;
@@ -35,8 +35,73 @@ export type Material = {
   audience: "all" | "closers" | "ams";
   due_date: string | null;
   complete_pct: number;
+  module_id?: string | null; // kind "module": a script section in the karaoke trainer
+  persona_id?: string | null; // kind "practice": a mock client
+  pass_pct?: number; // kind "quiz"
+  min_score?: number | null; // kind "practice": lowest Straight Line score that counts
   created_at: string;
 };
+
+export type QuizQuestion = {
+  id?: string;
+  position: number;
+  prompt: string;
+  options: string[];
+  correct: number;
+  explain: string | null;
+};
+
+export type Track = { id: string; title: string; description: string | null; archived: boolean };
+export type TrackItem = { id: string; track_id: string; material_id: string; day_offset: number; position: number };
+export type Enrollment = { id: string; track_id: string; rep_id: string; start_date: string };
+
+/** One thing a rep has to do, with where the requirement came from. */
+export type Assignment = {
+  material: Material;
+  due: string | null;
+  from: string; // "Required" or the track's title
+  done: boolean;
+  pct: number;
+  overdue: boolean;
+};
+
+/**
+ * Everything assigned to one rep: required materials for their team, plus
+ * every item of every track they're enrolled in, due N days after their
+ * start date. A material that's assigned twice counts once, earliest due.
+ */
+export function assignmentsFor(
+  rep: { id: string; team?: string | null },
+  materials: Material[],
+  progress: Progress[],
+  enrollments: Enrollment[],
+  items: TrackItem[],
+  tracks: Track[],
+  onDate: string
+): Assignment[] {
+  const byMat = new Map(materials.map((m) => [m.id, m]));
+  const prog = new Map(progress.filter((p) => p.user_id === rep.id).map((p) => [p.material_id, p]));
+  const out = new Map<string, Assignment>();
+  const add = (m: Material, due: string | null, from: string) => {
+    const p = prog.get(m.id);
+    const current = p && p.version === m.version ? p : null;
+    const done = !!current?.completed_at;
+    const prev = out.get(m.id);
+    if (prev && (prev.due ?? "9999") <= (due ?? "9999")) return;
+    out.set(m.id, { material: m, due, from, done, pct: current?.pct ?? 0, overdue: !done && !!due && due < onDate });
+  };
+  for (const m of materials) {
+    if (m.published && m.required && (m.audience === "all" || m.audience === rep.team)) add(m, m.due_date, "Required");
+  }
+  for (const e of enrollments.filter((x) => x.rep_id === rep.id)) {
+    const t = tracks.find((x) => x.id === e.track_id);
+    for (const it of items.filter((x) => x.track_id === e.track_id)) {
+      const m = byMat.get(it.material_id);
+      if (m && m.published) add(m, addDays(e.start_date, it.day_offset), t?.title ?? "Track");
+    }
+  }
+  return [...out.values()].sort((a, b) => Number(a.done) - Number(b.done) || (a.due ?? "9999").localeCompare(b.due ?? "9999"));
+}
 
 export type Progress = {
   material_id: string;
@@ -149,6 +214,20 @@ export const KIND_LABEL: Record<MaterialKind, string> = {
   doc: "Document",
   slides: "Slides",
   link: "Link",
+  quiz: "Knowledge check",
+  module: "Script practice",
+  practice: "Practice call",
+};
+
+export const KIND_ICON: Record<MaterialKind, string> = {
+  video: "▶",
+  pdf: "PDF",
+  doc: "DOC",
+  slides: "PPT",
+  link: "LINK",
+  quiz: "?",
+  module: "♪",
+  practice: "☎",
 };
 
 export const AUDIENCE_LABEL: Record<string, string> = {

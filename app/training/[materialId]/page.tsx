@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { fmtDuration, KIND_LABEL, type Material, type Progress } from "@/lib/training";
+import { ModuleStatus, PracticeStatus, QuizTaker } from "./Activities";
 import "../../admin/calls/calls.css";
 import "../training.css";
 
@@ -25,6 +26,7 @@ export default function MaterialPage() {
   const [error, setError] = useState("");
   const [pct, setPct] = useState(0);
   const [done, setDone] = useState(false);
+  const [userId, setUserId] = useState("");
   const video = useRef<HTMLVideoElement>(null);
   const played = useRef(0); // seconds played since the last report
   const lastT = useRef<number | null>(null);
@@ -38,6 +40,9 @@ export default function MaterialPage() {
       router.replace("/login");
       return;
     }
+    setUserId(session.user.id);
+    // Script-practice and practice-call assignments complete from what was done.
+    await supabase.rpc("training_sync_links");
     const [{ data, error }, { data: prog }] = await Promise.all([
       supabase.from("training_materials").select("*").eq("id", materialId).maybeSingle(),
       supabase.from("training_progress").select("*").eq("material_id", materialId).eq("user_id", session.user.id).maybeSingle(),
@@ -198,7 +203,11 @@ export default function MaterialPage() {
         </p>
       )}
 
-      {m.kind !== "video" && (
+      {m.kind === "quiz" && <QuizTaker supabase={supabase} m={m} onDone={() => setDone(true)} />}
+      {m.kind === "module" && userId && <ModuleStatus supabase={supabase} m={m} userId={userId} />}
+      {m.kind === "practice" && userId && <PracticeStatus supabase={supabase} m={m} userId={userId} />}
+
+      {["pdf", "doc", "slides", "link"].includes(m.kind) && (
         <div className="row" style={{ marginTop: 14 }}>
           {done ? (
             <span className="pill good">Marked as read</span>
