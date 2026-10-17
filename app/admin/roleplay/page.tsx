@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { clock, money, scoreBand, OUTCOME_LABEL, type Grade, type Outcome } from "@/lib/calls";
@@ -37,6 +37,14 @@ type PracticeRow = {
   close_quality: string | null;
   profiles: { full_name: string | null } | null;
 };
+type Tab = "clients" | "settings" | "calls";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "clients", label: "Clients" },
+  { id: "settings", label: "Settings & voices" },
+  { id: "calls", label: "Practice calls" },
+];
+const TAB_KEY = "vn-practice-tab";
+
 type SyncResult = { id: string; name: string; ok: boolean; skipped?: boolean; error?: string };
 
 type Draft = {
@@ -162,6 +170,54 @@ export default function RoleplayAdmin() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
+  const [tab, setTabState] = useState<Tab>("clients");
+  const draftStart = useRef("");
+
+  // Remember the last tab, per browser.
+  useEffect(() => {
+    try {
+      const t = localStorage.getItem(TAB_KEY) as Tab | null;
+      if (t && TABS.some((x) => x.id === t)) setTabState(t);
+    } catch {
+      // storage blocked; default tab is fine
+    }
+  }, []);
+  function setTab(t: Tab) {
+    setTabState(t);
+    try {
+      localStorage.setItem(TAB_KEY, t);
+    } catch {
+      // ignore
+    }
+  }
+
+  // The editor opens in a side panel. Opening remembers where it started,
+  // so closing with unsaved changes can ask first.
+  function openEditor(d: Draft) {
+    draftStart.current = JSON.stringify(d);
+    setError("");
+    setDraft(d);
+  }
+  function closeEditor() {
+    if (draft && JSON.stringify(draft) !== draftStart.current && !confirm("Discard your changes to this client?")) return;
+    setDraft(null);
+  }
+
+  // While the panel is open: Escape closes it, and the page behind stays put.
+  useEffect(() => {
+    if (!draft) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeEditor();
+    };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
 
   async function token() {
     const {
@@ -359,17 +415,45 @@ export default function RoleplayAdmin() {
   return (
     <main className="shell rp-shell">
 
-      <div className="eyebrow">Practice calls</div>
-      <h1>Mock clients</h1>
-      <p className="muted" style={{ maxWidth: "66ch" }}>
+      <div className="eyebrow">Training</div>
+      <h1>Practice calls</h1>
+      <p className="muted" style={{ maxWidth: "66ch", marginBottom: 10 }}>
         Reps call an AI client by voice and the call is graded exactly like a real one. Each client hides a real situation
         the rep has to uncover, and has a right result -- including some who should not be closed.
       </p>
+      {org && (
+        <div className="rp-status">
+          <span className={`pill ${org.roleplay_enabled ? "good" : ""}`}>{org.roleplay_enabled ? "On for reps" : "Off"}</span>
+          <span>
+            {personas.filter((p) => p.active).length} active client{personas.filter((p) => p.active).length === 1 ? "" : "s"}
+          </span>
+          {needSync > 0 && <span style={{ color: "var(--live)" }}>{needSync} need{needSync === 1 ? "s" : ""} a voice sync</span>}
+          <span>
+            {monthCalls.length} practice call{monthCalls.length === 1 ? "" : "s"} this month
+          </span>
+        </div>
+      )}
 
-      {error && <div className="error">{error}</div>}
+      <nav className="rp-tabs" role="tablist" aria-label="Practice sections">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={tab === t.id}
+            className={tab === t.id ? "active" : ""}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+            {t.id === "settings" && needSync > 0 && <span className="rp-tab-dot" aria-label="needs attention" />}
+            {t.id === "calls" && calls.length > 0 && <span className="rp-tab-count">{calls.length}</span>}
+          </button>
+        ))}
+      </nav>
+
+      {error && !draft && <div className="error">{error}</div>}
       {notice && <div className="note">{notice}</div>}
 
-      {org && (
+      {org && tab === "settings" && (
         <>
           <div className="practice-switch">
             <div>
@@ -446,28 +530,41 @@ export default function RoleplayAdmin() {
       )}
 
       {/* ---------- clients ---------- */}
+      {tab === "clients" && (
       <div className="rp-section">
         <div className="row" style={{ justifyContent: "space-between" }}>
           <h2 style={{ margin: 0 }}>Clients</h2>
-          {!draft && (
-            <button onClick={() => setDraft(toDraft(null, null, (personas.at(-1)?.sort_order ?? 0) + 10))}>
-              Add a client
-            </button>
-          )}
+          <button onClick={() => openEditor(toDraft(null, null, (personas.at(-1)?.sort_order ?? 0) + 10))}>
+            Add a client
+          </button>
         </div>
 
-        {draft && !draft.id && editorFor()}
+        {needSync > 0 && (
+          <div className="rp-banner">
+            <span>
+              {needSync} client{needSync === 1 ? "'s voice is" : "s' voices are"} not up to date. Reps can't call a client until its voice is ready.
+            </span>
+            <button className="primary" onClick={() => sync()} disabled={syncing}>
+              {syncing ? "Syncing voice agents..." : "Sync voice agents"}
+            </button>
+          </div>
+        )}
+        {syncResults.some((r) => !r.ok) && (
+          <div className="error">
+            {syncResults
+              .filter((r) => !r.ok)
+              .map((r) => (
+                <div key={r.id}>
+                  <b>{r.name}:</b> {r.error}
+                </div>
+              ))}
+          </div>
+        )}
 
         <div className="rp-grid">
           {personas.map((p) => {
             const st = stale.get(p.id);
             const s = secrets.get(p.id);
-            if (draft?.id === p.id)
-              return (
-                <div key={p.id} style={{ gridColumn: "1 / -1" }}>
-                  {editorFor()}
-                </div>
-              );
             return (
               <div key={p.id} className="rp-persona" style={{ opacity: p.active ? 1 : 0.6 }}>
                 <div className="row" style={{ gap: 6 }}>
@@ -484,15 +581,17 @@ export default function RoleplayAdmin() {
                 </div>
                 {s && <div className="facts">Right result: {RIGHT_OUTCOME_LABEL[s.right_outcome]}</div>}
                 <div className="row">
-                  <button onClick={() => setDraft(toDraft(p, s ?? null, p.sort_order))}>Edit</button>
+                  <button onClick={() => openEditor(toDraft(p, s ?? null, p.sort_order))}>Edit</button>
                 </div>
               </div>
             );
           })}
         </div>
       </div>
+      )}
 
       {/* ---------- practice calls ---------- */}
+      {tab === "calls" && (
       <div className="rp-section">
         <h2>Practice calls</h2>
         <p className="hint">
@@ -541,6 +640,17 @@ export default function RoleplayAdmin() {
           </div>
         )}
       </div>
+      )}
+
+      {/* ---------- the client editor, in a side panel ---------- */}
+      {draft && (
+        <>
+          <div className="rp-drawer-backdrop" aria-hidden="true" />
+          <aside className="rp-drawer" role="dialog" aria-modal="true" aria-label={draft.id ? `Edit ${draft.name}` : "New client"}>
+            {editorFor()}
+          </aside>
+        </>
+      )}
     </main>
   );
 
@@ -550,13 +660,20 @@ export default function RoleplayAdmin() {
     if (!draft) return null;
     const d = draft;
     return (
-      <div className="card" style={{ marginTop: 14, display: "grid", gap: 14 }}>
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <b>{d.id ? `Edit ${d.name}` : "New client"}</b>
-          <label className="row" style={{ gap: 6 }}>
-            <input type="checkbox" checked={d.active} onChange={(e) => set("active", e.target.checked)} /> Shown to reps
-          </label>
+      <>
+        <div className="rp-drawer-head">
+          <div>
+            <div className="eyebrow" style={{ margin: 0 }}>{d.id ? "Edit client" : "New client"}</div>
+            <div className="rp-drawer-title">{d.title || d.name || "Untitled client"}</div>
+          </div>
+          <button className="rp-drawer-x" aria-label="Close" onClick={closeEditor}>
+            &times;
+          </button>
         </div>
+        <div className="rp-drawer-body">
+        <label className="row" style={{ gap: 6 }}>
+          <input type="checkbox" checked={d.active} onChange={(e) => set("active", e.target.checked)} /> Shown to reps
+        </label>
 
         <div className="rp-form-grid">
           <label className="field">
@@ -713,22 +830,26 @@ export default function RoleplayAdmin() {
           </label>
         </div>
 
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <div className="row">
-            <button className="primary" onClick={save} disabled={saving || syncing}>
-              {saving ? "Saving..." : "Save"}
-            </button>
-            <button onClick={() => setDraft(null)} disabled={saving}>
-              Cancel
-            </button>
-          </div>
-          {d.id && (
-            <button className="danger" onClick={() => remove(personas.find((p) => p.id === d.id)!)}>
-              Delete client
-            </button>
-          )}
         </div>
-      </div>
+        <div className="rp-drawer-foot">
+          {error && <div className="error" style={{ margin: "0 0 10px" }}>{error}</div>}
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <div className="row">
+              <button className="primary" onClick={save} disabled={saving || syncing}>
+                {saving ? "Saving..." : "Save"}
+              </button>
+              <button onClick={closeEditor} disabled={saving}>
+                Cancel
+              </button>
+            </div>
+            {d.id && (
+              <button className="danger" onClick={() => remove(personas.find((p) => p.id === d.id)!)}>
+                Delete client
+              </button>
+            )}
+          </div>
+        </div>
+      </>
     );
   }
 }
