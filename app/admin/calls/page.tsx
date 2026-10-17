@@ -422,19 +422,6 @@ export default function Calls() {
 
   return (
     <main className="shell calls-shell">
-      <div className="topbar">
-        <Link className="btn" href="/admin" style={{ textDecoration: "none" }}>
-          &larr; Admin
-        </Link>
-        <div className="row">
-          <Link className="btn" href="/admin/roleplay" style={{ textDecoration: "none" }}>
-            Practice calls
-          </Link>
-          <Link className="btn" href="/admin/calls/insights" style={{ textDecoration: "none" }}>
-            Insights &amp; tuning
-          </Link>
-        </div>
-      </div>
 
       <div className="eyebrow">
         {calls.length} calls

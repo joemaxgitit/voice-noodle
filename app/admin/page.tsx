@@ -139,59 +139,6 @@ export default function Admin() {
 
   return (
     <main className="shell">
-      <div className="topbar">
-        <Link
-          className="btn"
-          href="/proedgesolutions"
-          style={{ textDecoration: "none" }}
-        >
-          &larr; Training
-        </Link>
-        <div className="row">
-          <Link
-            className="btn"
-            href="/admin/calls"
-            style={{ textDecoration: "none" }}
-          >
-            Calls
-          </Link>
-          <Link
-            className="btn"
-            href="/admin/roleplay"
-            style={{ textDecoration: "none" }}
-          >
-            Practice
-          </Link>
-          <Link
-            className="btn"
-            href="/admin/live"
-            style={{ textDecoration: "none" }}
-          >
-            Live
-          </Link>
-          <Link
-            className="btn"
-            href="/admin/attempts"
-            style={{ textDecoration: "none" }}
-          >
-            Attempts
-          </Link>
-          <Link
-            className="btn"
-            href="/admin/listening"
-            style={{ textDecoration: "none" }}
-          >
-            Listening
-          </Link>
-          <Link
-            className="btn"
-            href="/admin/people"
-            style={{ textDecoration: "none" }}
-          >
-            People
-          </Link>
-        </div>
-      </div>
 
       <div className="eyebrow">
         {timed} of {rows.length} segments recorded

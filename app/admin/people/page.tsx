@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
 type Person = {
@@ -105,12 +104,6 @@ export default function People() {
 
   return (
     <main className="shell">
-      <div className="topbar">
-        <Link className="btn" href="/admin" style={{ textDecoration: "none" }}>
-          &larr; Admin
-        </Link>
-        <div className="brand">People</div>
-      </div>
 
       <h1>People</h1>
       <p className="muted">

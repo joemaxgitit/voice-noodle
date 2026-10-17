@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { presenceChannel, type Here } from "@/lib/usePresence";
 
@@ -87,18 +86,6 @@ export default function Live() {
 
   return (
     <main className="shell">
-      <div className="topbar">
-        <Link className="btn" href="/admin" style={{ textDecoration: "none" }}>
-          &larr; Segments
-        </Link>
-        <Link
-          className="btn"
-          href="/admin/listening"
-          style={{ textDecoration: "none" }}
-        >
-          Listening
-        </Link>
-      </div>
 
       <div className="eyebrow">
         {people.length} {people.length === 1 ? "person" : "people"} on now

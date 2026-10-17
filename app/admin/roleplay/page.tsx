@@ -358,19 +358,6 @@ export default function RoleplayAdmin() {
 
   return (
     <main className="shell rp-shell">
-      <div className="topbar">
-        <Link className="btn" href="/admin" style={{ textDecoration: "none" }}>
-          &larr; Admin
-        </Link>
-        <div className="row">
-          <Link className="btn" href="/admin/calls" style={{ textDecoration: "none" }}>
-            Calls
-          </Link>
-          <Link className="btn" href="/roleplay" style={{ textDecoration: "none" }}>
-            Try a call
-          </Link>
-        </div>
-      </div>
 
       <div className="eyebrow">Practice calls</div>
       <h1>Mock clients</h1>

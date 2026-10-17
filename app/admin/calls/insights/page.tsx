@@ -163,11 +163,6 @@ export default function Insights() {
 
   return (
     <main className="shell calls-shell">
-      <div className="topbar">
-        <Link className="btn" href="/admin/calls" style={{ textDecoration: "none" }}>
-          &larr; Calls
-        </Link>
-      </div>
 
       <div className="eyebrow">
         {nG} graduated &middot; {nC} cancelled &middot; {fixes.length} correction{fixes.length === 1 ? "" : "s"}

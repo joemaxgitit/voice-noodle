@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
 type Row = {
@@ -195,18 +194,6 @@ export default function Listening() {
 
   return (
     <main className="shell">
-      <div className="topbar">
-        <Link className="btn" href="/admin" style={{ textDecoration: "none" }}>
-          &larr; Segments
-        </Link>
-        <Link
-          className="btn"
-          href="/admin/people"
-          style={{ textDecoration: "none" }}
-        >
-          People
-        </Link>
-      </div>
 
       <div className="eyebrow">
         {spell(dayTotal)} on {day}

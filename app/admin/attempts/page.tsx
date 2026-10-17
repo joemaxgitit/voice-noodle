@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { paceNote, type Scores } from "@/lib/score";
 
@@ -145,18 +144,6 @@ export default function Attempts() {
 
   return (
     <main className="shell">
-      <div className="topbar">
-        <Link className="btn" href="/admin" style={{ textDecoration: "none" }}>
-          &larr; Segments
-        </Link>
-        <Link
-          className="btn"
-          href="/admin/listening"
-          style={{ textDecoration: "none" }}
-        >
-          Listening
-        </Link>
-      </div>
 
       <div className="eyebrow">
         {rows.length} {rows.length === 1 ? "attempt" : "attempts"}
