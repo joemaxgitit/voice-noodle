@@ -30,7 +30,7 @@ export default function OneOnOne({ ctx }: { ctx: Ctx }) {
   const [status, setStatus] = useState("");
   const [saved, setSaved] = useState<CoachingSession | null>(null);
   const [showAll, setShowAll] = useState(false);
-  const [vault, setVault] = useState(false);
+  const [personal, setPersonal] = useState(false);
   const est = useEstimate(supabase, "coaching");
 
   useEffect(() => {
@@ -110,7 +110,7 @@ export default function OneOnOne({ ctx }: { ctx: Ctx }) {
       topics: d?.topics ?? [],
       commitments: (d?.commitments ?? []).map((t) => t.trim()).filter(Boolean).map((text) => ({ text, status: "open" as const })),
       follow_up: d?.follow_up?.trim() || null,
-      ...(vault ? { private: true } : {}),
+      ...(personal ? { private: true } : {}),
     };
     const { data, error } = await supabase.from("coaching_sessions").insert(row).select("*").single();
     setBusy(false);
@@ -119,7 +119,7 @@ export default function OneOnOne({ ctx }: { ctx: Ctx }) {
     setDraft(null);
     setNotes("");
     setDate(today());
-    setVault(false);
+    setPersonal(false);
     setStatus("Saved. It'll open the next one-on-one with " + first + ".");
     await reload();
   }
@@ -147,7 +147,7 @@ export default function OneOnOne({ ctx }: { ctx: Ctx }) {
             </div>
           )}
           <b>{fmtDay(s.session_date)}</b> <span className="muted">· {people.get(s.manager_id || "") ?? "a manager"}</span>
-          {s.private && <span className="muted" title="Vaulted: only you can see this"> · 🔒 only you</span>}
+          {s.private && <span className="muted" title="Personal: never used by Claude"> · personal, not used by AI</span>}
         </div>
         {!big && (
           <button className="link-btn" onClick={() => void remove(s)}>
@@ -261,21 +261,21 @@ export default function OneOnOne({ ctx }: { ctx: Ctx }) {
             />
             <div className="rx-actions" style={{ marginTop: 8 }}>
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date" style={{ width: "auto" }} />
-              <label className="hint" style={{ display: "inline-flex", gap: 6, alignItems: "center", margin: 0 }} title="Personal notes only you can see -- never sent to Claude or used in reviews, cards or trends">
-                <input type="checkbox" checked={vault} onChange={(e) => setVault(e.target.checked)} style={{ width: "auto" }} /> 🔒 Vault (only me)
+              <label className="hint" style={{ display: "inline-flex", gap: 6, alignItems: "center", margin: 0 }} title="Personal details -- every manager can see it, but it's never used by Claude">
+                <input type="checkbox" checked={personal} onChange={(e) => setPersonal(e.target.checked)} style={{ width: "auto" }} /> Personal -- keep out of AI
               </label>
-              {!vault && (
+              {!personal && (
                 <button className="primary" disabled={busy || !notes.trim()} onClick={() => void tidy()}>
                   {busy ? "Sorting…" : `Tidy and sort${est !== null ? ` · about ${usd(est)}` : ""}`}
                 </button>
               )}
-              <button className={vault ? "primary" : ""} disabled={busy || !notes.trim()} onClick={() => void save(null)}>
-                {vault ? "Save to my vault" : "Save as is"}
+              <button className={personal ? "primary" : ""} disabled={busy || !notes.trim()} onClick={() => void save(null)}>
+                {personal ? "Save personal note" : "Save as is"}
               </button>
             </div>
-            {vault ? (
+            {personal ? (
               <p className="hint" style={{ marginBottom: 0 }}>
-                🔒 Vaulted: personal notes only you can see. They&rsquo;re never sent to Claude, never tagged, and never used in reviews, cards or trends.
+                Personal: saved as you wrote it so you remember the details. Every manager can see it, but it&rsquo;s never sent to Claude -- not tidied, not tagged, and never used in reviews, cards or trends.
               </p>
             ) : (
             <p className="hint" style={{ marginBottom: 0 }}>

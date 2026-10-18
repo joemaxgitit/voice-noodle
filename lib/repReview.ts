@@ -199,7 +199,8 @@ How to write it:
 - "trajectory": improving, steady, slipping, mixed, or early (not enough data yet).
 - "since" is when a trend started (a date or month) or "" if unclear; "action" is "" for improving trends if nothing is needed.
 - "data_gaps": what is missing that would sharpen this (no KPI reports, no real calls graded lately, etc.). "" if nothing.
-- Never put a client's personal or banking details in the review.`;
+- Never put a client's personal or banking details in the review.
+- Stay on the work. If a note mentions the rep's personal life (health, family, money), don't repeat it or speculate about it; at most say the rep's state came up in a one-on-one.`;
 
 export async function buildReviewInput(opts: {
   supabase: SupabaseClient;
@@ -212,7 +213,7 @@ export async function buildReviewInput(opts: {
   const { supabase, history: h, repId, repName, since, focus } = opts;
   const inWindow = (iso: string) => !since || iso >= since;
   const calls = h.calls.filter((c) => c.status === "graded" && inWindow(c.created_at)).slice(0, 80);
-  // Vaulted notes stay out: every manager can read a review.
+  // Personal notes never go to Claude.
   const notes = h.notes.filter((n) => !n.private && (inWindow(n.note_date) || n.tag === "concern")).slice(0, 60);
   const quizzes = h.quizzes.filter((q) => inWindow(q.created_at)).slice(0, 40);
   const done = h.completions.filter((c) => inWindow(c.completed_at)).slice(0, 60);

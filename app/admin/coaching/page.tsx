@@ -45,7 +45,7 @@ export default function CoachingTrends() {
     ]);
     if (t.error) setError(/coaching_|does not exist/i.test(t.error.message) ? `${t.error.message} -- run supabase/coaching.sql first.` : t.error.message);
     setTopics((t.data || []) as CoachingTopic[]);
-    // Vaulted one-on-ones are personal notes, not coaching data.
+    // Personal one-on-ones are memory aids, not coaching data, and never feed AI.
     setSessions(((s.data || []) as CoachingSession[]).filter((x) => !x.private));
     setPeople(new Map((p.data || []).map((x) => [x.id as string, (x.full_name as string) || "Someone"])));
   }, [supabase]);

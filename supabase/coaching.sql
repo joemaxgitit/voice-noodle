@@ -65,9 +65,9 @@ on conflict (org_id, name) do nothing;
 
 
 -- ------------------------------------------------------------
--- Vaulted notes: a note or one-on-one marked private is seen only by the
--- manager who wrote it -- not other managers, not admins, not Claude's
--- coaching reviews (which every manager can read).
+-- Personal notes: a note or one-on-one marked personal (column "private")
+-- is still seen by every manager and admin -- no secrets -- but is never
+-- sent to Claude: not reviews, card drafts, tidying or trends.
 -- ------------------------------------------------------------
 alter table public.rep_notes add column if not exists private boolean not null default false;
 alter table public.coaching_sessions add column if not exists private boolean not null default false;
@@ -75,13 +75,13 @@ alter table public.coaching_sessions add column if not exists private boolean no
 drop policy if exists rep_notes_admin_all on public.rep_notes;
 drop policy if exists rep_notes_team on public.rep_notes;
 create policy rep_notes_team on public.rep_notes for all to authenticated
-using (public.is_admin() and org_id = public.my_org_id() and (not private or author_id = auth.uid()))
-with check (public.is_admin() and org_id = public.my_org_id() and (not private or author_id = auth.uid()));
+using (public.is_admin() and org_id = public.my_org_id())
+with check (public.is_admin() and org_id = public.my_org_id());
 
 drop policy if exists coaching_sessions_admin_all on public.coaching_sessions;
 drop policy if exists coaching_sessions_team on public.coaching_sessions;
 create policy coaching_sessions_team on public.coaching_sessions for all to authenticated
-using (public.is_admin() and org_id = public.my_org_id() and (not private or manager_id = auth.uid()))
-with check (public.is_admin() and org_id = public.my_org_id() and (not private or manager_id = auth.uid()));
+using (public.is_admin() and org_id = public.my_org_id())
+with check (public.is_admin() and org_id = public.my_org_id());
 
-select 'coaching and vault ready' as result, count(*) as topics from public.coaching_topics;
+select 'coaching ready' as result, count(*) as topics from public.coaching_topics;

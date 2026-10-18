@@ -20,7 +20,7 @@ export default function NotesFiles({ ctx }: { ctx: Ctx }) {
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [over, setOver] = useState(false);
-  const [vault, setVault] = useState(false);
+  const [personal, setPersonal] = useState(false);
   const pickRef = useRef<HTMLInputElement>(null);
 
   function addFiles(list: FileList | File[]) {
@@ -37,7 +37,7 @@ export default function NotesFiles({ ctx }: { ctx: Ctx }) {
     setStatus("");
     const text = body.trim();
     if (text) {
-      const { error } = await supabase.from("rep_notes").insert({ org_id: orgId, rep_id: repId, author_id: me, tag, body: text, note_date: date, ...(vault ? { private: true } : {}) });
+      const { error } = await supabase.from("rep_notes").insert({ org_id: orgId, rep_id: repId, author_id: me, tag, body: text, note_date: date, ...(personal ? { private: true } : {}) });
       if (error) {
         setBusy(false);
         return setError(error.message);
@@ -70,7 +70,7 @@ export default function NotesFiles({ ctx }: { ctx: Ctx }) {
     setFiles([]);
     setTag("note");
     setDate(today());
-    setVault(false);
+    setPersonal(false);
     setStatus(`Added${text ? " a note" : ""}${text && up ? " and" : ""}${up ? ` ${up} file${up === 1 ? "" : "s"}` : ""}.`);
     await reload();
   }
@@ -138,8 +138,8 @@ export default function NotesFiles({ ctx }: { ctx: Ctx }) {
             </button>
           ))}
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date" style={{ width: "auto", padding: "5px 8px", fontSize: 13 }} />
-          <label className="hint" style={{ display: "inline-flex", gap: 6, alignItems: "center", margin: 0 }} title="Personal notes only you can see -- never sent to Claude or used in reviews">
-            <input type="checkbox" checked={vault} onChange={(e) => setVault(e.target.checked)} style={{ width: "auto" }} /> 🔒 Vault (only me)
+          <label className="hint" style={{ display: "inline-flex", gap: 6, alignItems: "center", margin: 0 }} title="Personal details to help you remember -- every manager can see it, but it's never used by Claude">
+            <input type="checkbox" checked={personal} onChange={(e) => setPersonal(e.target.checked)} style={{ width: "auto" }} /> Personal -- keep out of AI
           </label>
         </div>
         {files.length > 0 && (
@@ -184,7 +184,7 @@ export default function NotesFiles({ ctx }: { ctx: Ctx }) {
             <div key={n.id} className="rx-note">
               <div className="meta">
                 <span className={`rx-kind ${n.tag === "concern" ? "concern" : "note"}`}>{TAG_LABEL[n.tag]}</span>
-                {n.private && <span title="Vaulted: only you can see this">🔒 only you</span>}
+                {n.private && <span title="Personal: never used by Claude">personal · not used by AI</span>}
                 <span>
                   {n.note_date} · {people.get(n.author_id || "") ?? "someone"}
                 </span>

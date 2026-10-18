@@ -44,6 +44,7 @@ ${notes}
 """
 ${last ? `\nThe previous one-on-one (${last.session_date}): ${last.summary || last.raw_notes}\nCommitments then: ${last.commitments.map((c) => c.text).join("; ") || "none"}\n` : ""}
 Tidy them up for the record. Keep the manager's meaning; don't add advice or anything that wasn't said.
+If the notes touch the rep's personal life (health, family, money), don't carry those details into the summary -- at most "personal matters came up" -- and tag it State check.
 - "summary": 1-3 plain sentences of what was covered and how it went.
 - "topics": every topic from this list that the notes actually touch, using the exact names (several is fine, none is fine):
 ${topics.map((t) => `  - ${t.name}${t.hint ? `: ${t.hint}` : ""}`).join("\n")}

@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   const [{ data: rep }, { data: topics }, { data: last }] = await Promise.all([
     supabase.from("profiles").select("full_name").eq("id", repId).maybeSingle(),
     supabase.from("coaching_topics").select("*").eq("archived", false).order("sort_order"),
-    // Vaulted one-on-ones never go to Claude.
+    // Personal one-on-ones never go to Claude.
     supabase.from("coaching_sessions").select("*").eq("rep_id", repId).eq("private", false).order("session_date", { ascending: false }).order("created_at", { ascending: false }).limit(1),
   ]);
   const list = (topics || []) as CoachingTopic[];
