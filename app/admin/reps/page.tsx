@@ -111,7 +111,7 @@ export default function Reps() {
   }, [people, calls, kpi, notes, reviews, showAll]);
 
   return (
-    <main className="shell">
+    <main className="shell rx-page">
       <div className="eyebrow">Team</div>
       <h1>Reps</h1>
       <p className="muted" style={{ maxWidth: "66ch" }}>

@@ -1,0 +1,23 @@
+/* Training cards: one behavior, calm and readable. */
+.tc { border: 1px solid var(--line); border-left: 4px solid var(--live); border-radius: 14px; padding: 16px 18px 14px; background: var(--ink-2); display: grid; gap: 12px; }
+.tc-win { border-left-color: var(--ok); }
+.tc-model { border-left-color: var(--tone); }
+.tc-compliance { border-left-color: var(--muted); }
+.tc-encouragement { border-left-color: var(--ok); }
+.tc-head { display: grid; gap: 2px; }
+.tc-kind { font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--live); }
+.tc-win .tc-kind, .tc-encouragement .tc-kind { color: var(--ok); }
+.tc-model .tc-kind { color: var(--tone); }
+.tc-compliance .tc-kind { color: var(--muted); }
+.tc-head h3 { margin: 0; font-size: 20px; letter-spacing: -0.01em; }
+.tc section p { margin: 2px 0 0; line-height: 1.5; }
+.tc-label { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.tc-moment { font-size: 14px; color: var(--muted); font-style: italic; }
+.tc-try { font-weight: 600; }
+textarea.tc-plan, p.tc-plan { width: 100%; font-weight: 600; border: 1px dashed var(--line); border-radius: 10px; padding: 8px 10px; background: transparent; font-size: 15px; line-height: 1.45; }
+.tc-drill { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.tc-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; }
+.tc-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tc-ask { display: grid; gap: 8px; }
+.tc-ask textarea { width: 100%; }
+.tc textarea, .tc-ask textarea { font-family: var(--font); }

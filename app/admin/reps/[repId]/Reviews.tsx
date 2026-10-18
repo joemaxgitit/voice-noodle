@@ -100,7 +100,7 @@ export default function Reviews({ ctx }: { ctx: Ctx }) {
               The review from {new Date(shown.created_at).toLocaleString()} failed: {shown.error}
             </div>
           ) : shown.review ? (
-            <ReviewView r={shown} author={people.get(shown.created_by || "") ?? "a manager"} />
+            <ReviewView r={shown} author={people.get(shown.created_by || "") ?? "a manager"} onCard={(f) => ctx.seedCard(f, shown.id)} />
           ) : null}
         </div>
       )}
@@ -145,7 +145,7 @@ function describeInputs(i: Record<string, number>) {
   return parts.length ? parts.join(", ") : "what's on record";
 }
 
-function ReviewView({ r, author }: { r: RepReview; author: string }) {
+function ReviewView({ r, author, onCard }: { r: RepReview; author: string; onCard: (focus: string) => void }) {
   const v = r.review!;
   return (
     <div className="rx-review">
@@ -210,6 +210,9 @@ function ReviewView({ r, author }: { r: RepReview; author: string }) {
               <b style={{ display: "inline" }}>Drill: </b>
               {f.drill}
             </p>
+            <button className="tr-sm rx-noprint" onClick={() => onCard(`${f.skill}: ${f.why} Drill: ${f.drill}`)}>
+              Make a training card from this
+            </button>
           </div>
         ))}
       </section>

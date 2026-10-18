@@ -242,7 +242,7 @@ export default function Reports() {
   const showCols = (cols: KpiColumn[]) => cols.filter((c) => c.type !== "name" && c.type !== "text").slice(0, 7);
 
   return (
-    <main className="shell">
+    <main className="shell rx-page">
       <div className="eyebrow">Team</div>
       <h1>Sales reports</h1>
       <p className="muted" style={{ maxWidth: "66ch" }}>

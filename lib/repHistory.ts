@@ -91,7 +91,22 @@ export type QuizAttempt = { material_id: string; score: number; passed: boolean;
 export type Completion = { material_id: string; completed_at: string; title?: string; kind?: string };
 export type AttendanceRow = { week_start: string; day: number; status: string };
 
+export type CardLite = {
+  id: string;
+  kind: string;
+  skill: string;
+  status: string;
+  sent_at: string | null;
+  closed_at: string | null;
+  practiced: number;
+  rep_response: string | null;
+  rep_note: string | null;
+  close_note: string | null;
+  signed_name: string | null;
+};
+
 export type RepHistory = {
+  cards: CardLite[];
   calls: HistCall[];
   notes: RepNote[];
   files: RepFile[];
@@ -151,7 +166,7 @@ export async function loadRepHistory(
     .limit(opts.callLimit ?? 300);
   if (opts.since) callQ = callQ.gte("created_at", opts.since);
 
-  const [calls, notes, files, reviews, quizzes, completions, attendance, reports, kpiRows, prefs, personas, mats] = await Promise.all([
+  const [calls, notes, files, reviews, quizzes, completions, attendance, reports, kpiRows, prefs, personas, mats, cards] = await Promise.all([
     callQ,
     supabase.from("rep_notes").select("*").eq("rep_id", repId).order("note_date", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("rep_files").select("*").eq("rep_id", repId).order("created_at", { ascending: false }),
@@ -164,10 +179,17 @@ export async function loadRepHistory(
     supabase.from("kpi_metric_prefs").select("metric_key, better, hidden"),
     supabase.from("roleplay_personas").select("id, name, title"),
     supabase.from("training_materials").select("id, title, kind"),
+    supabase
+      .from("training_cards")
+      .select("id, kind, skill, status, sent_at, closed_at, practiced, rep_response, rep_note, close_note, signed_name")
+      .eq("rep_id", repId)
+      .in("status", ["sent", "closed"])
+      .order("sent_at", { ascending: false }),
   ]);
 
   const matById = new Map(rows<{ id: string; title: string; kind: string }>(mats, [], "materials").map((m) => [m.id, m]));
   const history: RepHistory = {
+    cards: rows<CardLite>(cards, [], "cards"),
     calls: rows<HistCall>(calls, errors, "calls"),
     notes: rows<RepNote>(notes, errors, "notes"),
     files: rows<RepFile>(files, errors, "files"),

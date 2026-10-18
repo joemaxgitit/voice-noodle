@@ -11,16 +11,18 @@ import Overview from "./Overview";
 import Activity from "./Activity";
 import NotesFiles from "./NotesFiles";
 import Reviews from "./Reviews";
+import Cards from "./Cards";
 import "../../calls/calls.css";
 import "../../training/training.css";
 import "../reps.css";
 
-type Tab = "overview" | "kpi" | "activity" | "notes" | "review";
+type Tab = "overview" | "kpi" | "activity" | "notes" | "cards" | "review";
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "kpi", label: "KPI one-on-one" },
   { id: "activity", label: "Calls & activity" },
   { id: "notes", label: "Notes & files" },
+  { id: "cards", label: "Training cards" },
   { id: "review", label: "Coaching review" },
 ];
 
@@ -34,6 +36,7 @@ export type Ctx = {
   people: Map<string, string>;
   reload: () => Promise<void>;
   openTab: (t: Tab) => void;
+  seedCard: (focus: string, reviewId: string | null) => void;
 };
 
 /** One rep, everything on record: managers and admins only. */
@@ -47,6 +50,8 @@ export default function RepProfile() {
   const [people, setPeople] = useState<Map<string, string>>(new Map());
   const [history, setHistory] = useState<RepHistory | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
+  const [seed, setSeed] = useState<{ focus: string; reviewId: string | null } | null>(null);
+  const clearSeed = useCallback(() => setSeed(null), []);
 
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab") as Tab | null;
@@ -89,11 +94,11 @@ export default function RepProfile() {
 
   const ctx: Ctx | null =
     history && orgId
-      ? { supabase, orgId, me, repId, repName: name, history, people, reload, openTab }
+      ? { supabase, orgId, me, repId, repName: name, history, people, reload, openTab, seedCard: (focus: string, reviewId: string | null) => (setSeed({ focus, reviewId }), openTab("cards")) }
       : null;
 
   return (
-    <main className="shell">
+    <main className="shell rx-page">
       <div className="rx-head">
         <div>
           <div className="eyebrow">
@@ -149,6 +154,7 @@ export default function RepProfile() {
           )}
           {tab === "activity" && <Activity ctx={ctx} />}
           {tab === "notes" && <NotesFiles ctx={ctx} />}
+          {tab === "cards" && <Cards ctx={ctx} seed={seed} clearSeed={clearSeed} />}
           {tab === "review" && <Reviews ctx={ctx} />}
         </>
       )}

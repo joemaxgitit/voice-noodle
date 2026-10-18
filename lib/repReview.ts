@@ -68,7 +68,7 @@ export const REVIEW_SCHEMA = {
 const day = (iso: string) => iso.slice(0, 10);
 const cut = (s: string | null | undefined, n: number) => (!s ? "" : s.length > n ? `${s.slice(0, n)}…` : s);
 
-function callLine(c: HistCall, personas: Map<string, string>): string {
+export function callLine(c: HistCall, personas: Map<string, string>): string {
   const kind = c.source === "roleplay" ? `PRACTICE with mock client ${personas.get(c.persona_id || "") || "?"}` : `REAL client call${c.client_label ? ` (${c.client_label})` : ""}`;
   const outcome = (c.outcome_manual || c.outcome) as Outcome | null;
   const parts = [
@@ -239,6 +239,14 @@ export async function buildReviewInput(opts: {
     "",
     `TRAINING COMPLETED (${done.length}):`,
     done.length ? done.map((c) => `${day(c.completed_at)} ${c.title ?? "item"}${c.kind ? ` (${c.kind})` : ""}`).join("\n") : "(none)",
+    "",
+    "TRAINING CARDS SENT (one behavior each; did the behavior then show up in the calls after?):",
+    h.cards.filter((c) => !since || (c.sent_at ?? "") >= since).length
+      ? h.cards
+          .filter((c) => !since || (c.sent_at ?? "") >= since)
+          .map((c) => `${day(c.sent_at || "")} ${c.kind}: ${c.skill} -- ${c.status}${c.practiced ? `, practiced ${c.practiced}x` : ", not practiced"}${c.rep_response ? `, rep said ${c.rep_response}${c.rep_note ? ` ("${cut(c.rep_note, 200)}")` : ""}` : ""}${c.close_note ? `, closed: ${c.close_note}` : ""}`)
+          .join("\n")
+      : "(none)",
     "",
     "MASTER YOUR CRAFT ATTENDANCE:",
     att.length ? att.map((a) => `week of ${a.week_start}: ${a.status.replace(/_/g, " ")}`).join("\n") : "(no attendance marked)",

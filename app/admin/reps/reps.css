@@ -105,3 +105,4 @@ a.rx-ev:hover { background: var(--ink-3); }
   .rx-noprint { display: none !important; }
 }
 .rx-table td:first-child { min-width: 150px; }
+.rx-page textarea { font-family: var(--font); font-size: 15px; line-height: 1.55; }

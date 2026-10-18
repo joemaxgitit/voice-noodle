@@ -126,7 +126,7 @@ export default function ManagerHome() {
   const isThisWeek = weekdayOf(today()) < 6;
 
   return (
-    <main className="shell">
+    <main className="shell rx-page">
       <div className="eyebrow">{fmtDate(today(), { weekday: "long", month: "long", day: "numeric" })}</div>
       <h1>{name ? `Hi ${name}` : "Home"}</h1>
 

@@ -33,6 +33,7 @@ export default function HomeView() {
   const [done, setDone] = useState<Set<string>>(new Set());
   const [role, setRole] = useState<string>("rep");
   const [roleplayOn, setRoleplayOn] = useState(false);
+  const [newCards, setNewCards] = useState(0);
   const [lang, setLangState] = useState<Lang>("en");
   const [name, setName] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -81,6 +82,17 @@ export default function HomeView() {
 
       setName(profileRes.data?.full_name || "");
       setRole(profileRes.data?.role || "rep");
+
+      // A dot on My training when a manager has sent a card they haven't opened.
+      supabase
+        .from("training_cards")
+        .select("id", { count: "exact", head: true })
+        .eq("rep_id", user.id)
+        .eq("status", "sent")
+        .is("read_at", null)
+        .then(({ count }) => {
+          if (!cancelled) setNewCards(count ?? 0);
+        });
 
       // Practice calls appear only while a manager has them switched on.
       if (profileRes.data?.org_id) {
@@ -170,6 +182,11 @@ export default function HomeView() {
         <div className="site-header-actions">
           <Link className="btn" href="/training" style={{ textDecoration: "none" }}>
             {lang === "es" ? "Mi capacitación" : "My training"}
+            {newCards > 0 && (
+              <span className="pill" style={{ marginLeft: 6, color: "var(--live)", borderColor: "var(--live)" }}>
+                {newCards} new
+              </span>
+            )}
           </Link>
           {roleplayOn && (
             <Link className="btn" href="/roleplay" style={{ textDecoration: "none" }}>

@@ -35,6 +35,7 @@ import {
 } from "@/lib/training";
 import "../admin/calls/calls.css";
 import "./training.css";
+import MyCards from "./MyCards";
 
 type Slot = { date: string; start: string; minutes: number; title: string; who: string; kind: "event" | "mastery" | "meeting"; notes?: string | null; materials: string[] };
 
@@ -217,7 +218,9 @@ export default function MyTraining() {
         </Link>
       </div>
 
-      <div className="eyebrow">My training</div>
+      <MyCards supabase={supabase} />
+
+      <div className="eyebrow" style={{ marginTop: 28 }}>My training</div>
       <h1>{next ? "Up next" : "You're all caught up"}</h1>
       {error && <div className="error">{error}</div>}
 

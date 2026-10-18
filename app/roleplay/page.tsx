@@ -50,6 +50,11 @@ export default function Roleplay() {
   const [lang, setLang] = useState<RoleplayLang>("en");
   const [phase, setPhase] = useState<Phase>("pick");
   const [persona, setPersona] = useState<Persona | null>(null);
+  // A training card can point here with ?persona=<id>: that client goes first.
+  const [suggested, setSuggested] = useState<string | null>(null);
+  useEffect(() => {
+    setSuggested(new URLSearchParams(window.location.search).get("persona"));
+  }, []);
   const [mode, setMode] = useState<"speaking" | "listening">("listening");
   const [muted, setMuted] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -402,12 +407,13 @@ export default function Roleplay() {
             <p className="muted" style={{ marginTop: 18 }}>No practice clients are set up yet.</p>
           ) : (
             <div className="rp-grid">
-              {personas.map((p) => {
+              {[...personas].sort((a, b) => Number(b.id === suggested) - Number(a.id === suggested)).map((p) => {
                 const ready = !!(es ? p.agent_es : p.agent_en);
                 const lead = p.lead || {};
                 return (
-                  <div key={p.id} className="rp-persona">
+                  <div key={p.id} className="rp-persona" style={p.id === suggested ? { borderColor: "var(--live)", boxShadow: "0 0 0 1px var(--live)" } : undefined}>
                     <span className={`pill rp-diff ${p.difficulty}`}>{DIFFICULTY_LABEL[p.difficulty]}</span>
+                    {p.id === suggested && <span className="pill" style={{ marginLeft: 6, color: "var(--live)", borderColor: "var(--live)" }}>{es ? "De tu tarjeta" : "From your card"}</span>}
                     <h3>{p.title}</h3>
                     <div className="who">
                       {p.name}

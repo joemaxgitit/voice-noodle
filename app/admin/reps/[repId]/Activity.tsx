@@ -60,6 +60,16 @@ export default function Activity({ ctx }: { ctx: Ctx }) {
         title: `${TAG_LABEL[n.tag]} from ${people.get(n.author_id || "") ?? "a manager"}`,
         sub: n.body.length > 200 ? `${n.body.slice(0, 200)}…` : n.body,
       });
+    for (const c of h.cards)
+      if (c.sent_at)
+        out.push({
+          at: c.sent_at,
+          kind: "training",
+          title: `Training card (${c.kind}): ${c.skill}`,
+          sub: [c.status === "closed" ? "closed" : "open", c.practiced ? `practiced ${c.practiced}×` : "not practiced yet", c.rep_response ? `rep: ${c.rep_response.replace("_", " ")}` : ""]
+            .filter(Boolean)
+            .join(" · "),
+        });
     for (const f of h.files) out.push({ at: f.created_at, kind: "note", title: `File: ${f.name}`, sub: f.note || undefined });
     return out.sort((a, b) => (a.at < b.at ? 1 : -1));
   }, [h, people]);
