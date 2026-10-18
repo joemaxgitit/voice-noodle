@@ -138,7 +138,7 @@ export default function NotesFiles({ ctx }: { ctx: Ctx }) {
             </button>
           ))}
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date" style={{ width: "auto", padding: "5px 8px", fontSize: 13 }} />
-          <label className="hint" style={{ display: "inline-flex", gap: 6, alignItems: "center", margin: 0 }} title="Only you will see this note -- not other managers, and it stays out of coaching reviews">
+          <label className="hint" style={{ display: "inline-flex", gap: 6, alignItems: "center", margin: 0 }} title="Personal notes only you can see -- never sent to Claude or used in reviews">
             <input type="checkbox" checked={vault} onChange={(e) => setVault(e.target.checked)} style={{ width: "auto" }} /> 🔒 Vault (only me)
           </label>
         </div>

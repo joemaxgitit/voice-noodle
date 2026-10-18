@@ -261,19 +261,27 @@ export default function OneOnOne({ ctx }: { ctx: Ctx }) {
             />
             <div className="rx-actions" style={{ marginTop: 8 }}>
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date" style={{ width: "auto" }} />
-              <label className="hint" style={{ display: "inline-flex", gap: 6, alignItems: "center", margin: 0 }} title="Only you will see this one-on-one -- not other managers, and it stays out of coaching reviews and team trends for everyone else">
+              <label className="hint" style={{ display: "inline-flex", gap: 6, alignItems: "center", margin: 0 }} title="Personal notes only you can see -- never sent to Claude or used in reviews, cards or trends">
                 <input type="checkbox" checked={vault} onChange={(e) => setVault(e.target.checked)} style={{ width: "auto" }} /> 🔒 Vault (only me)
               </label>
-              <button className="primary" disabled={busy || !notes.trim()} onClick={() => void tidy()}>
-                {busy ? "Sorting…" : `Tidy and sort${est !== null ? ` · about ${usd(est)}` : ""}`}
-              </button>
-              <button disabled={busy || !notes.trim()} onClick={() => void save(null)}>
-                Save as is
+              {!vault && (
+                <button className="primary" disabled={busy || !notes.trim()} onClick={() => void tidy()}>
+                  {busy ? "Sorting…" : `Tidy and sort${est !== null ? ` · about ${usd(est)}` : ""}`}
+                </button>
+              )}
+              <button className={vault ? "primary" : ""} disabled={busy || !notes.trim()} onClick={() => void save(null)}>
+                {vault ? "Save to my vault" : "Save as is"}
               </button>
             </div>
+            {vault ? (
+              <p className="hint" style={{ marginBottom: 0 }}>
+                🔒 Vaulted: personal notes only you can see. They&rsquo;re never sent to Claude, never tagged, and never used in reviews, cards or trends.
+              </p>
+            ) : (
             <p className="hint" style={{ marginBottom: 0 }}>
               Claude writes a short summary, pulls out what was agreed, and tags the topics ({topics.map((t) => t.name).join(", ") || "loading…"}). You check it before it&rsquo;s saved.
             </p>
+            )}
           </>
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
