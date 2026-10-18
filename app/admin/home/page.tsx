@@ -21,8 +21,6 @@ type CallLite = {
   status: string;
   slp_score: number | null;
   client_label: string | null;
-  flags: { severity: string; issue: string }[] | null;
-  compliance: { item: string; status: string }[] | null;
 };
 type Attn = { href: string; title: string; why: string; tone: "bad" | "fair" };
 
@@ -61,7 +59,7 @@ export default function ManagerHome() {
         supabase.from("profiles").select("id, full_name, role, active").eq("org_id", org),
         supabase
           .from("calls")
-          .select("id, rep_id, created_at, call_date, source, status, slp_score, client_label, flags:grade->flags, compliance:grade->compliance")
+          .select("id, rep_id, created_at, call_date, source, status, slp_score, client_label")
           .gte("created_at", since)
           .order("created_at", { ascending: false })
           .limit(400),
@@ -108,24 +106,6 @@ export default function ManagerHome() {
       if (a !== null && b !== null && b - a >= 5)
         out.push({ href: `/admin/reps/${p.id}`, title: p.full_name || "Rep", why: `Straight Line down ${Math.round(b - a)} (${Math.round(b)} → ${Math.round(a)}) vs the 30 days before`, tone: "fair" });
     }
-    // Compliance misses and high flags on real calls this week
-    for (const c of calls.filter((x) => x.source !== "roleplay" && x.status === "graded" && at(x) >= now - 7 * DAY)) {
-      const misses = (c.compliance ?? []).filter((x) => x.status === "no");
-      const high = (c.flags ?? []).filter((f) => f.severity === "high");
-      if (misses.length || high.length)
-        out.push({
-          href: `/admin/calls/${c.id}`,
-          title: `${nameOf(c.rep_id)}${c.client_label ? ` -- ${c.client_label}` : ""}`,
-          // Short: counts first, then the first item. The call page has the rest.
-          why: [
-            misses.length ? `${misses.length} compliance miss${misses.length === 1 ? "" : "es"}` : "",
-            high.length ? `${high.length} high flag${high.length === 1 ? "" : "s"}` : "",
-          ]
-            .filter(Boolean)
-            .join(" · ") + ` -- ${(high[0]?.issue || misses[0]?.item || "").replace(/\s*\(.*?\)/g, "")}`,
-          tone: "bad",
-        });
-    }
     for (const c of calls.filter((x) => x.status === "failed").slice(0, 5))
       out.push({ href: `/admin/calls/${c.id}`, title: `${nameOf(c.rep_id)} -- call failed to process`, why: "Open it to retry", tone: "fair" });
     return out;
@@ -164,7 +144,7 @@ export default function ManagerHome() {
         <section className="card">
           <h3 className="rx-sec-title">Needs attention</h3>
           {!attention.length ? (
-            <p className="hint">Nothing flagged. Slipping reviews, Straight Line drops and compliance misses show up here.</p>
+            <p className="hint">Nothing flagged. Slipping coaching reviews and Straight Line drops show up here.</p>
           ) : (
             <div className="rx-attn">
               {attention.slice(0, 10).map((a, i) => (
