@@ -177,7 +177,7 @@ export default function HomeView() {
             </Link>
           )}
           {["admin", "manager"].includes(role) && (
-            <Link className="btn" href="/admin" style={{ textDecoration: "none" }}>
+            <Link className="btn" href="/admin/home" style={{ textDecoration: "none" }}>
               {c.admin}
             </Link>
           )}

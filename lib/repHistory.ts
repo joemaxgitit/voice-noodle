@@ -1,0 +1,209 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Flag, SlpSkill, ThreeTens, ComplianceResult, SectionResult } from "@/lib/calls";
+import type { KpiReport, KpiRow, MetricPref } from "@/lib/kpi";
+
+/*
+  Everything on record about one rep, for their profile page and for the
+  coaching review. Loaded with the caller's own token, so row level security
+  decides what comes back -- managers and admins only.
+*/
+
+export type HistCall = {
+  id: string;
+  created_at: string;
+  call_date: string | null;
+  source: string; // 'upload' | 'roleplay'
+  persona_id: string | null;
+  status: string;
+  score: number | null;
+  slp_score: number | null;
+  outcome: string | null;
+  outcome_manual: string | null;
+  duration_secs: number | null;
+  client_label: string | null;
+  summary: string | null;
+  slp_summary: string | null;
+  slp: SlpSkill[] | null;
+  strengths: string[] | null;
+  coaching: string[] | null;
+  flags: Flag[] | null;
+  compliance: ComplianceResult[] | null;
+  sections: SectionResult[] | null;
+  three_tens: ThreeTens | null;
+  tonality: string | null;
+  close_quality: string | null;
+};
+
+export type RepNote = {
+  id: string;
+  rep_id: string;
+  author_id: string | null;
+  tag: "note" | "one_on_one" | "win" | "concern";
+  body: string;
+  note_date: string;
+  created_at: string;
+};
+
+export type RepFile = {
+  id: string;
+  rep_id: string;
+  uploaded_by: string | null;
+  name: string;
+  path: string;
+  mime: string | null;
+  size_bytes: number | null;
+  note: string | null;
+  created_at: string;
+};
+
+export type ReviewTrend = { title: string; evidence: string; since?: string; action?: string };
+export type ReviewBody = {
+  trajectory: "improving" | "steady" | "slipping" | "mixed" | "early";
+  headline: string;
+  arc: string;
+  slipping: ReviewTrend[];
+  improving: ReviewTrend[];
+  focus_next: { skill: string; why: string; drill: string }[];
+  kpi_read: string;
+  kpi_talking_points: string[];
+  compliance_watch: string[];
+  questions_to_ask: string[];
+  data_gaps: string;
+};
+
+export type RepReview = {
+  id: string;
+  rep_id: string;
+  created_by: string | null;
+  status: "working" | "done" | "failed";
+  period_from: string | null;
+  period_to: string | null;
+  focus: string | null;
+  inputs: Record<string, number> | null;
+  review: ReviewBody | null;
+  model: string | null;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+};
+
+export type QuizAttempt = { material_id: string; score: number; passed: boolean; created_at: string; title?: string };
+export type Completion = { material_id: string; completed_at: string; title?: string; kind?: string };
+export type AttendanceRow = { week_start: string; day: number; status: string };
+
+export type RepHistory = {
+  calls: HistCall[];
+  notes: RepNote[];
+  files: RepFile[];
+  reviews: RepReview[];
+  quizzes: QuizAttempt[];
+  completions: Completion[];
+  attendance: AttendanceRow[];
+  kpiReports: KpiReport[];
+  kpiRows: KpiRow[]; // every row of every report, so a rep can be ranked against the team
+  prefs: Map<string, MetricPref>;
+  personas: Map<string, string>;
+};
+
+const CALL_COLS = [
+  "id",
+  "created_at",
+  "call_date",
+  "source",
+  "persona_id",
+  "status",
+  "score",
+  "slp_score",
+  "outcome",
+  "outcome_manual",
+  "duration_secs",
+  "client_label",
+  "summary:grade->>summary",
+  "slp_summary:grade->>slp_summary",
+  "slp:grade->slp",
+  "strengths:grade->strengths",
+  "coaching:grade->coaching_priorities",
+  "flags:grade->flags",
+  "compliance:grade->compliance",
+  "sections:grade->sections",
+  "three_tens:grade->three_tens",
+  "tonality:grade->tonality->>summary",
+  "close_quality:grade->>close_quality",
+].join(", ");
+
+/** Supabase returns an error for a missing table; treat those as empty so one gap doesn't blank the page. */
+function rows<T>(res: { data: unknown; error: { message: string } | null }, errors: string[], what: string): T[] {
+  if (res.error) errors.push(`${what}: ${res.error.message}`);
+  return (res.data || []) as T[];
+}
+
+export async function loadRepHistory(
+  supabase: SupabaseClient,
+  repId: string,
+  opts: { since?: string; callLimit?: number } = {}
+): Promise<{ history: RepHistory; errors: string[] }> {
+  const errors: string[] = [];
+  let callQ = supabase
+    .from("calls")
+    .select(CALL_COLS)
+    .eq("rep_id", repId)
+    .order("created_at", { ascending: false })
+    .limit(opts.callLimit ?? 300);
+  if (opts.since) callQ = callQ.gte("created_at", opts.since);
+
+  const [calls, notes, files, reviews, quizzes, completions, attendance, reports, kpiRows, prefs, personas, mats] = await Promise.all([
+    callQ,
+    supabase.from("rep_notes").select("*").eq("rep_id", repId).order("note_date", { ascending: false }).order("created_at", { ascending: false }),
+    supabase.from("rep_files").select("*").eq("rep_id", repId).order("created_at", { ascending: false }),
+    supabase.from("rep_reviews").select("*").eq("rep_id", repId).order("created_at", { ascending: false }).limit(20),
+    supabase.from("training_quiz_attempts").select("material_id, score, passed, created_at").eq("user_id", repId).order("created_at", { ascending: false }),
+    supabase.from("training_progress").select("material_id, completed_at").eq("user_id", repId).not("completed_at", "is", null),
+    supabase.from("mastery_attendance").select("week_start, day, status").eq("rep_id", repId).order("week_start", { ascending: false }),
+    supabase.from("kpi_reports").select("*").order("period_end", { ascending: false }),
+    supabase.from("kpi_rows").select("id, report_id, rep_id, salesman, data"),
+    supabase.from("kpi_metric_prefs").select("metric_key, better, hidden"),
+    supabase.from("roleplay_personas").select("id, name, title"),
+    supabase.from("training_materials").select("id, title, kind"),
+  ]);
+
+  const matById = new Map(rows<{ id: string; title: string; kind: string }>(mats, [], "materials").map((m) => [m.id, m]));
+  const history: RepHistory = {
+    calls: rows<HistCall>(calls, errors, "calls"),
+    notes: rows<RepNote>(notes, errors, "notes"),
+    files: rows<RepFile>(files, errors, "files"),
+    reviews: rows<RepReview>(reviews, errors, "reviews"),
+    quizzes: rows<QuizAttempt>(quizzes, [], "quizzes").map((q) => ({ ...q, title: matById.get(q.material_id)?.title })),
+    completions: rows<Completion>(completions, [], "completions").map((c) => ({
+      ...c,
+      title: matById.get(c.material_id)?.title,
+      kind: matById.get(c.material_id)?.kind,
+    })),
+    attendance: rows<AttendanceRow>(attendance, [], "attendance"),
+    kpiReports: rows<KpiReport>(reports, errors, "sales reports"),
+    kpiRows: rows<KpiRow>(kpiRows, errors, "sales report rows"),
+    prefs: new Map(rows<MetricPref>(prefs, [], "prefs").map((p) => [p.metric_key, p])),
+    personas: new Map(rows<{ id: string; name: string; title: string }>(personas, [], "personas").map((p) => [p.id, `${p.name} -- ${p.title}`])),
+  };
+  return { history, errors };
+}
+
+export const TAG_LABEL: Record<RepNote["tag"], string> = {
+  note: "Note",
+  one_on_one: "One-on-one",
+  win: "Win",
+  concern: "Concern",
+};
+
+/** Average of a skill's 1-10 scores across calls, ignoring "no chance to show it". */
+export function skillAverages(calls: HistCall[]): Map<string, { avg: number; n: number }> {
+  const acc = new Map<string, { sum: number; n: number }>();
+  for (const c of calls)
+    for (const s of c.slp ?? []) {
+      if (typeof s.score !== "number") continue;
+      const a = acc.get(s.skill) ?? { sum: 0, n: 0 };
+      a.sum += s.score;
+      a.n++;
+      acc.set(s.skill, a);
+    }
+  return new Map([...acc].map(([k, v]) => [k, { avg: v.sum / v.n, n: v.n }]));
+}

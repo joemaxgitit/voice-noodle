@@ -15,6 +15,17 @@ type Item = { href: string; label: string; icon: keyof typeof ICONS; match: (p: 
 
 const GROUPS: { title: string; items: Item[] }[] = [
   {
+    title: "",
+    items: [{ href: "/admin/home", label: "Home", icon: "home", match: (p) => p.startsWith("/admin/home") }],
+  },
+  {
+    title: "Team",
+    items: [
+      { href: "/admin/reps", label: "Reps", icon: "people", match: (p) => p.startsWith("/admin/reps") },
+      { href: "/admin/reports", label: "Sales reports", icon: "table", match: (p) => p.startsWith("/admin/reports") },
+    ],
+  },
+  {
     title: "Call review",
     items: [
       {
@@ -24,6 +35,13 @@ const GROUPS: { title: string; items: Item[] }[] = [
         match: (p) => p.startsWith("/admin/calls") && !p.startsWith("/admin/calls/insights"),
       },
       { href: "/admin/calls/insights", label: "Insights & tuning", icon: "chart", match: (p) => p.startsWith("/admin/calls/insights") },
+    ],
+  },
+  {
+    title: "Meetings",
+    items: [
+      { href: "/admin/mastery", label: "Master Your Craft", icon: "cap", match: (p) => p.startsWith("/admin/mastery") },
+      { href: "/admin/meeting", label: "Thursday meeting", icon: "megaphone", match: (p) => p.startsWith("/admin/meeting") },
     ],
   },
   {
@@ -38,12 +56,17 @@ const GROUPS: { title: string; items: Item[] }[] = [
     ],
   },
   {
-    title: "Team",
-    items: [{ href: "/admin/people", label: "People", icon: "people", match: (p) => p.startsWith("/admin/people") }],
+    title: "Settings",
+    items: [{ href: "/admin/people", label: "People & access", icon: "key", match: (p) => p.startsWith("/admin/people") }],
   },
 ];
 
 const ICONS = {
+  home: "M3 11l9-7 9 7M5 10v10h5v-6h4v6h5V10",
+  table: "M4 4h16v16H4zM4 9h16M4 14h16M10 9v11",
+  cap: "M2 9l10-5 10 5-10 5zM6 11v5c3 2.5 9 2.5 12 0v-5M22 9v6",
+  megaphone: "M3 10v4h3l7 4V6L6 10zM16 9a4 4 0 0 1 0 6M6 14l1 6h3l-1-5",
+  key: "M15 7a4 4 0 1 1-3.9 4.9L4 19v2h3v-2h2v-2h2l1.1-1.1A4 4 0 0 1 15 7zM16 9h.01",
   calendar: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4",
   phone: "M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2",
   chart: "M4 20V10M10 20V4M16 20v-7M22 20H2",
@@ -109,8 +132,8 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
 
         <nav className="af-nav">
           {GROUPS.map((g) => (
-            <div className="af-group" key={g.title}>
-              <div className="af-group-title">{g.title}</div>
+            <div className="af-group" key={g.title || "top"}>
+              {g.title && <div className="af-group-title">{g.title}</div>}
               {g.items.map((i) => {
                 const active = i.match(path);
                 return (

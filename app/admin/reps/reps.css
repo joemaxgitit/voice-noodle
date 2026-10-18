@@ -1,0 +1,107 @@
+/* Reps, rep profiles, sales reports and the manager home. */
+
+.rx-grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.rx-grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 900px) { .rx-grid2, .rx-grid3 { grid-template-columns: 1fr; } }
+
+.rx-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 14px 0; }
+.rx-tile { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--ink-2); }
+.rx-tile .k { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.rx-tile .v { font-size: 24px; font-weight: 750; letter-spacing: -0.02em; margin-top: 4px; }
+.rx-tile .d { font-size: 12px; margin-top: 2px; color: var(--muted); }
+.rx-up { color: var(--ok) !important; }
+.rx-down { color: var(--bad) !important; }
+
+.rx-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.rx-table th, .rx-table td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.rx-table th { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
+.rx-table td.num, .rx-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.rx-table tr.link { cursor: pointer; }
+.rx-table tr.link:hover td { background: var(--ink-3); }
+.rx-table a { color: inherit; }
+.rx-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.rx-table select { width: auto; min-width: 160px; padding: 6px 8px; font-size: 13px; }
+
+.rx-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.rx-head h1 { margin-bottom: 4px; }
+.rx-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+.rx-drop {
+  display: grid; place-items: center; gap: 6px; text-align: center;
+  border: 1.5px dashed var(--line); border-radius: 14px; padding: 26px 16px; margin: 14px 0;
+  background: var(--ink-2); cursor: pointer; transition: border-color 0.12s ease;
+}
+.rx-drop.over, .rx-drop:hover { border-color: var(--live); }
+.rx-drop input { display: none; }
+
+.rx-presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.rx-presets button { padding: 6px 11px; font-size: 13px; }
+.rx-presets button.on { border-color: var(--live); color: var(--live); }
+
+.rx-timeline { display: grid; gap: 0; }
+.rx-ev { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 11px 4px; border-bottom: 1px solid var(--line); color: inherit; text-decoration: none; }
+a.rx-ev:hover { background: var(--ink-3); }
+.rx-ev .when { font-size: 12px; color: var(--muted); padding-top: 2px; }
+.rx-ev .what b { display: block; font-weight: 650; }
+.rx-ev .what small { color: var(--muted); }
+.rx-kind { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-right: 6px; }
+.rx-kind.real { color: var(--live); }
+.rx-kind.practice { color: var(--tone); }
+.rx-kind.note { color: var(--ok); }
+.rx-kind.concern { color: var(--bad); }
+
+.rx-chart { width: 100%; height: auto; display: block; overflow: visible; }
+.rx-chart .grid line { stroke: var(--line); }
+.rx-chart text { fill: var(--muted); font-size: 11px; font-family: var(--font); }
+.rx-legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+.rx-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+.rx-skill { display: grid; grid-template-columns: minmax(0, 1fr) 120px 44px; gap: 10px; align-items: center; padding: 6px 0; font-size: 14px; }
+.rx-skill .bar { height: 8px; border-radius: 99px; background: var(--ink-3); overflow: hidden; }
+.rx-skill .bar i { display: block; height: 100%; background: var(--live); }
+.rx-skill .delta { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+
+.rx-note { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--ink-2); }
+.rx-note + .rx-note { margin-top: 10px; }
+.rx-note p { margin: 6px 0 0; white-space: pre-wrap; line-height: 1.5; }
+.rx-note .meta { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.rx-note .meta button { margin-left: auto; }
+.rx-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.rx-tags button { padding: 5px 10px; font-size: 12px; }
+.rx-tags button.on { border-color: var(--live); color: var(--live); }
+
+.rx-file { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.rx-file b { font-weight: 600; word-break: break-word; }
+
+/* ---------- coaching review ---------- */
+.rx-review { display: grid; gap: 14px; }
+.rx-verdict { display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; border-radius: 14px; border: 1px solid var(--line); background: var(--ink-2); }
+.rx-verdict .badge { flex: none; font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; padding: 5px 10px; border-radius: 99px; border: 1px solid currentColor; }
+.rx-verdict .badge.improving { color: var(--ok); }
+.rx-verdict .badge.slipping { color: var(--bad); }
+.rx-verdict .badge.steady, .rx-verdict .badge.mixed, .rx-verdict .badge.early { color: var(--live); }
+.rx-verdict .headline { margin: 0 0 6px; font-size: 19px; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; }
+.rx-verdict p { margin: 0; line-height: 1.55; }
+.rx-trend { border-left: 3px solid var(--line); padding: 4px 0 4px 14px; }
+.rx-trend + .rx-trend { margin-top: 12px; }
+.rx-trend.bad { border-color: var(--bad); }
+.rx-trend.good { border-color: var(--ok); }
+.rx-trend.focus { border-color: var(--live); }
+.rx-trend b { display: block; }
+.rx-trend p { margin: 4px 0 0; line-height: 1.5; font-size: 14px; }
+.rx-trend .ev { color: var(--muted); }
+.rx-sec-title { font-size: 12px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+.rx-working { display: flex; gap: 12px; align-items: center; }
+.rx-spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--live); animation: rx-spin 0.8s linear infinite; }
+@keyframes rx-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .rx-spin { animation: none; } }
+
+.rx-attn { display: grid; gap: 8px; }
+.rx-attn a { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; color: inherit; text-decoration: none; background: var(--ink-2); }
+.rx-attn a:hover { border-color: var(--live); }
+.rx-attn small { color: var(--muted); display: block; }
+
+@media print {
+  .rx-noprint { display: none !important; }
+}
+.rx-table td:first-child { min-width: 150px; }
