@@ -30,7 +30,7 @@ function moments(id: string, g: Grade): string {
 export async function POST(request: Request) {
   const ctx = await requireAdmin(request);
   if (ctx instanceof NextResponse) return ctx;
-  const { supabase } = ctx;
+  const { supabase, orgId } = ctx;
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set on the server." }, { status: 500 });
 
@@ -39,11 +39,12 @@ export async function POST(request: Request) {
   const kind: CardKind = body.kind && KIND_GUIDE[body.kind] ? body.kind : "focus";
   if (!repId) return NextResponse.json({ error: "No rep id." }, { status: 400 });
 
-  const [{ data: rep }, { history }, { data: mods }, { data: personas }] = await Promise.all([
+  const [{ data: rep }, { history }, { data: mods }, { data: personas }, { data: org }] = await Promise.all([
     supabase.from("profiles").select("full_name").eq("id", repId).maybeSingle(),
     loadRepHistory(supabase, repId, { callLimit: 40 }),
     supabase.from("modules").select("id, title, language, scripts(title)").order("sort_order"),
     supabase.from("roleplay_personas").select("id, name, title, difficulty, active").eq("active", true),
+    supabase.from("orgs").select("roleplay_enabled").eq("id", orgId).maybeSingle(),
   ]);
   if (!rep) return NextResponse.json({ error: "That rep wasn't found." }, { status: 404 });
 
@@ -60,7 +61,10 @@ export async function POST(request: Request) {
       const s = Array.isArray(m.scripts) ? m.scripts[0] : m.scripts;
       return `${m.id} | ${s?.title ? `${s.title} · ` : ""}${m.title}`;
     });
-  const perList = ((personas || []) as { id: string; name: string; title: string; difficulty: string }[]).map((p) => `${p.id} | ${p.name} -- ${p.title} (${p.difficulty})`);
+  // Mock clients only while practice calls are switched on.
+  const perList = ((org?.roleplay_enabled ? personas || [] : []) as { id: string; name: string; title: string; difficulty: string }[]).map(
+    (p) => `${p.id} | ${p.name} -- ${p.title} (${p.difficulty})`
+  );
 
   const text = [
     `You are drafting a training card for ${rep.full_name || "a rep"}, a phone sales rep at Lionside Financial (debt relief; Jordan Belfort's Straight Line Persuasion). A manager will edit and sign it before the rep sees it.`,
