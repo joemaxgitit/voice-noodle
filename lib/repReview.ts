@@ -212,7 +212,8 @@ export async function buildReviewInput(opts: {
   const { supabase, history: h, repId, repName, since, focus } = opts;
   const inWindow = (iso: string) => !since || iso >= since;
   const calls = h.calls.filter((c) => c.status === "graded" && inWindow(c.created_at)).slice(0, 80);
-  const notes = h.notes.filter((n) => inWindow(n.note_date) || n.tag === "concern").slice(0, 60);
+  // Vaulted notes stay out: every manager can read a review.
+  const notes = h.notes.filter((n) => !n.private && (inWindow(n.note_date) || n.tag === "concern")).slice(0, 60);
   const quizzes = h.quizzes.filter((q) => inWindow(q.created_at)).slice(0, 40);
   const done = h.completions.filter((c) => inWindow(c.completed_at)).slice(0, 60);
   const att = h.attendance.filter((a) => inWindow(a.week_start)).slice(0, 26);
@@ -239,6 +240,15 @@ export async function buildReviewInput(opts: {
     "",
     `TRAINING COMPLETED (${done.length}):`,
     done.length ? done.map((c) => `${day(c.completed_at)} ${c.title ?? "item"}${c.kind ? ` (${c.kind})` : ""}`).join("\n") : "(none)",
+    "",
+    `ONE-ON-ONE COACHING SESSIONS (${h.sessions.filter((x) => !x.private && inWindow(x.session_date)).length}, the manager's own record -- weigh these heavily):`,
+    h.sessions.filter((x) => !x.private && inWindow(x.session_date)).length
+      ? h.sessions
+          .filter((x) => inWindow(x.session_date))
+          .slice(0, 30)
+          .map((x) => `${x.session_date} [${x.topics.join(", ") || "no topic"}] ${cut(x.summary || x.raw_notes, 600)}${x.commitments.length ? ` | commitments: ${x.commitments.map((c) => `${c.text} (${c.status})`).join("; ")}` : ""}`)
+          .join("\n")
+      : "(none)",
     "",
     "TRAINING CARDS SENT (one behavior each; did the behavior then show up in the calls after?):",
     h.cards.filter((c) => !since || (c.sent_at ?? "") >= since).length
@@ -283,15 +293,22 @@ export async function askJson<T>(content: Block[], schema: object, key: string, 
 }
 
 /** The same, plus what it cost (list prices) for the spending log. */
-export async function askJsonCost<T>(content: Block[], schema: object, key: string, what: string, maxTokens = 16000): Promise<{ data: T; usd: number }> {
+export async function askJsonCost<T>(
+  content: Block[],
+  schema: object,
+  key: string,
+  what: string,
+  maxTokens = 16000,
+  model = REVIEW_MODEL
+): Promise<{ data: T; usd: number }> {
   const send = (strict: boolean) =>
     fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {
       method: "POST",
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
-        model: REVIEW_MODEL,
+        model,
         max_tokens: maxTokens,
-        ...thinkingFor(REVIEW_MODEL),
+        ...thinkingFor(model),
         output_config: strict ? { effort: "high", format: { type: "json_schema", schema } } : { effort: "high" },
         messages: [
           {
@@ -325,7 +342,7 @@ export async function askJsonCost<T>(content: Block[], schema: object, key: stri
     stop_reason?: string;
     usage?: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
   };
-  const usd = gradeCostUsd(REVIEW_MODEL, data.usage ?? {}) ?? 0;
+  const usd = gradeCostUsd(model, data.usage ?? {}) ?? 0;
   if (data.stop_reason === "max_tokens") throw new Error(`${what} ran too long and got cut off.`);
   const text = data.content?.find((c) => c.type === "text")?.text || "";
   const a = text.indexOf("{");

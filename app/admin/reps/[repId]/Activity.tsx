@@ -60,6 +60,13 @@ export default function Activity({ ctx }: { ctx: Ctx }) {
         title: `${TAG_LABEL[n.tag]} from ${people.get(n.author_id || "") ?? "a manager"}`,
         sub: n.body.length > 200 ? `${n.body.slice(0, 200)}…` : n.body,
       });
+    for (const x of h.sessions)
+      out.push({
+        at: x.session_date,
+        kind: "note",
+        title: `One-on-one${x.topics.length ? `: ${x.topics.join(", ")}` : ""}`,
+        sub: x.summary || x.raw_notes,
+      });
     for (const c of h.cards)
       if (c.sent_at)
         out.push({

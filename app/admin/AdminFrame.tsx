@@ -22,6 +22,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
     title: "Team",
     items: [
       { href: "/admin/reps", label: "Reps", icon: "people", match: (p) => p.startsWith("/admin/reps") },
+      { href: "/admin/coaching", label: "Coaching trends", icon: "chart", match: (p) => p.startsWith("/admin/coaching") },
       { href: "/admin/reports", label: "Sales reports", icon: "table", match: (p) => p.startsWith("/admin/reports") },
     ],
   },

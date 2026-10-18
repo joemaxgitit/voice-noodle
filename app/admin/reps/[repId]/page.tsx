@@ -12,13 +12,15 @@ import Activity from "./Activity";
 import NotesFiles from "./NotesFiles";
 import Reviews from "./Reviews";
 import Cards from "./Cards";
+import OneOnOne from "./OneOnOne";
 import "../../calls/calls.css";
 import "../../training/training.css";
 import "../reps.css";
 
-type Tab = "overview" | "kpi" | "activity" | "notes" | "cards" | "review";
+type Tab = "overview" | "one" | "kpi" | "activity" | "notes" | "cards" | "review";
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
+  { id: "one", label: "One-on-one" },
   { id: "kpi", label: "KPI one-on-one" },
   { id: "activity", label: "Calls & activity" },
   { id: "notes", label: "Notes & files" },
@@ -117,9 +119,10 @@ export default function RepProfile() {
           )}
         </div>
         <div className="rx-actions rx-noprint">
-          <button className="primary" onClick={() => openTab("review")}>
-            Coaching review
+          <button className="primary" onClick={() => openTab("one")}>
+            One-on-one
           </button>
+          <button onClick={() => openTab("review")}>Coaching review</button>
         </div>
       </div>
       <p className="hint rx-noprint" style={{ marginTop: 8 }}>
@@ -142,6 +145,7 @@ export default function RepProfile() {
       ) : (
         <>
           {tab === "overview" && <Overview ctx={ctx} />}
+          {tab === "one" && <OneOnOne ctx={ctx} />}
           {tab === "kpi" && (
             <KpiTab
               supabase={supabase}

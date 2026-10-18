@@ -28,6 +28,8 @@ create table if not exists public.rep_notes (
   updated_at timestamptz not null default now()
 );
 create index if not exists rep_notes_rep_idx on public.rep_notes(org_id, rep_id, note_date desc);
+-- Vaulted: seen only by the manager who wrote it.
+alter table public.rep_notes add column if not exists private boolean not null default false;
 
 -- ------------------------------------------------------------
 -- 2. Files on a rep (KPI sheets, screenshots, write-ups, anything)
@@ -103,7 +105,7 @@ create index if not exists rep_reviews_rep_idx on public.rep_reviews(org_id, rep
 do $$
 declare t text;
 begin
-  foreach t in array array['rep_notes','rep_files','kpi_reports','kpi_rows','rep_reviews'] loop
+  foreach t in array array['rep_files','kpi_reports','kpi_rows','rep_reviews'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists %I on public.%I', t || '_admin_all', t);
     execute format(
@@ -113,6 +115,13 @@ begin
       t || '_admin_all', t);
   end loop;
 end $$;
+
+alter table public.rep_notes enable row level security;
+drop policy if exists rep_notes_admin_all on public.rep_notes;
+drop policy if exists rep_notes_team on public.rep_notes;
+create policy rep_notes_team on public.rep_notes for all to authenticated
+using (public.is_admin() and org_id = public.my_org_id() and (not private or author_id = auth.uid()))
+with check (public.is_admin() and org_id = public.my_org_id() and (not private or author_id = auth.uid()));
 
 -- ------------------------------------------------------------
 -- 6. Private storage for rep files and original reports

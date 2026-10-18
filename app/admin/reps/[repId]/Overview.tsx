@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { skillAverages, TAG_LABEL } from "@/lib/repHistory";
+import { skillAverages } from "@/lib/repHistory";
 import { scoreBand } from "@/lib/calls";
 import { LineChart } from "../charts";
 import type { Ctx } from "./page";
@@ -149,22 +149,24 @@ export default function Overview({ ctx }: { ctx: Ctx }) {
           )}
         </section>
         <section className="card">
-          <h3 className="rx-sec-title">Recent notes</h3>
-          {!h.notes.length ? (
-            <p className="hint">Nothing yet.</p>
+          <h3 className="rx-sec-title">Last one-on-one</h3>
+          {h.sessions[0] ? (
+            <>
+              <b>{new Date(`${h.sessions[0].session_date}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</b>{" "}
+              <small className="muted">· {people.get(h.sessions[0].manager_id || "") ?? "a manager"}</small>
+              {h.sessions[0].topics.length > 0 && <div className="hint" style={{ margin: "2px 0" }}>{h.sessions[0].topics.join(" · ")}</div>}
+              <div style={{ lineHeight: 1.45, margin: "6px 0" }}>{h.sessions[0].summary || h.sessions[0].raw_notes}</div>
+              {h.sessions[0].commitments.length > 0 && (
+                <div className="hint" style={{ margin: "0 0 8px" }}>
+                  {h.sessions[0].commitments.filter((c) => c.status === "kept").length} of {h.sessions[0].commitments.length} commitments kept
+                </div>
+              )}
+            </>
           ) : (
-            h.notes.slice(0, 3).map((n) => (
-              <div key={n.id} style={{ marginBottom: 10 }}>
-                <span className={`rx-kind ${n.tag === "concern" ? "concern" : "note"}`}>{TAG_LABEL[n.tag]}</span>
-                <small className="muted">
-                  {n.note_date} · {people.get(n.author_id || "") ?? "someone"}
-                </small>
-                <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.45 }}>{n.body.length > 220 ? `${n.body.slice(0, 220)}…` : n.body}</div>
-              </div>
-            ))
+            <p className="hint">None on record yet.</p>
           )}
-          <button className="tr-sm" onClick={() => openTab("notes")}>
-            Add anything
+          <button className="primary tr-sm" onClick={() => openTab("one")}>
+            Start a one-on-one
           </button>
         </section>
       </div>
