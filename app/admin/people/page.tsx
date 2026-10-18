@@ -37,6 +37,10 @@ export default function People() {
   const [busy, setBusy] = useState<string>("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [myRole, setMyRole] = useState("");
+  const [pwFor, setPwFor] = useState<string | null>(null);
+  const [tempPw, setTempPw] = useState("");
+  const [pwDone, setPwDone] = useState<{ id: string; pw: string } | null>(null);
 
   const load = useCallback(async () => {
     const {
@@ -57,6 +61,7 @@ export default function People() {
     const rows = (data || []) as Person[];
     setPeople(rows);
     setOrgId(rows.find((p) => p.id === user?.id)?.org_id ?? null);
+    setMyRole(rows.find((p) => p.id === user?.id)?.role ?? "");
     setLoading(false);
   }, [supabase]);
 
@@ -89,6 +94,34 @@ export default function People() {
     }
     await patch(id, { org_id: orgId, active: true });
     void load();
+  }
+
+  // Easy to read out loud or text: Edge-4827-km
+  function makeTemp() {
+    const n = Math.floor(1000 + Math.random() * 9000);
+    const a = "abcdefghjkmnpqrstuvwxyz";
+    const l = a[Math.floor(Math.random() * a.length)] + a[Math.floor(Math.random() * a.length)];
+    return `Edge-${n}-${l}`;
+  }
+
+  async function setPassword(p: Person) {
+    setError("");
+    setStatus("");
+    setBusy(p.id);
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const res = await fetch("/api/admin/set-password", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session?.access_token ?? ""}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: p.id, password: tempPw }),
+    }).catch((e) => e as Error);
+    setBusy("");
+    if (res instanceof Error) return setError(res.message);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return setError(body?.error || `Failed (${res.status}).`);
+    setPwDone({ id: p.id, pw: tempPw });
+    setPwFor(null);
   }
 
   if (loading) {
@@ -196,6 +229,34 @@ export default function People() {
             {!p.active && (
               <div className="muted" style={{ marginTop: 6 }}>
                 Disabled &mdash; cannot sign in to any content.
+              </div>
+            )}
+            {p.id !== me && (myRole === "admin" || p.role === "rep") && (
+              <div style={{ marginTop: 8 }}>
+                {pwDone?.id === p.id ? (
+                  <div className="status" style={{ margin: 0 }}>
+                    Temporary password set: <b style={{ fontFamily: "var(--mono)" }}>{pwDone.pw}</b> &mdash; give it to {(p.full_name || "them").split(" ")[0]}. They&rsquo;ll pick their own when they sign in.
+                  </div>
+                ) : pwFor === p.id ? (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <input value={tempPw} onChange={(e) => setTempPw(e.target.value)} style={{ maxWidth: 220, fontFamily: "var(--mono)" }} aria-label="Temporary password" />
+                    <button className="primary" disabled={busy === p.id || tempPw.length < 8} onClick={() => void setPassword(p)}>
+                      {busy === p.id ? "Setting\u2026" : "Set temporary password"}
+                    </button>
+                    <button onClick={() => setPwFor(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <button
+                    className="link-btn"
+                    onClick={() => {
+                      setPwFor(p.id);
+                      setTempPw(makeTemp());
+                      setPwDone(null);
+                    }}
+                  >
+                    Reset password
+                  </button>
+                )}
               </div>
             )}
           </li>

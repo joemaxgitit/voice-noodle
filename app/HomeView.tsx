@@ -86,7 +86,7 @@ export default function HomeView() {
       setUserId(user.id);
 
       const [profileRes, scriptRes, moduleRes, progressRes] = await Promise.all([
-        supabase.from("profiles").select("full_name, role, org_id").eq("id", user.id).single(),
+        supabase.from("profiles").select("full_name, role, org_id, must_change_password").eq("id", user.id).single(),
         supabase.from("scripts").select("id, title, sort_order, logo_url"),
         supabase
           .from("modules")
@@ -95,6 +95,12 @@ export default function HomeView() {
       ]);
 
       if (cancelled) return;
+
+      // Signed in with a temporary password: pick your own first.
+      if ((profileRes.data as { must_change_password?: boolean } | null)?.must_change_password) {
+        router.replace("/account?first=1");
+        return;
+      }
 
       /*
         Surface whichever query failed. Only the modules error was reported
@@ -230,6 +236,9 @@ export default function HomeView() {
               {c.admin}
             </Link>
           )}
+          <Link className="btn" href="/account" style={{ textDecoration: "none" }} title={lang === "es" ? "Cambiar contraseña" : "Change password"}>
+            {lang === "es" ? "Cuenta" : "Account"}
+          </Link>
           <button onClick={signOut}>{c.signOut}</button>
         </div>
       </header>

@@ -157,6 +157,10 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
             <Icon name="headset" />
             Try a practice call
           </Link>
+          <Link href="/account" className="af-link">
+            <Icon name="key" />
+            Change password
+          </Link>
           <Link href="/proedgesolutions" className="af-link">
             <Icon name="back" />
             Rep view
