@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { fetchRetry } from "./fetchRetry";
 
 /**
  * Supabase client for server-side route handlers.
@@ -53,6 +54,7 @@ export async function createTokenSupabase(accessToken: string) {
       },
       global: {
         headers: { Authorization: `Bearer ${accessToken}` },
+        fetch: fetchRetry,
       },
     }
   );
