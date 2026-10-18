@@ -91,3 +91,44 @@ button.tr-icon { padding: 7px 10px; min-width: 36px; }
 .my-result.pass b { color: var(--ok); }
 .my-result.fail { border-color: var(--bad); }
 .my-result.fail b { color: var(--bad); }
+
+/* ---------- rep home ---------- */
+.home-tabs { margin-top: 10px; }
+.today-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.today-tile { display: grid; gap: 4px; align-content: start; text-align: left; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--ink-2); color: inherit; text-decoration: none; font: inherit; cursor: pointer; }
+.today-tile:hover { border-color: var(--live); }
+.today-tile .k { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.today-tile b { font-size: 16px; }
+.today-tile small { color: var(--muted); font-size: 13px; }
+.today-tile .tr-progress { display: block; height: 5px; border-radius: 99px; background: var(--ink-3); overflow: hidden; margin-top: 4px; }
+.today-tile .tr-progress i { display: block; height: 100%; background: var(--live); }
+.home-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  gap: 4px;
+  margin: 18px 0 16px;
+  padding-top: 6px;
+  background: var(--ink);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+@media (max-width: 900px) { .home-tabs { top: 54px; } }
+
+.home-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--muted);
+  font-weight: 600;
+}
+.home-tabs button:hover:not(:disabled) { color: var(--text); border-color: transparent; }
+.home-tabs button.active, .home-tabs button.active:hover:not(:disabled) { color: var(--text); border-bottom-color: var(--live); }

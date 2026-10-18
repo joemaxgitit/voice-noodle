@@ -6,6 +6,12 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { readLang, setLang as rememberLang, type Lang } from "@/lib/lang";
 import { copyFor } from "@/lib/copy";
+import TodayPanel from "./TodayPanel";
+import ProgressPanel from "./ProgressPanel";
+import "./training/training.css";
+
+type HomeTab = "today" | "practice" | "progress";
+const TAB_KEY = "vn-home-tab";
 
 type ModuleRow = {
   id: string;
@@ -34,6 +40,24 @@ export default function HomeView() {
   const [role, setRole] = useState<string>("rep");
   const [roleplayOn, setRoleplayOn] = useState(false);
   const [newCards, setNewCards] = useState(0);
+  const [userId, setUserId] = useState("");
+  const [tab, setTabState] = useState<HomeTab>("today");
+  useEffect(() => {
+    try {
+      const t = localStorage.getItem(TAB_KEY) as HomeTab | null;
+      if (t === "today" || t === "practice" || t === "progress") setTabState(t);
+    } catch {
+      // storage blocked
+    }
+  }, []);
+  const setTab = (t: HomeTab) => {
+    setTabState(t);
+    try {
+      localStorage.setItem(TAB_KEY, t);
+    } catch {
+      // ignore
+    }
+  };
   const [lang, setLangState] = useState<Lang>("en");
   const [name, setName] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -59,6 +83,7 @@ export default function HomeView() {
       }
 
       const user = session.user;
+      setUserId(user.id);
 
       const [profileRes, scriptRes, moduleRes, progressRes] = await Promise.all([
         supabase.from("profiles").select("full_name, role, org_id").eq("id", user.id).single(),
@@ -128,6 +153,18 @@ export default function HomeView() {
   }, []);
 
   const c = copyFor(lang);
+  const es = lang === "es";
+
+  // The script section they're partway through, for "pick up where you left off".
+  const resume = (() => {
+    for (const m of modules.filter((x) => (x.language || "en") === lang && x.kind !== "loop")) {
+      const total = m.segments?.length ?? 0;
+      const complete = (m.segments || []).filter((sg) => done.has(sg.id)).length;
+      if (total && complete > 0 && complete < total) return { id: m.id, title: m.title, total, complete };
+    }
+    const first = modules.find((x) => (x.language || "en") === lang && x.kind !== "loop" && (x.segments?.length ?? 0) > 0 && !(x.segments || []).every((sg) => done.has(sg.id)));
+    return first ? { id: first.id, title: first.title, total: first.segments.length, complete: first.segments.filter((sg) => done.has(sg.id)).length } : null;
+  })();
 
   function choose(next: Lang) {
     setLangState(next);
@@ -188,11 +225,6 @@ export default function HomeView() {
               </span>
             )}
           </Link>
-          {roleplayOn && (
-            <Link className="btn" href="/roleplay" style={{ textDecoration: "none" }}>
-              {lang === "es" ? "Llamada de práctica" : "Practice call"}
-            </Link>
-          )}
           {["admin", "manager"].includes(role) && (
             <Link className="btn" href="/admin/home" style={{ textDecoration: "none" }}>
               {c.admin}
@@ -205,10 +237,29 @@ export default function HomeView() {
       <div className="eyebrow">
         {name ? `${c.welcomeBack}, ${name}` : c.training}
       </div>
-      <h1>{c.pickSection}</h1>
-      <p className="muted">{c.pickSectionBlurb}</p>
+
+      <nav className="home-tabs" role="tablist" aria-label={es ? "Secciones" : "Sections"}>
+        {(
+          [
+            ["today", es ? "Hoy" : "Today"],
+            ["practice", es ? "Práctica" : "Practice"],
+            ["progress", es ? "Mi progreso" : "My progress"],
+          ] as [HomeTab, string][]
+        ).map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
+            {label}
+          </button>
+        ))}
+      </nav>
 
       {error && <div className="error">{error}</div>}
+
+      {tab === "today" && <TodayPanel supabase={supabase} es={es} resume={resume} roleplayOn={roleplayOn} openPractice={() => setTab("practice")} />}
+      {tab === "progress" && userId && <ProgressPanel supabase={supabase} userId={userId} es={es} linesDone={done.size} />}
+      {tab === "practice" && (
+        <>
+      <h1>{c.pickSection}</h1>
+      <p className="muted">{c.pickSectionBlurb}</p>
 
       {scripts.length === 0 && !error && (
         <p className="muted" style={{ marginTop: 24 }}>
@@ -296,6 +347,8 @@ export default function HomeView() {
           </section>
         );
       })}
+        </>
+      )}
     </main>
   );
 }

@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CARD_KIND, type Card } from "@/lib/cards";
 import CardView from "./CardView";
 
 /** The rep's open training cards, newest first, with past ones folded away. */
-export default function MyCards({ supabase }: { supabase: SupabaseClient }) {
+export default function MyCards({ supabase, openOnly, empty }: { supabase: SupabaseClient; openOnly?: boolean; empty?: ReactNode }) {
   const [cards, setCards] = useState<Card[] | null>(null);
 
   const load = useCallback(async () => {
@@ -20,7 +20,8 @@ export default function MyCards({ supabase }: { supabase: SupabaseClient }) {
     void load();
   }, [load]);
 
-  if (!cards || !cards.length) return null;
+  if (!cards) return null;
+  if (!cards.filter((c) => c.status === "sent").length && (openOnly || !cards.length)) return empty ? <>{empty}</> : null;
   const open = cards.filter((c) => c.status === "sent");
   const done = cards.filter((c) => c.status === "closed");
 
@@ -43,7 +44,7 @@ export default function MyCards({ supabase }: { supabase: SupabaseClient }) {
           />
         ))}
       </div>
-      {done.length > 0 && (
+      {!openOnly && done.length > 0 && (
         <details style={{ marginTop: 12 }}>
           <summary className="hint" style={{ cursor: "pointer" }}>
             Done ({done.length})
