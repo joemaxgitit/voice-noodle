@@ -116,7 +116,13 @@ export default function ManagerHome() {
         out.push({
           href: `/admin/calls/${c.id}`,
           title: `${nameOf(c.rep_id)}${c.client_label ? ` -- ${c.client_label}` : ""}`,
-          why: [misses.length ? `Compliance: ${misses.map((m) => m.item).join(", ")}` : "", high.length ? `High flag: ${high[0].issue}` : ""].filter(Boolean).join(" · "),
+          // Short: counts first, then the first item. The call page has the rest.
+          why: [
+            misses.length ? `${misses.length} compliance miss${misses.length === 1 ? "" : "es"}` : "",
+            high.length ? `${high.length} high flag${high.length === 1 ? "" : "s"}` : "",
+          ]
+            .filter(Boolean)
+            .join(" · ") + ` -- ${(high[0]?.issue || misses[0]?.item || "").replace(/\s*\(.*?\)/g, "")}`,
           tone: "bad",
         });
     }

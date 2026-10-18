@@ -114,3 +114,5 @@ a.rx-ev:hover { background: var(--ink-3); }
 .sp-chart line.limit { stroke: var(--muted); stroke-dasharray: 4 4; }
 .sp-chart text { fill: var(--muted); font-size: 11px; font-family: var(--font); }
 .sp-chart .grid line { stroke: var(--line); }
+.rx-attn a > .pill { align-self: start; white-space: nowrap; }
+.rx-attn small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
