@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import CardView from "@/app/training/CardView";
 import { CARD_KIND, cardWords, RESPONSE_LABEL, type Card, type CardDrill, type CardKind } from "@/lib/cards";
 import type { Ctx } from "./page";
+import { okToSpend, usd, useEstimate } from "@/lib/spend";
 
 type Draft = {
   id?: string;
@@ -41,6 +42,7 @@ export default function Cards({ ctx, seed, clearSeed }: { ctx: Ctx; seed: { focu
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
+  const est = useEstimate(supabase, "card_draft");
 
   const load = useCallback(async () => {
     const { data, error } = await supabase.from("training_cards").select("*").eq("rep_id", repId).neq("status", "discarded").order("created_at", { ascending: false });
@@ -71,6 +73,7 @@ export default function Cards({ ctx, seed, clearSeed }: { ctx: Ctx; seed: { focu
 
   const askClaude = useCallback(
     async (k: CardKind, focus: string, reviewId: string | null, callId?: string) => {
+      if (!(await okToSpend(supabase, est ?? 0, "Drafting this card"))) return;
       setDrafting(true);
       setError("");
       setStatus("");
@@ -89,7 +92,7 @@ export default function Cards({ ctx, seed, clearSeed }: { ctx: Ctx; seed: { focu
       setDraft(body.draft as Draft);
       setAlso([]);
     },
-    [supabase, repId]
+    [supabase, repId, est]
   );
 
   // "Make a card" from a coaching review lands here with the skill filled in.
@@ -191,7 +194,7 @@ export default function Cards({ ctx, seed, clearSeed }: { ctx: Ctx; seed: { focu
           </label>
           <div className="rx-actions">
             <button className="primary" disabled={drafting} onClick={() => void askClaude(kind, about, null)}>
-              {drafting ? "Drafting…" : "Draft it with Claude"}
+              {drafting ? "Drafting…" : `Draft it with Claude${est !== null ? ` · about ${usd(est)}` : ""}`}
             </button>
             <button disabled={drafting} onClick={() => (setDraft(BLANK(kind)), setAlso([]))}>
               Write it myself

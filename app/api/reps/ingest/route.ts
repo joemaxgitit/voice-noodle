@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/callsServer";
-import { askJson, REVIEW_MODEL, type Block } from "@/lib/repReview";
+import { askJsonCost, REVIEW_MODEL, type Block } from "@/lib/repReview";
+import { logSpend } from "@/lib/spendServer";
 import { INGEST_SCHEMA, ingestInstructions, type IngestResult } from "@/lib/ingest";
 import { readAllSheets, readCsv, sheetAsText } from "@/lib/xlsx";
 
@@ -18,7 +19,7 @@ const MAX_TEXT = 180_000;
 export async function POST(request: Request) {
   const ctx = await requireAdmin(request);
   if (ctx instanceof NextResponse) return ctx;
-  const { supabase, orgId } = ctx;
+  const { supabase, orgId, userId } = ctx;
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set on the server." }, { status: 500 });
 
@@ -68,7 +69,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await askJson<IngestResult>(content, INGEST_SCHEMA, key, "Sorting", 24000);
+    const { data: result, usd } = await askJsonCost<IngestResult>(content, INGEST_SCHEMA, key, "Sorting", 24000);
+    await logSpend(supabase, { org_id: orgId, kind: "dropbox", usd, user_id: userId });
     const valid = new Set(roster.map((r) => r.id));
     for (const it of result.items) if (!valid.has(it.rep_id)) it.rep_id = "";
     return NextResponse.json({ ok: true, result, model: REVIEW_MODEL });

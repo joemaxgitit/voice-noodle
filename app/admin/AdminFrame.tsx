@@ -57,12 +57,16 @@ const GROUPS: { title: string; items: Item[] }[] = [
   },
   {
     title: "Settings",
-    items: [{ href: "/admin/people", label: "People & access", icon: "key", match: (p) => p.startsWith("/admin/people") }],
+    items: [
+      { href: "/admin/people", label: "People & access", icon: "key", match: (p) => p.startsWith("/admin/people") },
+      { href: "/admin/spending", label: "Spending", icon: "dollar", match: (p) => p.startsWith("/admin/spending") },
+    ],
   },
 ];
 
 const ICONS = {
   home: "M3 11l9-7 9 7M5 10v10h5v-6h4v6h5V10",
+  dollar: "M12 3v18M16.5 7.5c-.8-1.2-2.4-2-4.5-2-2.6 0-4.2 1.3-4.2 3s1.6 2.6 4.2 3 4.5 1.4 4.5 3.2-1.9 3.3-4.5 3.3c-2.2 0-3.9-.9-4.7-2.3",
   table: "M4 4h16v16H4zM4 9h16M4 14h16M10 9v11",
   cap: "M2 9l10-5 10 5-10 5zM6 11v5c3 2.5 9 2.5 12 0v-5M22 9v6",
   megaphone: "M3 10v4h3l7 4V6L6 10zM16 9a4 4 0 0 1 0 6M6 14l1 6h3l-1-5",

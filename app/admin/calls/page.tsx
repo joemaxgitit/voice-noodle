@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { startJob } from "@/lib/callsClient";
+import { estimateFor, okToSpend, transcribeEstimate, usd } from "@/lib/spend";
 import {
   OUTCOME_LABEL,
   langOf,
@@ -214,8 +215,23 @@ export default function Calls() {
     if (match) setScriptId(match.id);
   }
 
+  // What this upload will cost: transcription by the minute, grading from recent calls.
+  const [est, setEst] = useState<{ secs: number; usd: number } | null>(null);
+  useEffect(() => {
+    let off = false;
+    setEst(null);
+    if (!file) return;
+    void Promise.all([audioSeconds(file), estimateFor(supabase, "grade")]).then(([secs, grade]) => {
+      if (!off && secs) setEst({ secs, usd: transcribeEstimate(secs) + grade });
+    });
+    return () => {
+      off = true;
+    };
+  }, [file, supabase]);
+
   async function upload() {
     setError("");
+    if (est && !(await okToSpend(supabase, est.usd, "This call"))) return;
     const typed = repId === NEW_REP ? repName.trim() : "";
     if (!file || !repId || (repId === NEW_REP && !typed) || !scriptId || !me?.org_id) {
       setError(
@@ -494,6 +510,11 @@ export default function Calls() {
           <button className="primary" disabled={!!busy} onClick={upload}>
             {busy || "Upload and grade"}
           </button>
+          {est && !busy && (
+            <span className="muted" style={{ fontSize: 14 }}>
+              {Math.round(est.secs / 60)} min call &middot; about {usd(est.usd)} to transcribe and grade
+            </span>
+          )}
         </div>
 
         {error && <div className="error">{error}</div>}

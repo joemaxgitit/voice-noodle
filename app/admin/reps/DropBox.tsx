@@ -6,6 +6,7 @@ import type { IngestResult } from "@/lib/ingest";
 import { slug, type ColType, type KpiColumn } from "@/lib/kpi";
 import { TAG_LABEL } from "@/lib/repHistory";
 import { fmtBytes, MAX_UPLOAD_BYTES, today } from "@/lib/training";
+import { okToSpend, usd, useEstimate } from "@/lib/spend";
 
 type Person = { id: string; full_name: string | null; role: string };
 
@@ -53,6 +54,7 @@ export default function DropBox({
   const [status, setStatus] = useState("");
   const [over, setOver] = useState(false);
   const pick = useRef<HTMLInputElement>(null);
+  const est = useEstimate(supabase, "dropbox");
 
   const reps = [...people].sort((a, b) => Number(b.role === "rep") - Number(a.role === "rep") || (a.full_name || "").localeCompare(b.full_name || ""));
 
@@ -64,6 +66,7 @@ export default function DropBox({
   }
 
   async function read() {
+    if (!(await okToSpend(supabase, est ?? 0, "Sorting this"))) return;
     setError("");
     setStatus("");
     setPhase("reading");
@@ -341,7 +344,7 @@ export default function DropBox({
           </span>
         )}
         <button className="primary" disabled={phase === "reading" || (!text.trim() && !file)} onClick={read}>
-          {phase === "reading" ? "Reading…" : "Sort it onto profiles"}
+          {phase === "reading" ? "Reading…" : `Sort it onto profiles${est !== null ? ` · about ${usd(est)}` : ""}`}
         </button>
       </div>
       {phase === "reading" && (

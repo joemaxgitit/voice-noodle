@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { OUTCOME_LABEL, type Outcome } from "@/lib/calls";
+import { gradeCostUsd, OUTCOME_LABEL, type Outcome } from "@/lib/calls";
 import { thinkingFor } from "@/lib/callsServer";
 import { compareRep, fmtChange, fmtKpi, fmtMonth, KIND_LABEL, monthlyReports, type KpiRow } from "@/lib/kpi";
 import { TAG_LABEL, type HistCall, type RepHistory, type ReviewBody } from "@/lib/repHistory";
@@ -273,12 +273,17 @@ export async function buildReviewInput(opts: {
   };
 }
 
-export async function askForReview(content: Block[], key: string): Promise<ReviewBody> {
-  return askJson<ReviewBody>(content, REVIEW_SCHEMA, key, "The review");
+export async function askForReview(content: Block[], key: string): Promise<{ data: ReviewBody; usd: number }> {
+  return askJsonCost<ReviewBody>(content, REVIEW_SCHEMA, key, "The review");
 }
 
 /** One Claude call that must come back as JSON matching the schema. */
 export async function askJson<T>(content: Block[], schema: object, key: string, what: string, maxTokens = 16000): Promise<T> {
+  return (await askJsonCost<T>(content, schema, key, what, maxTokens)).data;
+}
+
+/** The same, plus what it cost (list prices) for the spending log. */
+export async function askJsonCost<T>(content: Block[], schema: object, key: string, what: string, maxTokens = 16000): Promise<{ data: T; usd: number }> {
   const send = (strict: boolean) =>
     fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {
       method: "POST",
@@ -315,13 +320,18 @@ export async function askJson<T>(content: Block[], schema: object, key: string, 
     }
     throw new Error(`${what} failed (${res.status}). ${msg}`);
   }
-  const data = (await res.json()) as { content?: { type: string; text?: string }[]; stop_reason?: string };
+  const data = (await res.json()) as {
+    content?: { type: string; text?: string }[];
+    stop_reason?: string;
+    usage?: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
+  };
+  const usd = gradeCostUsd(REVIEW_MODEL, data.usage ?? {}) ?? 0;
   if (data.stop_reason === "max_tokens") throw new Error(`${what} ran too long and got cut off.`);
   const text = data.content?.find((c) => c.type === "text")?.text || "";
   const a = text.indexOf("{");
   const b = text.lastIndexOf("}");
   try {
-    return JSON.parse(a >= 0 && b > a ? text.slice(a, b + 1) : text) as T;
+    return { data: JSON.parse(a >= 0 && b > a ? text.slice(a, b + 1) : text) as T, usd };
   } catch {
     throw new Error(`${what} came back unreadable. Try again.`);
   }

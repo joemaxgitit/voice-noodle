@@ -2,6 +2,7 @@ import { NextResponse, after } from "next/server";
 import { requireAdmin } from "@/lib/callsServer";
 import { loadRepHistory } from "@/lib/repHistory";
 import { askForReview, buildReviewInput, REVIEW_MODEL } from "@/lib/repReview";
+import { logSpend } from "@/lib/spendServer";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -50,8 +51,9 @@ export async function POST(request: Request) {
       const { history } = await loadRepHistory(supabase, repId);
       const { content, inputs } = await buildReviewInput({ supabase, history, repId, repName: rep.full_name || "this rep", since, focus });
       await supabase.from("rep_reviews").update({ inputs }).eq("id", row.id);
-      const review = await askForReview(content, key);
+      const { data: review, usd } = await askForReview(content, key);
       await supabase.from("rep_reviews").update({ status: "done", review, finished_at: new Date().toISOString() }).eq("id", row.id);
+      await logSpend(supabase, { org_id: orgId, kind: "review", usd, user_id: userId, ref_id: repId });
     } catch (e) {
       await supabase
         .from("rep_reviews")

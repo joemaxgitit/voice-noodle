@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { RepReview, ReviewBody } from "@/lib/repHistory";
+import { okToSpend, usd, useEstimate } from "@/lib/spend";
 import type { Ctx } from "./page";
 
 const WINDOWS = [
@@ -27,6 +28,7 @@ export default function Reviews({ ctx }: { ctx: Ctx }) {
   const [error, setError] = useState("");
   const [starting, setStarting] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const est = useEstimate(supabase, "review");
 
   const working = h.reviews.find((r) => r.status === "working" && Date.now() - new Date(r.created_at).getTime() < 10 * 60000);
   const shown = h.reviews.find((r) => r.id === openId) ?? h.reviews.find((r) => r.status !== "working");
@@ -39,6 +41,7 @@ export default function Reviews({ ctx }: { ctx: Ctx }) {
   }, [working, reload]);
 
   async function run() {
+    if (!(await okToSpend(supabase, est ?? 0, "This coaching review"))) return;
     setStarting(true);
     setError("");
     const {
@@ -78,7 +81,7 @@ export default function Reviews({ ctx }: { ctx: Ctx }) {
           <input value={focus} onChange={(e) => setFocus(e.target.value)} placeholder="e.g. cancels before first payment, or the SuperMoney drop" />
         </label>
         <button className="primary" disabled={starting || !!working} onClick={run}>
-          {working ? "Writing the review…" : starting ? "Starting…" : "Run coaching review"}
+          {working ? "Writing the review…" : starting ? "Starting…" : `Run coaching review${est !== null ? ` · about ${usd(est)}` : ""}`}
         </button>
         {error && <div className="error">{error}</div>}
       </section>

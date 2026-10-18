@@ -5,6 +5,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { scoreBand } from "@/lib/calls";
 import { addDays, fmtDate, fmtRange, fmtWeek, MASTERY, MEETING, today, weekdayOf, workWeek, type MasteryWeek, type Meeting, type TrainingEvent } from "@/lib/training";
+import { loadSpend, type SpendSummary } from "@/lib/spend";
+import SpendMeters from "../spending/SpendMeters";
 import "../calls/calls.css";
 import "../training/training.css";
 import "../reps/reps.css";
@@ -38,6 +40,10 @@ export default function ManagerHome() {
   const [meeting, setMeeting] = useState<(Meeting & { items: number }) | null>(null);
   const [slipping, setSlipping] = useState<{ rep_id: string; headline: string | null; created_at: string }[]>([]);
   const [lastReport, setLastReport] = useState<{ title: string; period_end: string } | null>(null);
+  const [spend, setSpend] = useState<SpendSummary | null>(null);
+  useEffect(() => {
+    void loadSpend(supabase).then(({ summary }) => setSpend(summary));
+  }, [supabase]);
   const week = workWeek();
 
   useEffect(() => {
@@ -141,6 +147,12 @@ export default function ManagerHome() {
           Team drop box
         </Link>
       </div>
+
+      {spend && (
+        <Link href="/admin/spending" style={{ color: "inherit", textDecoration: "none", display: "block" }} aria-label="Spending details">
+          <SpendMeters s={spend} />
+        </Link>
+      )}
 
       <div className="rx-grid2">
         <section className="card">

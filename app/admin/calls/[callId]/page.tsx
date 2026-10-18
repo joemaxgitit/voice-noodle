@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { startJob } from "@/lib/callsClient";
+import { okToSpend, usd } from "@/lib/spend";
 import {
   ROLE_LABEL,
   STATUS_LABEL,
@@ -587,6 +588,7 @@ export default function CallDetail() {
 
   async function retranslate() {
     if (!call) return;
+    if (!(await okToSpend(supabase, call.translation?.usd ?? 0.03, "Translating again"))) return;
     kickedTranslate.current = true;
     const err = await startJob(supabase, "translate", call.id);
     if (err) setError(err);
@@ -626,8 +628,12 @@ export default function CallDetail() {
     return b?.error || "Could not fetch the practice call.";
   }
 
+  // A re-grade costs about what the last grade of this call did.
+  const regradeUsd = call?.cost?.grade_usd ?? null;
+
   async function run(route: "transcribe" | "grade") {
     if (!call) return;
+    if (route === "grade" && !(await okToSpend(supabase, regradeUsd ?? 0.08, "Re-grading this call"))) return;
     setWorking(true);
     setError("");
     kicked.current = true;
@@ -953,8 +959,8 @@ export default function CallDetail() {
           </button>
         )}
         {(call.status === "graded" || call.status === "failed") && call.transcript && (
-          <button disabled={working} onClick={() => run("grade")}>
-            Re-grade
+          <button disabled={working} onClick={() => run("grade")} title="Grading again costs about the same as the last grade">
+            Re-grade{regradeUsd ? ` · about ${usd(regradeUsd)}` : ""}
           </button>
         )}
         {call.status === "transcribed" && !call.script_id && (

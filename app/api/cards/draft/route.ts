@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/callsServer";
 import { loadRepHistory } from "@/lib/repHistory";
-import { askJson, callLine, REVIEW_MODEL } from "@/lib/repReview";
+import { askJsonCost, callLine, REVIEW_MODEL } from "@/lib/repReview";
+import { logSpend } from "@/lib/spendServer";
 import { CARD_RULES, DRAFT_SCHEMA, KIND_GUIDE, type CardKind, type DraftResult } from "@/lib/cards";
 import type { Grade } from "@/lib/calls";
 
@@ -30,7 +31,7 @@ function moments(id: string, g: Grade): string {
 export async function POST(request: Request) {
   const ctx = await requireAdmin(request);
   if (ctx instanceof NextResponse) return ctx;
-  const { supabase, orgId } = ctx;
+  const { supabase, orgId, userId } = ctx;
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set on the server." }, { status: 500 });
 
@@ -94,7 +95,8 @@ export async function POST(request: Request) {
     .join("\n");
 
   try {
-    const d = await askJson<DraftResult>([{ type: "text", text }], DRAFT_SCHEMA, key, "The draft", 4000);
+    const { data: d, usd } = await askJsonCost<DraftResult>([{ type: "text", text }], DRAFT_SCHEMA, key, "The draft", 4000);
+    await logSpend(supabase, { org_id: orgId, kind: "card_draft", usd, user_id: userId, ref_id: repId });
     const mod = d.drill_type === "module" ? modList.find((m) => m.startsWith(`${d.drill_id} |`)) : null;
     const per = d.drill_type === "persona" ? perList.find((p) => p.startsWith(`${d.drill_id} |`)) : null;
     const drill = mod ? { type: "module", id: d.drill_id, label: mod.split(" | ")[1] } : per ? { type: "persona", id: d.drill_id, label: per.split(" | ")[1].replace(/ \(\w+\)$/, "") } : null;

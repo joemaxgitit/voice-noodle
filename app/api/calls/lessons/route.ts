@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { compare, digest, formatValue, favouring, MIN_FOR_FINDINGS, type InsightCall } from "@/lib/insights";
 import { requireAdmin, thinkingFor } from "@/lib/callsServer";
+import { gradeCostUsd } from "@/lib/calls";
+import { logSpend } from "@/lib/spendServer";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -16,7 +18,7 @@ const PER_GROUP = 30; // most recent calls of each kind sent to the drafter
 export async function POST(request: Request) {
   const ctx = await requireAdmin(request);
   if (ctx instanceof NextResponse) return ctx;
-  const { supabase } = ctx;
+  const { supabase, orgId, userId } = ctx;
 
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set on the server." }, { status: 500 });
@@ -124,7 +126,8 @@ Rules:
     return NextResponse.json({ error: `Drafting failed (${res.status}). ${message}` }, { status: 502 });
   }
 
-  const out = (await res.json()) as { content?: { type: string; text?: string }[] };
+  const out = (await res.json()) as { content?: { type: string; text?: string }[]; usage?: Parameters<typeof gradeCostUsd>[1] };
+  await logSpend(supabase, { org_id: orgId, kind: "lessons", usd: gradeCostUsd(MODEL, out.usage ?? {}) ?? 0, user_id: userId });
   try {
     const parsed = JSON.parse(out.content?.find((c) => c.type === "text")?.text || "{}") as {
       lessons?: { lesson: string; support: string }[];
