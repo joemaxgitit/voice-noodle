@@ -72,14 +72,10 @@ body:has(.admin-frame) .site-footer {
   flex: none;
 }
 
-.af-mark svg {
-  width: 20px;
-  height: 20px;
-  fill: none;
-  stroke: var(--live);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.af-mark img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
 }
 
 /* ---------- links ---------- */

@@ -95,9 +95,8 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
       <aside className={`af-side${open ? " open" : ""}`} aria-label="Manager navigation">
         <div className="af-brand">
           <span className="af-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path d="M2 12h3l2-5 3 10 3-14 3 12 2-3h4" />
-            </svg>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/voicenoodle-mark-sm.png" alt="" />
           </span>
           <span>
             <b>Voice Noodle</b>
