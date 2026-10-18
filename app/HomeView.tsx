@@ -86,7 +86,7 @@ export default function HomeView() {
       setUserId(user.id);
 
       const [profileRes, scriptRes, moduleRes, progressRes] = await Promise.all([
-        supabase.from("profiles").select("full_name, role, org_id, must_change_password").eq("id", user.id).single(),
+        supabase.from("profiles").select("full_name, role, org_id").eq("id", user.id).single(),
         supabase.from("scripts").select("id, title, sort_order, logo_url"),
         supabase
           .from("modules")
@@ -96,11 +96,16 @@ export default function HomeView() {
 
       if (cancelled) return;
 
-      // Signed in with a temporary password: pick your own first.
-      if ((profileRes.data as { must_change_password?: boolean } | null)?.must_change_password) {
-        router.replace("/account?first=1");
-        return;
-      }
+      // Signed in with a temporary password: pick your own first. Asked
+      // separately so the page still works before passwords.sql has run.
+      void supabase
+        .from("profiles")
+        .select("must_change_password")
+        .eq("id", user.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (!cancelled && (data as { must_change_password?: boolean } | null)?.must_change_password) router.replace("/account?first=1");
+        });
 
       /*
         Surface whichever query failed. Only the modules error was reported
