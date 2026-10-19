@@ -120,7 +120,7 @@ export default function NotesFiles({ ctx }: { ctx: Ctx }) {
         <textarea
           rows={5}
           value={body}
-          placeholder="Type a note, paste a Slack message, a QA write-up or rows copied from Excel, paste a screenshot, or drop files here."
+          placeholder="Type a note, paste a Teams message, a QA write-up or rows copied from Excel, paste a screenshot, or drop files here."
           onChange={(e) => setBody(e.target.value)}
           onPaste={(e) => {
             const fs = [...e.clipboardData.files];

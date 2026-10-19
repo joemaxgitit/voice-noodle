@@ -9,6 +9,9 @@ import {
   firstName,
   fmtDate,
   fmtWeek,
+  GUEST_KEY,
+  isMycTeacher,
+  mycTeacherName,
   mondayOf,
   today,
   workWeek,
@@ -17,7 +20,7 @@ import {
   type MasteryWeek,
   type Person,
 } from "@/lib/training";
-import { ManagerChips, MaterialPicker, useHub } from "./shared";
+import { MaterialPicker, useHub } from "./shared";
 
 type WeekForm = {
   topic_id: string | null;
@@ -44,6 +47,9 @@ const ATT_SHORT: Record<Attendance, string> = { present: "P", absent: "A", excus
  */
 export default function MasteryTab() {
   const { supabase, orgId, me, reps, topics, managers, personById } = useHub();
+  // Patrick, Kevin and Max teach; anyone else is typed in as a guest. Falls back to every manager if none match.
+  const mycTeachers = managers.filter(isMycTeacher).length ? managers.filter(isMycTeacher) : managers;
+  const [guestOn, setGuestOn] = useState(false);
   const [week, setWeek] = useState(workWeek());
   const [row, setRow] = useState<MasteryWeek | null>(null);
   const [form, setForm] = useState<WeekForm | null>(null);
@@ -73,6 +79,7 @@ export default function MasteryTab() {
     if (err) setError(err.message);
     const wk = (w.data as MasteryWeek | null) ?? null;
     setRow(wk);
+    setGuestOn(!!wk?.day_instructors?.[GUEST_KEY]);
     setForm({
       topic_id: wk?.topic_id ?? null,
       title: wk?.title ?? "",
@@ -106,7 +113,7 @@ export default function MasteryTab() {
     if (!form) return;
     setError("");
     const title = form.title.trim() || topics.find((t) => t.id === form.topic_id)?.title || "";
-    if (publish && (!title || !form.instructor_id)) return setError("Pick a topic and an instructor before publishing.");
+    if (publish && (!title || (!form.instructor_id && !form.day_instructors[GUEST_KEY]))) return setError("Pick a topic and who's teaching before publishing.");
     const payload = {
       org_id: orgId,
       week_start: week,
@@ -236,14 +243,14 @@ export default function MasteryTab() {
   // ---------------------------------------------------------------- history
 
   const history = useMemo(() => {
-    const byTopic = new Map<string, { title: string; dates: { week: string; who: string | null }[] }>();
+    const byTopic = new Map<string, { title: string; dates: { week: string; who: string | null; guest?: string }[] }>();
     for (const w of all) {
       if (w.status !== "published" || w.week_start > today()) continue;
       const key = (w.topic_id || w.title || "").toLowerCase();
       if (!key) continue;
       const title = w.title || topics.find((t) => t.id === w.topic_id)?.title || "Untitled";
       const e = byTopic.get(key) || { title, dates: [] };
-      e.dates.push({ week: w.week_start, who: w.instructor_id });
+      e.dates.push({ week: w.week_start, who: w.instructor_id, guest: w.day_instructors?.[GUEST_KEY] });
       byTopic.set(key, e);
     }
     const rows = topics
@@ -267,7 +274,7 @@ export default function MasteryTab() {
     const past = all.filter((w) => w.week_start !== week && w.status === "published" && (w.topic_id === form.topic_id && form.topic_id ? true : (w.title || "").toLowerCase() === form.title.trim().toLowerCase() && !!form.title.trim()));
     if (!past.length) return "Not taught before.";
     const p = past[0];
-    return `Last taught the week of ${fmtDate(p.week_start, { month: "short", day: "numeric", year: "numeric" })} by ${firstName(personById(p.instructor_id))} · ${past.length} time${past.length === 1 ? "" : "s"} in all.`;
+    return `Last taught the week of ${fmtDate(p.week_start, { month: "short", day: "numeric", year: "numeric" })} by ${p.day_instructors?.[GUEST_KEY] || firstName(personById(p.instructor_id))} · ${past.length} time${past.length === 1 ? "" : "s"} in all.`;
   }, [form, all, week, personById]);
 
   if (!form) return <p className="muted">Loading&hellip;</p>;
@@ -313,7 +320,54 @@ export default function MasteryTab() {
         {lastTaught && <p className="hint" style={{ marginTop: -6 }}>{lastTaught}</p>}
         <div className="field">
           <span>Teaching all three classes</span>
-          <ManagerChips single value={form.instructor_id ? [form.instructor_id] : []} onChange={(v) => setForm({ ...form, instructor_id: v[0] ?? null })} />
+          <div className="tr-chips" role="group">
+            {mycTeachers.map((m) => {
+              const on = form.instructor_id === m.id && !guestOn;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  aria-pressed={on}
+                  className={on ? "on" : ""}
+                  onClick={() => {
+                    const next = { ...form.day_instructors };
+                    delete next[GUEST_KEY];
+                    setGuestOn(false);
+                    setForm({ ...form, instructor_id: on ? null : m.id, day_instructors: next });
+                  }}
+                >
+                  {m.full_name || "Unnamed"}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              aria-pressed={guestOn}
+              className={guestOn ? "on" : ""}
+              onClick={() => {
+                const next = { ...form.day_instructors };
+                if (guestOn) delete next[GUEST_KEY];
+                setGuestOn(!guestOn);
+                setForm({ ...form, instructor_id: guestOn ? form.instructor_id : null, day_instructors: next });
+              }}
+            >
+              Guest speaker
+            </button>
+          </div>
+          {guestOn && (
+            <input
+              style={{ marginTop: 8 }}
+              value={form.day_instructors[GUEST_KEY] ?? ""}
+              placeholder="Guest speaker's name"
+              autoFocus
+              onChange={(e) => {
+                const next = { ...form.day_instructors };
+                if (e.target.value.trim()) next[GUEST_KEY] = e.target.value;
+                else delete next[GUEST_KEY];
+                setForm({ ...form, day_instructors: next });
+              }}
+            />
+          )}
         </div>
         <details style={{ marginBottom: 10 }}>
           <summary className="hint" style={{ cursor: "pointer" }}>Someone else covering one day?</summary>
@@ -331,7 +385,7 @@ export default function MasteryTab() {
                   }}
                 >
                   <option value="">Same as the week</option>
-                  {managers.map((m) => (
+                  {mycTeachers.map((m) => (
                     <option key={m.id} value={m.id}>{m.full_name}</option>
                   ))}
                 </select>
@@ -462,7 +516,7 @@ export default function MasteryTab() {
         <div className="tr-roster">
           {COLS.map((c) => {
             const inCol = shownReps.filter((r) => dayOf(r.id) === c.day);
-            const teacher = c.day ? form.day_instructors[String(c.day)] || form.instructor_id : null;
+            const teacher = c.day ? mycTeacherName(form, c.day, (id) => firstName(personById(id))) : "";
             return (
               <div
                 key={c.day}
@@ -487,7 +541,7 @@ export default function MasteryTab() {
                   </span>
                 </h3>
                 <div className="sub">
-                  {c.day ? `${fmtDate(addDays(week, c.day - 1), { month: "short", day: "numeric" })} · ${teacher ? firstName(personById(teacher)) : "no instructor"}` : mode === "week" ? "Not in class this week" : "No regular day"}
+                  {c.day ? `${fmtDate(addDays(week, c.day - 1), { month: "short", day: "numeric" })} · ${teacher || "no instructor"}` : mode === "week" ? "Not in class this week" : "No regular day"}
                 </div>
                 {inCol.map((r) => {
                   const moved = moves.has(r.id);
@@ -561,7 +615,7 @@ export default function MasteryTab() {
                 <tr key={i}>
                   <td>{h.title}</td>
                   <td>{h.dates[0] ? fmtDate(h.dates[0].week, { month: "short", day: "numeric", year: "numeric" }) : <span className="muted">Not yet</span>}</td>
-                  <td>{h.dates[0] ? firstName(personById(h.dates[0].who)) : "--"}</td>
+                  <td>{h.dates[0] ? h.dates[0].guest || firstName(personById(h.dates[0].who)) : "--"}</td>
                   <td>{h.dates.length}</td>
                 </tr>
               ))}

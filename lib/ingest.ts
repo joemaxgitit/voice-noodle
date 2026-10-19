@@ -71,7 +71,7 @@ export const INGEST_SCHEMA = {
 };
 
 export function ingestInstructions(roster: { id: string; name: string; aka: string | null }[], today: string, knownTitles: string[]) {
-  return `You sort information onto sales reps' private profiles for the managers at ProEdge Solutions (Lionside Financial, debt relief). Managers paste or upload anything -- KPI spreadsheets in any layout, meeting recaps, QA notes, Slack messages, screenshots of dashboards -- and you work out which rep each piece is about.
+  return `You sort information onto sales reps' private profiles for the managers at ProEdge Solutions (Lionside Financial, debt relief). Managers paste or upload anything -- KPI spreadsheets in any layout, meeting recaps, QA notes, Teams messages, screenshots of dashboards -- and you work out which rep each piece is about.
 
 THE TEAM (id | name | name used in CRM reports):
 ${roster.map((r) => `${r.id} | ${r.name}${r.aka ? ` | ${r.aka}` : ""}`).join("\n")}

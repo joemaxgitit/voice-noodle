@@ -22,6 +22,7 @@ import {
   type Meeting,
   type MeetingItem,
   type TrainingEvent,
+  mycTeacherName,
 } from "@/lib/training";
 import { Drawer, ManagerChips, MaterialPicker, useHub } from "./shared";
 
@@ -316,13 +317,13 @@ export default function CalendarTab({ openTab }: { openTab: (t: string) => void 
     }
     if (it.kind === "mastery") {
       const w = it.week;
-      const who = w?.day_instructors?.[String(it.day)] || w?.instructor_id;
+      const who = mycTeacherName(w, it.day, (id) => firstName(personById(id)));
       return (
         <button key={it.key} className={`tr-ev mastery ${!w || w.status === "draft" ? "draft" : ""}`} onClick={() => openTab("mastery")}>
           {(!w || w.status === "draft") && <span className="tag">{w ? "Draft" : "Not planned"}</span>}
           <span className="t">{compact ? fmtTime(MASTERY.start) : fmtRange(MASTERY.start, MASTERY.minutes)}</span>
           <div>Master Your Craft{w?.title ? `: ${w.title}` : ""}</div>
-          {!compact && <div className="who">{who ? firstName(personById(who)) : "No instructor yet"}</div>}
+          {!compact && <div className="who">{who || "No instructor yet"}</div>}
         </button>
       );
     }

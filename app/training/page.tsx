@@ -32,6 +32,7 @@ import {
   type Enrollment,
   type Track,
   type TrackItem,
+  mycTeacherName,
 } from "@/lib/training";
 import "../admin/calls/calls.css";
 import "./training.css";
@@ -141,13 +142,12 @@ export default function MyTraining() {
         materials: e.material_ids,
       }));
     if (mastery && myDay) {
-      const teacher = mastery.day_instructors?.[String(myDay)] || mastery.instructor_id;
       out.push({
         date: addDays(week, myDay - 1),
         start: MASTERY.start,
         minutes: MASTERY.minutes,
         title: `Master Your Craft${mastery.title ? `: ${mastery.title}` : ""}`,
-        who: name(teacher),
+        who: mycTeacherName(mastery, myDay, name),
         kind: "mastery",
         notes: null,
         materials: mastery.material_ids,
@@ -317,7 +317,7 @@ export default function MyTraining() {
           {myDay ? (
             <p style={{ margin: 0 }}>
               Your class {thisWeek ? "this week" : "that week"}: <b>{DAY_NAME[myDay]} · 1:30 – 2:00 PM</b>
-              {mastery?.instructor_id && <> with {name(mastery.day_instructors?.[String(myDay)] || mastery.instructor_id)}</>}
+              {mycTeacherName(mastery, myDay, name) && <> with {mycTeacherName(mastery, myDay, name)}</>}
               {mastery?.title && <> -- {mastery.title}</>}
               {regularDay && regularDay !== myDay && <span className="muted"> (moved from your usual {DAY_NAME[regularDay]})</span>}
             </p>

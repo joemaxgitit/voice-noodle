@@ -414,3 +414,22 @@ export function newHireLengths(): number[] {
     return Math.max(15, Math.min(60, minutesOf(next.time) - minutesOf(s.time)));
   });
 }
+
+/** Who teaches Master Your Craft. Anyone else is typed in as a guest speaker. */
+export const MYC_TEACHERS = ["patrick", "kevin", "max"];
+export function isMycTeacher(p: Person): boolean {
+  return MYC_TEACHERS.includes((p.full_name || "").trim().split(/\s+/)[0].toLowerCase());
+}
+
+/** The guest speaker for a Master Your Craft week, kept alongside the per-day covers. */
+export const GUEST_KEY = "guest";
+
+/** Name of whoever teaches a Master Your Craft class that day: a one-day cover, the guest, or the week's teacher. */
+export function mycTeacherName(w: Pick<MasteryWeek, "day_instructors" | "instructor_id"> | null | undefined, day: number, nameOf: (id: string) => string): string {
+  if (!w) return "";
+  const cover = w.day_instructors?.[String(day)];
+  if (cover) return nameOf(cover);
+  const guest = w.day_instructors?.[GUEST_KEY];
+  if (guest) return guest;
+  return w.instructor_id ? nameOf(w.instructor_id) : "";
+}
