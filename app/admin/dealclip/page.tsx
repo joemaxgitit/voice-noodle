@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { readSheet } from "@/lib/xlsx";
 import { exportDateFromFile } from "@/lib/kpi";
 import { fmtDay } from "@/lib/rotation";
@@ -8,14 +8,23 @@ import { clipOf, exportHour, readClip, round1, throughDay, twoADay, workDays, ty
 import "../calls/calls.css";
 import "../reps/reps.css";
 
-const TITLE_KEY = "vn.dealclip.title";
-const loadTitle = () => {
+// Today's team name, kept for the day so a reload doesn't lose it. A new day starts blank.
+const NAME_KEY = "vn.dealclip.name";
+const todayIso = () => new Date().toLocaleDateString("en-CA");
+const loadName = () => {
   try {
-    return localStorage.getItem(TITLE_KEY) || "Deal Clip";
+    const v = JSON.parse(localStorage.getItem(NAME_KEY) || "null") as { day: string; name: string } | null;
+    return v && v.day === todayIso() ? v.name : "";
   } catch {
-    return "Deal Clip";
+    return "";
   }
 };
+const saveName = (name: string) => {
+  try {
+    localStorage.setItem(NAME_KEY, JSON.stringify({ day: todayIso(), name }));
+  } catch {}
+};
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /**
  * Morning Deal Clip. Drop last night's month-to-date Sales Dashboard and
@@ -29,7 +38,10 @@ export default function DealClip() {
   const [through, setThrough] = useState("");
   const [gone, setGone] = useState(0);
   const [total, setTotal] = useState(0);
-  const [title, setTitle] = useState(loadTitle);
+  const [title, setTitle] = useState("");
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => setTitle(loadName()), []);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [over, setOver] = useState(false);
@@ -71,12 +83,31 @@ export default function DealClip() {
   const left = Math.max(0, total - gone);
   const pct = (r: number | null) => (r === null ? "--" : `${Math.round(r * 100)}%`);
 
+  const COLS = ["Deals", "Closing Ratio", "Deal Clip", "Days Remaining", "If Two a Day"];
+  const cells = (r: (typeof ranked)[number]) => [String(r.deals), pct(r.ratio), round1(r.clip), String(left), round1(r.two)];
+
+  /** Copies the clip as a table (for chats that take one) with a plain-text version underneath for the rest. */
   async function copy() {
-    const head = `${title}\nMonth to date through ${fmtDay(through, true)} · ${gone} of ${total} work days · ${left} left`;
-    const lines = ranked.map((r, i) => `${i + 1}. ${r.name} -- ${r.deals} deal${r.deals === 1 ? "" : "s"} · ${pct(r.ratio)} close · clip ${round1(r.clip)} · two a day ${round1(r.two)}`);
-    await navigator.clipboard.writeText([head, "", ...lines].join("\n"));
+    if (!title.trim()) {
+      nameRef.current?.focus();
+      return setError("Give the team a name for today first.");
+    }
+    setError("");
+    const name = title.trim();
+    const text = [name, `Through ${fmtDay(through, true)} · ${left} work days left`, "", ...ranked.map((r, i) => `${i + 1}. ${r.name}: ${r.deals} deals · ${pct(r.ratio)} · clip ${round1(r.clip)} · two a day ${round1(r.two)}`)].join("\n");
+    const td = "border:1px solid #bbb;padding:4px 8px";
+    const html =
+      `<table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px">` +
+      `<tr><th style="${td};text-align:left;background:#222;color:#fff">${esc(name)}</th>${COLS.map((c) => `<th style="${td};background:#222;color:#fff">${c}</th>`).join("")}</tr>` +
+      ranked.map((r) => `<tr><td style="${td}">${esc(r.name)}</td>${cells(r).map((c) => `<td style="${td};text-align:center">${c}</td>`).join("")}</tr>`).join("") +
+      `</table>`;
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) })]);
+    } catch {
+      await navigator.clipboard.writeText(text);
+    }
     setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    setTimeout(() => setCopied(false), 2000);
   }
 
   return (
@@ -119,66 +150,49 @@ export default function DealClip() {
         </label>
       ) : (
         <section className="card">
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "end", marginBottom: 12 }}>
-            <label style={{ flex: "1 1 220px", display: "grid", gap: 4 }}>
-              <span className="hint" style={{ margin: 0 }}>Title</span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "end" }}>
+            <label style={{ flex: "1 1 260px", display: "grid", gap: 4 }}>
+              <b>Today&rsquo;s team name</b>
               <input
+                ref={nameRef}
                 value={title}
+                placeholder="e.g. The Nightmare on Minimum Street"
                 onChange={(e) => {
                   setTitle(e.target.value);
-                  try {
-                    localStorage.setItem(TITLE_KEY, e.target.value);
-                  } catch {}
+                  saveName(e.target.value);
                 }}
+                style={{ fontSize: 17, fontWeight: 650 }}
               />
             </label>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="hint" style={{ margin: 0 }}>Numbers through</span>
-              <input type="date" value={through} onChange={(e) => changeThrough(e.target.value)} style={{ width: "auto" }} />
-            </label>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="hint" style={{ margin: 0 }}>Work days gone</span>
-              <input type="number" min={1} value={gone} onChange={(e) => setGone(Math.max(0, Number(e.target.value) || 0))} style={{ width: 80 }} />
-            </label>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="hint" style={{ margin: 0 }}>In the month</span>
-              <input type="number" min={1} value={total} onChange={(e) => setTotal(Math.max(0, Number(e.target.value) || 0))} style={{ width: 80 }} />
-            </label>
+            <button className="primary" style={{ fontSize: 16, padding: "10px 20px" }} onClick={() => void copy()}>
+              {copied ? "Copied -- paste it in sales chat" : "Copy for sales chat"}
+            </button>
           </div>
-          <p className="hint" style={{ marginTop: 0 }}>
-            {file} &middot; counted Mon&ndash;Fri, so take a day off either box for a holiday.
-          </p>
 
-          <h2 style={{ margin: "4px 0 2px" }}>{title}</h2>
-          <p className="muted" style={{ margin: "0 0 10px" }}>
-            Month to date through {fmtDay(through, true)} &middot; {gone} of {total} work days &middot; {left} left
-          </p>
-          <div className="rx-scroll">
-            <table className="rx-table">
+          <div className="rx-scroll" style={{ marginTop: 14 }}>
+            <table className="rx-table dc-table">
               <thead>
                 <tr>
-                  <th className="num">#</th>
-                  <th>Rep</th>
-                  <th className="num">Deals</th>
-                  <th className="num">Closing</th>
-                  <th className="num">Deal clip</th>
-                  <th className="num">Two a day</th>
+                  <th className="dc-name">{title.trim() || <span className="muted">Team name</span>}</th>
+                  {COLS.map((c) => (
+                    <th key={c} className="num">
+                      {c}
+                    </th>
+                  ))}
                   <th />
                 </tr>
               </thead>
               <tbody>
-                {ranked.map((r, i) => (
+                {ranked.map((r) => (
                   <tr key={r.name}>
-                    <td className="num muted">{i + 1}</td>
                     <td>
                       <b>{r.name}</b>
                     </td>
-                    <td className="num">
-                      <b>{r.deals}</b>
-                    </td>
-                    <td className="num">{pct(r.ratio)}</td>
-                    <td className="num">{round1(r.clip)}</td>
-                    <td className="num">{round1(r.two)}</td>
+                    {cells(r).map((c, j) => (
+                      <td key={j} className="num">
+                        {j === 0 ? <b>{c}</b> : c}
+                      </td>
+                    ))}
                     <td className="num">
                       <button className="link-btn" title="Leave off today's clip" onClick={() => setHidden((h) => new Set(h).add(r.name))}>
                         hide
@@ -212,10 +226,27 @@ export default function DealClip() {
               (tap to add back)
             </p>
           )}
+          <details style={{ marginTop: 12 }}>
+            <summary className="hint" style={{ cursor: "pointer" }}>
+              Through {fmtDay(through, true)} &middot; {gone} of {total} work days gone &middot; {left} left (change for a holiday)
+            </summary>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "end", marginTop: 8 }}>
+              <label style={{ display: "grid", gap: 4 }}>
+                <span className="hint" style={{ margin: 0 }}>Numbers through</span>
+                <input type="date" value={through} onChange={(e) => changeThrough(e.target.value)} style={{ width: "auto" }} />
+              </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                <span className="hint" style={{ margin: 0 }}>Work days gone</span>
+                <input type="number" min={1} value={gone} onChange={(e) => setGone(Math.max(0, Number(e.target.value) || 0))} style={{ width: 80 }} />
+              </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                <span className="hint" style={{ margin: 0 }}>In the month</span>
+                <input type="number" min={1} value={total} onChange={(e) => setTotal(Math.max(0, Number(e.target.value) || 0))} style={{ width: 80 }} />
+              </label>
+            </div>
+            <p className="hint">{file}</p>
+          </details>
           <div className="rx-actions" style={{ marginTop: 10 }}>
-            <button className="primary" onClick={() => void copy()}>
-              {copied ? "Copied" : "Copy to post"}
-            </button>
             <button
               onClick={() => {
                 setRows(null);
