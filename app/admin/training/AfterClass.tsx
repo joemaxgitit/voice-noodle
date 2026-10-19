@@ -135,7 +135,11 @@ export default function AfterClass({
     const url = link.trim();
     if (!/^https?:\/\//i.test(url)) return setError("Paste the full link, starting with https://");
     setError("");
-    if (await write({ recordings: [...recordings, { link: url, name: day ? `${day}'s recording` : "Recording", day: day || undefined, added_at: new Date().toISOString() }] })) {
+    // A Teams recap link carries the recording's date (…-20261019_202446UTC-Meeting Recording.mp4), so the day fills itself in.
+    let d = day;
+    const m = decodeURIComponent(url).match(/-(20\d{2})(\d{2})(\d{2})_\d{6}UTC/);
+    if (!d && m) d = DAYS[new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getDay()] || "";
+    if (await write({ recordings: [...recordings, { link: url, name: d ? `${d}'s recording` : "Recording", day: d || undefined, added_at: new Date().toISOString() }] })) {
       setLink("");
       flash("Link saved.");
     }
