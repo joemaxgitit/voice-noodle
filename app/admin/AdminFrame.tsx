@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import "./admin-frame.css";
 
 /*
@@ -11,7 +12,7 @@ import "./admin-frame.css";
   unchanged and keeps its own data, buttons and behaviour.
 */
 
-type Item = { href: string; label: string; icon: keyof typeof ICONS; match: (p: string) => boolean };
+type Item = { href: string; label: string; icon: keyof typeof ICONS; match: (p: string) => boolean; salesOnly?: boolean };
 
 const GROUPS: { title: string; items: Item[] }[] = [
   {
@@ -22,8 +23,8 @@ const GROUPS: { title: string; items: Item[] }[] = [
     title: "Team",
     items: [
       { href: "/admin/reps", label: "Reps", icon: "people", match: (p) => p.startsWith("/admin/reps") },
-      { href: "/admin/rotation", label: "Rotation", icon: "rotate", match: (p) => p.startsWith("/admin/rotation") },
-      { href: "/admin/dealclip", label: "Deal Clip", icon: "chart", match: (p) => p.startsWith("/admin/dealclip") },
+      { href: "/admin/rotation", label: "Rotation", icon: "rotate", match: (p) => p.startsWith("/admin/rotation"), salesOnly: true },
+      { href: "/admin/dealclip", label: "Deal Clip", icon: "chart", match: (p) => p.startsWith("/admin/dealclip"), salesOnly: true },
       { href: "/admin/coaching", label: "Coaching trends", icon: "chart", match: (p) => p.startsWith("/admin/coaching") },
       { href: "/admin/reports", label: "Sales reports", icon: "table", match: (p) => p.startsWith("/admin/reports") },
     ],
@@ -100,6 +101,28 @@ function Icon({ name }: { name: keyof typeof ICONS }) {
 export default function AdminFrame({ children }: { children: ReactNode }) {
   const path = usePathname() || "/admin";
   const [open, setOpen] = useState(false);
+  // Who's signed in: service managers don't have rotation or the Deal Clip.
+  const [who, setWho] = useState<{ label: string; service: boolean }>({ label: "Manager", service: false });
+  useEffect(() => {
+    const supabase = createClient();
+    void (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) return;
+      const { data } = await supabase.from("profiles").select("role, team").eq("id", session.user.id).single();
+      const { data: sa } = await supabase.from("profiles").select("super_admin").eq("id", session.user.id).maybeSingle();
+      const service = data?.role === "manager" && data?.team === "ams";
+      const label = (sa as { super_admin?: boolean } | null)?.super_admin
+        ? "Super admin"
+        : data?.role === "admin"
+          ? "Admin"
+          : service
+            ? "Service manager"
+            : "Sales manager";
+      setWho({ label, service });
+    })();
+  }, []);
 
   // Close the drawer on navigation and on Escape.
   useEffect(() => setOpen(false), [path]);
@@ -135,7 +158,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
           </span>
           <span>
             <b>Voice Noodle</b>
-            <small>Manager</small>
+            <small>{who.label}</small>
           </span>
           <button className="af-close" aria-label="Close menu" onClick={() => setOpen(false)}>
             <Icon name="close" />
@@ -146,7 +169,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
           {GROUPS.map((g) => (
             <div className="af-group" key={g.title || "top"}>
               {g.title && <div className="af-group-title">{g.title}</div>}
-              {g.items.map((i) => {
+              {g.items.filter((i) => !(i.salesOnly && who.service)).map((i) => {
                 const active = i.match(path);
                 return (
                   <Link

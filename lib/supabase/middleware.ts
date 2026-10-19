@@ -90,13 +90,21 @@ export async function updateSession(request: NextRequest) {
   if (user && path.startsWith("/admin")) {
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role, active")
+      .select("role, active, team")
       .eq("id", user.id)
       .single();
 
     if (!profile?.active || !["admin", "manager"].includes(profile.role)) {
       const url = request.nextUrl.clone();
       url.pathname = "/";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+
+    // Rotation and the Deal Clip are sales-side only.
+    if (profile.role === "manager" && profile.team === "ams" && (path.startsWith("/admin/rotation") || path.startsWith("/admin/dealclip"))) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/admin/home";
       url.search = "";
       return NextResponse.redirect(url);
     }

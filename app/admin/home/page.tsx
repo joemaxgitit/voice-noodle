@@ -43,6 +43,7 @@ export default function ManagerHome() {
   const [orgId, setOrgId] = useState("");
   const [meId, setMeId] = useState("");
   const [idea, setIdea] = useState(false);
+  const [service, setService] = useState(false);
   useEffect(() => {
     void loadSpend(supabase).then(({ summary }) => setSpend(summary));
   }, [supabase]);
@@ -54,7 +55,8 @@ export default function ManagerHome() {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session) return;
-      const { data: me } = await supabase.from("profiles").select("org_id, full_name").eq("id", session.user.id).single();
+      const { data: me } = await supabase.from("profiles").select("org_id, full_name, role, team").eq("id", session.user.id).single();
+      setService(me?.role === "manager" && me?.team === "ams");
       setName((me?.full_name || "").split(" ")[0]);
       setOrgId(me?.org_id ?? "");
       setMeId(session.user.id);
@@ -129,12 +131,16 @@ export default function ManagerHome() {
       <h1>{name ? `Hi ${name}` : "Home"}</h1>
 
       <div className="rx-actions" style={{ margin: "6px 0 16px" }}>
-        <Link className="btn primary" href="/admin/rotation" style={{ textDecoration: "none" }}>
-          Nightly close: rotation
-        </Link>
-        <Link className="btn" href="/admin/dealclip" style={{ textDecoration: "none" }}>
-          Morning: Deal Clip
-        </Link>
+        {!service && (
+          <>
+            <Link className="btn primary" href="/admin/rotation" style={{ textDecoration: "none" }}>
+              Nightly close: rotation
+            </Link>
+            <Link className="btn" href="/admin/dealclip" style={{ textDecoration: "none" }}>
+              Morning: Deal Clip
+            </Link>
+          </>
+        )}
         <Link className="btn" href="/admin/calls" style={{ textDecoration: "none" }}>
           Upload a call
         </Link>
