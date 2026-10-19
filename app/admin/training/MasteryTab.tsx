@@ -263,9 +263,10 @@ export default function MasteryTab() {
       });
     for (const h of byTopic.values()) rows.push(h);
     const cutoff = historyDays ? addDays(today(), -historyDays) : null;
+    // Only what's actually been taught (live or logged for a past week), newest first.
     return rows
-      .filter((r) => !cutoff || !r.dates.length || r.dates[0].week < cutoff)
-      .sort((a, b) => (a.dates[0]?.week ?? "0").localeCompare(b.dates[0]?.week ?? "0"));
+      .filter((r) => r.dates.length && (!cutoff || r.dates[0].week < cutoff))
+      .sort((a, b) => b.dates[0].week.localeCompare(a.dates[0].week));
   }, [all, topics, historyDays]);
 
   // Saved ideas that haven't been taught yet.
@@ -641,7 +642,7 @@ export default function MasteryTab() {
         <div className="tr-bar">
           <h2 style={{ margin: 0, fontSize: 17 }}>Topic history</h2>
           <select value={historyDays} onChange={(e) => setHistoryDays(Number(e.target.value))} style={{ width: "auto", padding: "7px 10px", fontSize: 13 }}>
-            <option value={0}>All topics</option>
+            <option value={0}>Everything taught</option>
             <option value={30}>Not taught in 30 days</option>
             <option value={60}>Not taught in 60 days</option>
             <option value={90}>Not taught in 90 days</option>
@@ -658,6 +659,13 @@ export default function MasteryTab() {
               </tr>
             </thead>
             <tbody>
+              {history.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="muted">
+                    Nothing taught yet. Each week you publish lands here. To log a past class, go back to that week with the arrows above, fill it in and publish.
+                  </td>
+                </tr>
+              )}
               {history.map((h, i) => (
                 <tr key={i}>
                   <td>{h.title}</td>
