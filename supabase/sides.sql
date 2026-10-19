@@ -120,7 +120,7 @@ with check (org_id = public.my_org_id());
 create or replace function public.guard_profile_change()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare
-  caller_role text := public.my_role();
+  caller_role text := coalesce(public.my_role(), '');
   caller_super boolean := public.is_super_admin();
 begin
   if auth.uid() is null then return new; end if;
