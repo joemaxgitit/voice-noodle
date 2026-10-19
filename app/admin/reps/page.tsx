@@ -204,7 +204,6 @@ export default function Reps() {
                       {Math.abs(Math.round((r.ret.rate - r.ret.prior) * 100))}
                     </small>
                   )}
-                  {r.ret?.pos ? <small className="muted"> · {r.ret.pos} at sale</small> : null}
                 </td>
                 <td className="num">{r.notes || ""}</td>
                 <td>
