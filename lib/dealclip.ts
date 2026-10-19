@@ -76,4 +76,4 @@ export function readClip(grid: Cell[][]): ClipRow[] {
 
 export const clipOf = (deals: number, gone: number, total: number) => (gone > 0 ? (deals / gone) * total : deals);
 export const twoADay = (deals: number, gone: number, total: number) => deals + 2 * Math.max(0, total - gone);
-export const round1 = (n: number) => (Math.abs(n - Math.round(n)) < 0.05 ? String(Math.round(n)) : n.toFixed(1));
+export const round1 = (n: number) => String(Math.round(n));
