@@ -142,7 +142,7 @@ export async function fileBlocks(supabase: SupabaseClient, h: RepHistory, since:
   const skipped: string[] = [];
   let budget = 18 * 1024 * 1024;
   let read = 0;
-  const files = h.files.filter((f) => !since || f.created_at >= since).slice(0, 12);
+  const files = h.files.filter((f) => !since || f.created_at >= since).slice(0, 25);
   for (const f of files) {
     const label = `FILE "${f.name}" uploaded ${day(f.created_at)}${f.note ? ` -- manager's note: ${f.note}` : ""}`;
     const size = Number(f.size_bytes || 0);
@@ -212,9 +212,9 @@ export async function buildReviewInput(opts: {
 }): Promise<{ content: Block[]; inputs: Record<string, number> }> {
   const { supabase, history: h, repId, repName, since, focus } = opts;
   const inWindow = (iso: string) => !since || iso >= since;
-  const calls = h.calls.filter((c) => c.status === "graded" && inWindow(c.created_at)).slice(0, 80);
+  const calls = h.calls.filter((c) => c.status === "graded" && inWindow(c.created_at)).slice(0, 150);
   // Personal notes never go to Claude.
-  const notes = h.notes.filter((n) => !n.private && (inWindow(n.note_date) || n.tag === "concern")).slice(0, 60);
+  const notes = h.notes.filter((n) => !n.private && (inWindow(n.note_date) || n.tag === "concern")).slice(0, 200);
   const quizzes = h.quizzes.filter((q) => inWindow(q.created_at)).slice(0, 40);
   const done = h.completions.filter((c) => inWindow(c.completed_at)).slice(0, 60);
   const att = h.attendance.filter((a) => inWindow(a.week_start)).slice(0, 26);
@@ -245,8 +245,8 @@ export async function buildReviewInput(opts: {
     `ONE-ON-ONE COACHING SESSIONS (${h.sessions.filter((x) => !x.private && inWindow(x.session_date)).length}, the manager's own record -- weigh these heavily):`,
     h.sessions.filter((x) => !x.private && inWindow(x.session_date)).length
       ? h.sessions
-          .filter((x) => inWindow(x.session_date))
-          .slice(0, 30)
+          .filter((x) => !x.private && inWindow(x.session_date))
+          .slice(0, 120)
           .map((x) => `${x.session_date} [${x.topics.join(", ") || "no topic"}] ${cut(x.summary || x.raw_notes, 600)}${x.commitments.length ? ` | commitments: ${x.commitments.map((c) => `${c.text} (${c.status})`).join("; ")}` : ""}`)
           .join("\n")
       : "(none)",
@@ -276,7 +276,7 @@ export async function buildReviewInput(opts: {
           };
           return [
             `Made rotation ${made} of ${ds.length} working days; average ${avg((d) => d.talk_hours)}h talk, ${avg((d) => d.calls)} calls, ${avg((d) => d.deals)} deals a day.`,
-            ...ds.slice(0, 40).map((d) => `${d.day}: ${d.talk_hours ?? "-"}h talk, ${d.calls ?? "-"} calls, ${d.deals ?? "-"} deals, ${d.points ?? "-"} pt ${(d.override_made ?? d.made) ? "MADE" : "missed"}`),
+            ...ds.slice(0, 130).map((d) => `${d.day}: ${d.talk_hours ?? "-"}h talk, ${d.calls ?? "-"} calls, ${d.deals ?? "-"} deals, ${d.points ?? "-"} pt ${(d.override_made ?? d.made) ? "MADE" : "missed"}`),
           ].join("\n");
         })()
       : "(no daily numbers yet)",
@@ -288,6 +288,25 @@ export async function buildReviewInput(opts: {
           .map((c) => `${day(c.sent_at || "")} ${c.kind}: ${c.skill} -- ${c.status}${c.practiced ? `, practiced ${c.practiced}x` : ", not practiced"}${c.rep_response ? `, rep said ${c.rep_response}${c.rep_note ? ` ("${cut(c.rep_note, 200)}")` : ""}` : ""}${c.close_note ? `, closed: ${c.close_note}` : ""}`)
           .join("\n")
       : "(none)",
+    "",
+    "SCRIPT PRACTICE (recorded script lines; pace and clarity 0-100):",
+    (() => {
+      const a = h.practice.attempts.filter((x) => inWindow(x.created_at));
+      if (!a.length && !h.practice.linesDone) return "(none)";
+      const avg = (xs: (number | null)[]) => {
+        const v = xs.filter((x): x is number => x !== null);
+        return v.length ? Math.round(v.reduce((s, x) => s + x, 0) / v.length) : null;
+      };
+      const bySeg = new Map<string, number>();
+      for (const x of a) bySeg.set(x.segment, (bySeg.get(x.segment) ?? 0) + 1);
+      return [
+        `${a.length} recorded attempts; average pace ${avg(a.map((x) => x.pace)) ?? "-"}, clarity ${avg(a.map((x) => x.clarity)) ?? "-"}, pauses ${avg(a.map((x) => x.pauses)) ?? "-"}`,
+        a.length ? `most practiced: ${[...bySeg].sort((x, y) => y[1] - x[1]).slice(0, 6).map(([k, n]) => `${k} x${n}`).join(", ")}` : "",
+        `script lines marked done: ${h.practice.linesDone}${h.practice.lastDone ? ` (last ${day(h.practice.lastDone)})` : ""}`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })(),
     "",
     "MASTER YOUR CRAFT ATTENDANCE:",
     att.length ? att.map((a) => `week of ${a.week_start}: ${a.status.replace(/_/g, " ")}`).join("\n") : "(no attendance marked)",

@@ -129,6 +129,8 @@ export type RepHistory = {
   earlier: { topic: string; sessions: number }[];
   /** Friday retention lookbacks, newest first (sales side only). */
   retention: RetentionLite[];
+  /** Script practice: recorded line attempts (pace, clarity, pauses) and lines completed. */
+  practice: { attempts: { created_at: string; segment: string; pace: number | null; clarity: number | null; pauses: number | null }[]; linesDone: number; lastDone: string | null };
   calls: HistCall[];
   notes: RepNote[];
   files: RepFile[];
@@ -228,6 +230,7 @@ export async function loadRepHistory(
     sessions: rows<CoachingSession>(sessions, [], "sessions"),
     earlier: [],
     retention: [],
+    practice: { attempts: [], linesDone: 0, lastDone: null },
     calls: rows<HistCall>(calls, errors, "calls"),
     notes: rows<RepNote>(notes, errors, "notes"),
     files: rows<RepFile>(files, errors, "files"),
@@ -262,6 +265,22 @@ export async function loadRepHistory(
       pending_share: x.pending_share === null ? null : Number(x.pending_share),
     }))
     .sort((a, b) => b.period_end.localeCompare(a.period_end));
+  const [at, pg] = await Promise.all([
+    supabase.from("attempts").select("created_at, scores, segments(segment_code, title)").eq("user_id", repId).order("created_at", { ascending: false }).limit(500),
+    supabase.from("progress").select("updated_at").eq("user_id", repId).eq("completed", true),
+  ]);
+  type Att = { created_at: string; scores: { pace?: number; clarity?: number; pauses?: number | null } | null; segments: { segment_code: string; title: string | null } | null };
+  history.practice = {
+    attempts: ((at.data || []) as unknown as Att[]).map((a) => ({
+      created_at: a.created_at,
+      segment: a.segments ? a.segments.title || a.segments.segment_code : "a script line",
+      pace: a.scores?.pace ?? null,
+      clarity: a.scores?.clarity ?? null,
+      pauses: a.scores?.pauses ?? null,
+    })),
+    linesDone: (pg.data || []).length,
+    lastDone: ((pg.data || []) as { updated_at: string }[]).map((x) => x.updated_at).sort().pop() ?? null,
+  };
   history.earlier = ((eh.data || []) as { topic: string; sessions: number }[]).filter((x) => x.sessions > 0).sort((a, b) => b.sessions - a.sessions);
   return { history, errors };
 }
