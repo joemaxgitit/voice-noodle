@@ -186,13 +186,20 @@ export default function Rotation() {
   // The account name when there is one, so lists and history agree.
   const nameOf = useCallback((d: Daily) => (d.rep_id ? people.find((p) => p.id === d.rep_id)?.full_name || d.salesman : d.salesman), [people]);
 
+  // Only current reps by default: people with no account (who left, or never had one) stay
+  // on record but out of the way.
+  const [showFormer, setShowFormer] = useState(false);
+  const isCurrent = useCallback((d: Daily) => !!d.rep_id && people.some((p) => p.id === d.rep_id && p.active && p.role === "rep"), [people]);
+  const shown = useMemo(() => (showFormer ? days : days.filter(isCurrent)), [days, showFormer, isCurrent]);
+  const formerNames = useMemo(() => [...new Set(days.filter((d) => !isCurrent(d)).map((d) => d.salesman))].sort(), [days, isCurrent]);
+
   // The latest saved day: tomorrow's rotation.
   const latest = useMemo(() => {
-    const d = days[0]?.day;
+    const d = shown[0]?.day;
     if (!d) return null;
-    const list = days.filter((x) => x.day === d).sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+    const list = shown.filter((x) => x.day === d).sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
     return { day: d, forDay: list[0].for_day, made: list.filter(madeOf), missed: list.filter((x) => !madeOf(x)) };
-  }, [days, nameOf]);
+  }, [shown, nameOf]);
 
   async function pickTracker(f: File) {
     setError("");
@@ -277,9 +284,9 @@ export default function Rotation() {
 
   // History grid: reps (rows) x working days (columns), newest on the right.
   const grid2 = useMemo(() => {
-    const allDays = [...new Set(days.map((d) => d.day))].sort().slice(-weeks * 5);
+    const allDays = [...new Set(shown.map((d) => d.day))].sort().slice(-weeks * 5);
     const byName = new Map<string, Map<string, Daily>>();
-    for (const d of days) {
+    for (const d of shown) {
       if (!allDays.includes(d.day)) continue;
       const key = d.rep_id ? people.find((p) => p.id === d.rep_id)?.full_name || d.salesman : d.salesman;
       const m = byName.get(key) ?? new Map();
@@ -288,7 +295,7 @@ export default function Rotation() {
     }
     const reps = [...byName.keys()].sort();
     return { allDays, reps, byName };
-  }, [days, weeks, people]);
+  }, [shown, weeks, people]);
 
   const repSelect = (value: string | null, onChange: (v: string) => void) => (
     <select value={value ?? ""} onChange={(e) => onChange(e.target.value)} style={{ width: "auto", minWidth: 150, padding: "5px 8px", fontSize: 13 }}>
@@ -544,6 +551,15 @@ export default function Rotation() {
           </div>
           <p className="hint" style={{ marginBottom: 0 }}>
             ✓ made rotation, ✗ missed, A absent, · no numbers that day. A ring marks a manager override or a note from the old tracker. Tap any day to change it.
+            {formerNames.length > 0 && (
+              <>
+                {" "}
+                <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }} title={formerNames.join(", ")}>
+                  <input type="checkbox" checked={showFormer} onChange={(e) => setShowFormer(e.target.checked)} style={{ width: "auto" }} />
+                  Show {formerNames.length} people without a current rep account
+                </label>
+              </>
+            )}
           </p>
         </section>
       )}
