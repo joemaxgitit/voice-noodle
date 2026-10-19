@@ -72,11 +72,22 @@ export default function Overview({ ctx }: { ctx: Ctx }) {
           <div className="v">{real.length}</div>
           <div className="d">{real.filter((c) => t(c) >= now - 30 * DAY).length} in the last 30 days</div>
         </div>
-        <div className="rx-tile">
-          <div className="k">Practice calls</div>
-          <div className="v">{practice.length}</div>
-          <div className="d">{practice.filter((c) => t(c) >= now - 30 * DAY).length} in the last 30 days</div>
-        </div>
+        {(() => {
+          // Every practice call they started, graded or not, plus script drills.
+          const all = h.calls.filter((c) => c.source === "roleplay");
+          const recent = all.filter((c) => t(c) >= now - 30 * DAY);
+          const drills = h.practice.attempts.filter((a) => new Date(a.created_at).getTime() >= now - 30 * DAY).length;
+          return (
+            <div className="rx-tile">
+              <div className="k">Practice</div>
+              <div className="v">{all.length}</div>
+              <div className="d">
+                {recent.length} call{recent.length === 1 ? "" : "s"} in 30 days{recent.length ? ` (${recent.filter((c) => c.status === "graded").length} graded)` : ""}
+                {drills ? ` · ${drills} script drill${drills === 1 ? "" : "s"}` : ""}
+              </div>
+            </div>
+          );
+        })()}
         {h.daily.length > 0 && (() => {
           const last20 = h.daily.slice(0, 20);
           const made = last20.filter((d) => d.override_made ?? d.made).length;
