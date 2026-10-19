@@ -100,11 +100,8 @@ export default function HomeView() {
       // separately so the page still works before passwords.sql has run.
       // Managers and admins start on the manager home, unless they chose "Rep view".
       const isManager = ["admin", "manager"].includes(profileRes.data?.role || "");
-      let repView = false;
-      try {
-        if (new URLSearchParams(window.location.search).get("view") === "rep") sessionStorage.setItem("vn.repview", "1");
-        repView = sessionStorage.getItem("vn.repview") === "1";
-      } catch {}
+      // Normally the server already sent managers to /admin/home; this is the fallback.
+      const repView = new URLSearchParams(window.location.search).get("view") === "rep" || /(?:^|; )vn_repview=1/.test(document.cookie);
       void supabase
         .from("profiles")
         .select("must_change_password")

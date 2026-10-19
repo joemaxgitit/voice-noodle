@@ -59,6 +59,34 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Managers and admins start on the manager home. "Rep view" (?view=rep)
+  // sets a cookie for this browser session so they can look around the rep
+  // side; going back into /admin clears it.
+  const REP_VIEW = "vn_repview";
+  if (user && (path === "/" || path === "/proedgesolutions")) {
+    if (request.nextUrl.searchParams.get("view") === "rep") {
+      response.cookies.set(REP_VIEW, "1", { path: "/", sameSite: "lax" });
+      return response;
+    }
+    if (!request.cookies.get(REP_VIEW)) {
+      const { data: profile } = await supabase.from("profiles").select("role, active").eq("id", user.id).single();
+      if (profile?.active && ["admin", "manager"].includes(profile.role)) {
+        // Separate query: a temporary password still goes to the rep home, which sends them to change it.
+        const { data: pw } = await supabase.from("profiles").select("must_change_password").eq("id", user.id).maybeSingle();
+        if (!(pw as { must_change_password?: boolean } | null)?.must_change_password) {
+          const url = request.nextUrl.clone();
+          url.pathname = "/admin/home";
+          url.search = "";
+          const redirect = NextResponse.redirect(url);
+          response.cookies.getAll().forEach((c) => redirect.cookies.set(c));
+          return redirect;
+        }
+      }
+    }
+  }
+
+  if (user && path.startsWith("/admin") && request.cookies.get(REP_VIEW)) response.cookies.delete(REP_VIEW);
+
   if (user && path.startsWith("/admin")) {
     const { data: profile } = await supabase
       .from("profiles")

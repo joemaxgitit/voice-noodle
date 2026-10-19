@@ -105,9 +105,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
   useEffect(() => setOpen(false), [path]);
   // Back in the manager side: the next visit to the rep home sends them here again.
   useEffect(() => {
-    try {
-      sessionStorage.removeItem("vn.repview");
-    } catch {}
+    document.cookie = "vn_repview=; path=/; max-age=0";
   }, []);
   useEffect(() => {
     if (!open) return;
