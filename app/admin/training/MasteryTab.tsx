@@ -523,7 +523,7 @@ export default function MasteryTab() {
           <div className="card" style={{ marginBottom: 12, borderColor: "var(--live)" }}>
             <b>New class days -- not saved yet</b>
             <p className="hint" style={{ marginTop: 4 }}>
-              Spread evenly across Monday to Wednesday, closers and account managers each split three ways, with as few reps as possible
+              Spread evenly across Monday to Wednesday, sales reps and account managers each split three ways, with as few reps as possible
               staying on the day they had ({classReps.filter((r) => regular.get(r.id) === mix.get(r.id)).length} stay put). Save, then drag anyone you want to change.
             </p>
             <div className="tr-roster">

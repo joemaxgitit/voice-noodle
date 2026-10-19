@@ -17,7 +17,7 @@ type Person = {
 
 /*
   What someone does, as one choice. A manager's side comes from their team:
-  Closers -> sales manager, Account Managers -> service manager. Each side
+  Sales -> sales manager, Account Managers -> service manager. Each side
   only sees its own reps (enforced in the database); admins see both.
 */
 type Job = "rep" | "sales_manager" | "service_manager" | "admin";
@@ -35,7 +35,7 @@ const changesFor = (job: Job): Partial<Person> =>
 // security, not just hidden in the interface.
 const TEAMS = [
   { value: "", label: "No team" },
-  { value: "closers", label: "Closers" },
+  { value: "closers", label: "Sales" },
   { value: "ams", label: "Account Managers" },
 ];
 
@@ -162,8 +162,8 @@ export default function People() {
       <p className="muted">
         Create the account in Supabase first, then claim it here and set the
         name, team, and role. Team decides which script they can reach &mdash;
-        closers and account managers cannot see each other&rsquo;s. Sales
-        managers only see closers and service managers only see account
+        sales and account managers cannot see each other&rsquo;s. Sales
+        managers only see sales reps and service managers only see account
         managers; admins see everyone.{iAmSuper ? " Only you, as super admin, can make or remove admins." : ""}
       </p>
 
