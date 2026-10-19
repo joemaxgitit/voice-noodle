@@ -30,6 +30,8 @@ export default function Reps() {
   const [notes, setNotes] = useState<Map<string, number>>(new Map());
   const [reviews, setReviews] = useState<ReviewLite[]>([]);
   const [showAll, setShowAll] = useState(false);
+  // Latest Friday retention lookback, per rep.
+  const [ret, setRet] = useState<{ end: string; byRep: Map<string, { rate: number | null; prior: number | null; pos: number; reasons: Record<string, number> }> } | null>(null);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -60,6 +62,20 @@ export default function Reps() {
     for (const x of n.data || []) counts.set(x.rep_id as string, (counts.get(x.rep_id as string) ?? 0) + 1);
     setNotes(counts);
     setReviews((v.data || []) as ReviewLite[]);
+    // Separate, so a database without the retention tables still loads this page.
+    const lr = await supabase.from("retention_reports").select("id, period_end").order("period_end", { ascending: false }).limit(1).maybeSingle();
+    if (lr.data) {
+      const rr = await supabase.from("retention_reps").select("rep_id, before1_rate, prior_rate, pos_lost, pos_reasons").eq("report_id", lr.data.id).not("rep_id", "is", null);
+      setRet({
+        end: lr.data.period_end as string,
+        byRep: new Map(
+          ((rr.data || []) as { rep_id: string; before1_rate: number | null; prior_rate: number | null; pos_lost: number; pos_reasons: Record<string, number> }[]).map((x) => [
+            x.rep_id,
+            { rate: x.before1_rate === null ? null : Number(x.before1_rate), prior: x.prior_rate === null ? null : Number(x.prior_rate), pos: x.pos_lost, reasons: x.pos_reasons },
+          ])
+        ),
+      });
+    }
   }, [supabase]);
 
   useEffect(() => {
@@ -106,9 +122,10 @@ export default function Reps() {
           closeDelta: typeof close?.v === "number" && typeof closePrev?.v === "number" ? close.v - closePrev.v : null,
           notes: notes.get(p.id) ?? 0,
           review,
+          ret: ret?.byRep.get(p.id) ?? null,
         };
       });
-  }, [people, calls, kpi, notes, reviews, showAll]);
+  }, [people, calls, kpi, notes, reviews, showAll, ret]);
 
   return (
     <main className="shell rx-page">
@@ -129,6 +146,9 @@ export default function Reps() {
               <th className="num">Calls / practice, 30d</th>
               <th className="num">{kpi ? `Deals, ${fmtMonth(monthOf(kpi.cur), false)}` : "Deals"}</th>
               <th className="num">Closing ratio</th>
+              <th className="num" title="Cancelled before the 1st payment, from the latest Friday retention lookback. Lower is better.">
+                {ret ? `Cancel before 1st, ${new Date(`${ret.end}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Cancel before 1st"}
+              </th>
               <th className="num">Notes</th>
               <th>Last review</th>
             </tr>
@@ -171,6 +191,20 @@ export default function Reps() {
                       {Math.abs(Math.round(r.closeDelta * 1000) / 10)}
                     </small>
                   )}
+                </td>
+                <td
+                  className="num"
+                  title={r.ret?.pos ? `Lost at the sale: ${Object.entries(r.ret.reasons).map(([k, n]) => `${k}${n > 1 ? ` ×${n}` : ""}`).join(", ")}` : undefined}
+                >
+                  {r.ret?.rate != null ? `${Math.round(r.ret.rate * 100)}%` : "--"}
+                  {r.ret?.rate != null && r.ret.prior != null && Math.abs(r.ret.rate - r.ret.prior) >= 0.01 && (
+                    <small className={r.ret.rate > r.ret.prior ? "rx-down" : "rx-up"}>
+                      {" "}
+                      {r.ret.rate > r.ret.prior ? "▲" : "▼"}
+                      {Math.abs(Math.round((r.ret.rate - r.ret.prior) * 100))}
+                    </small>
+                  )}
+                  {r.ret?.pos ? <small className="muted"> · {r.ret.pos} at sale</small> : null}
                 </td>
                 <td className="num">{r.notes || ""}</td>
                 <td>
