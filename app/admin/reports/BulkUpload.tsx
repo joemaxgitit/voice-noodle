@@ -6,7 +6,14 @@ import { readSheet } from "@/lib/xlsx";
 import { displayName, exportDateFromFile, KIND_LABEL, kindFromFile, matchRep, nameKey, parseReport, type KpiReport, type ParsedReport } from "@/lib/kpi";
 
 type Person = { id: string; full_name: string | null; role: string; kpi_name: string | null; active: boolean };
-type Item = { file: File; parsed: ParsedReport; order: string };
+type Item = { file: File; parsed: ParsedReport; order: string; named: string | null; copyOf: number | null };
+
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+/** "Granite-Bay-Report-Jan-2025.csv" -> "2025-01" */
+function monthFromName(name: string): string | null {
+  const m = name.toLowerCase().match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[-_ ]?(20\d\d)/);
+  return m ? `${m[2]}-${String(MONTHS.indexOf(m[1]) + 1).padStart(2, "0")}` : null;
+}
 
 const SKIP = "__skip";
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -59,9 +66,17 @@ export default function BulkUpload({
         const out: Item[] = [];
         for (const f of files) {
           const parsed = parseReport(readSheet(f.name, new Uint8Array(await f.arrayBuffer())));
-          out.push({ file: f, parsed, order: f.name.match(/(\d{18})/)?.[1] ?? f.name });
+          const named = monthFromName(f.name);
+          out.push({ file: f, parsed, order: named ?? f.name.match(/(\d{18})/)?.[1] ?? f.name, named, copyOf: null });
         }
         out.sort((a, b) => a.order.localeCompare(b.order));
+        // A month exported twice by mistake has exactly the same numbers as another; skip the copy.
+        const seen = new Map<string, number>();
+        out.forEach((it, i) => {
+          const sig = JSON.stringify(it.parsed.rows);
+          if (seen.has(sig)) it.copyOf = seen.get(sig)!;
+          else seen.set(sig, i);
+        });
         // Default: the newest file is last month, counting back from there.
         const e = exportDateFromFile(out[out.length - 1].file.name) ?? new Date().toISOString().slice(0, 10);
         const [y, m] = e.split("-").map(Number);
@@ -95,17 +110,19 @@ export default function BulkUpload({
     const k = dealKey(it);
     return k ? it.parsed.rows.reduce((s, r) => s + (typeof r.data[k] === "number" ? (r.data[k] as number) : 0), 0) : null;
   };
-  const taken = (a: string, b: string) => existing.some((r) => r.kind === "sales_dashboard" && r.period_start === a && r.period_end === b);
+  const allNamed = !!items?.length && items.every((it) => it.named);
+  const monthOf = (it: Item, i: number) => (it.named ? monthAt(it.named, 0) : monthAt(startMonth || "2000-01", i));
+  const taken = (it: Item, a: string, b: string) => existing.some((r) => r.kind === kindFromFile(it.file.name) && r.period_start === a && r.period_end === b);
 
   async function saveAll() {
-    if (!items || !startMonth) return;
+    if (!items || (!startMonth && !allNamed)) return;
     setError("");
     let saved = 0;
     let skipped = 0;
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
-      const [a, b, label] = monthAt(startMonth, i);
-      if (taken(a, b)) {
+      const [a, b, label] = monthOf(it, i);
+      if (taken(it, a, b) || it.copyOf !== null) {
         skipped++;
         continue;
       }
@@ -157,7 +174,7 @@ export default function BulkUpload({
       if (s && !matchRep(s, people.filter((p) => p.id === id))) await supabase.from("profiles").update({ kpi_name: displayName(s) }).eq("id", id);
     }
     setBusy("");
-    onDone(`Saved ${saved} month${saved === 1 ? "" : "s"} of Sales Dashboards${skipped ? ` (${skipped} skipped -- already uploaded for that month)` : ""}.`);
+    onDone(`Saved ${saved} month${saved === 1 ? "" : "s"} of ${KIND_LABEL[kindFromFile(items[0].file.name)] ?? "reports"}${skipped ? ` (${skipped} skipped -- already uploaded, or a duplicate file)` : ""}.`);
   }
 
   const sortedPeople = [...people].sort((a, b) => Number(b.role === "rep") - Number(a.role === "rep") || (a.full_name || "").localeCompare(b.full_name || ""));
@@ -185,13 +202,21 @@ export default function BulkUpload({
       </div>
       {error && <div className="error">{error}</div>}
 
-      <label className="field" style={{ maxWidth: 260, marginTop: 10 }}>
-        <span className="label">The first file is</span>
-        <input type="month" value={startMonth} onChange={(e) => setStartMonth(e.target.value)} />
-      </label>
-      <p className="hint" style={{ marginTop: -4 }}>
-        Files are in the order you exported them, one month each. Months before a rep started (all zeros) are left off their profile.
-      </p>
+      {allNamed ? (
+        <p className="hint" style={{ marginTop: 10 }}>
+          Months come from the file names. Months before a rep started (all zeros) are left off their profile.
+        </p>
+      ) : (
+        <>
+          <label className="field" style={{ maxWidth: 260, marginTop: 10 }}>
+            <span className="label">The first file is</span>
+            <input type="month" value={startMonth} onChange={(e) => setStartMonth(e.target.value)} />
+          </label>
+          <p className="hint" style={{ marginTop: -4 }}>
+            Files are in the order you exported them, one month each. Months before a rep started (all zeros) are left off their profile.
+          </p>
+        </>
+      )}
 
       <div className="rx-scroll">
         <table className="rx-table">
@@ -205,12 +230,13 @@ export default function BulkUpload({
           </thead>
           <tbody>
             {items.map((it, i) => {
-              const [a, b, label] = monthAt(startMonth || "2000-01", i);
+              const [a, b, label] = monthOf(it, i);
               return (
                 <tr key={it.file.name}>
                   <td>
                     <b>{label}</b>
-                    {taken(a, b) && <span className="muted"> · already uploaded, will skip</span>}
+                    {taken(it, a, b) && <span className="muted"> · already uploaded, will skip</span>}
+                    {it.copyOf !== null && <span style={{ color: "var(--bad)" }}> · same numbers as {monthOf(items[it.copyOf], it.copyOf)[2]} -- looks like a duplicate file, will skip</span>}
                   </td>
                   <td className="num">{dealsOf(it) ?? "--"}</td>
                   <td className="num">{it.parsed.rows.filter((r) => active(r.data)).length}</td>

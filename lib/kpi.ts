@@ -27,12 +27,14 @@ export const KIND_LABEL: Record<string, string> = {
   sales_dashboard: "Sales dashboard",
   sale_report: "Sale report",
   kpi_scorecard: "KPI scorecard",
+  monthly_report: "Granite Bay monthly report",
   other: "Report",
 };
 
 /** The CRM exports name files like SalesDashboard_639232531302862339.xlsx. */
 export function kindFromFile(name: string): string {
   if (/salesdashboard/i.test(name)) return "sales_dashboard";
+  if (/granite.?bay/i.test(name)) return "monthly_report";
   if (/salereport|salesreport/i.test(name)) return "sale_report";
   if (/kpi|scorecard/i.test(name)) return "kpi_scorecard";
   return "other";
@@ -100,14 +102,40 @@ export function parseReport(grid: Cell[][]): ParsedReport {
   const hi = grid.findIndex((r) => r.filter((c) => typeof c === "string" && c.trim()).length >= 3);
   if (hi < 0) throw new Error("Couldn't find a header row in this sheet.");
   const header = grid[hi].map((c) => (c == null ? "" : String(c).trim()));
-  const body = grid.slice(hi + 1).filter((r) => r.some((c) => c !== null && c !== ""));
+  // CSV exports write "$247,721" and "18.5%" as text; turn them into numbers and remember which kind.
+  const dollar = new Set<number>();
+  const percent = new Set<number>();
+  const body = grid
+    .slice(hi + 1)
+    .filter((r) => r.some((c) => c !== null && c !== ""))
+    .map((r) =>
+      r.map((c, i) => {
+        if (typeof c !== "string") return c;
+        const t = c.trim();
+        if (/^null%?$/i.test(t)) return null;
+        let m = t.match(/^\$\s*(-?[\d,]*\.?\d+)$/);
+        if (m) {
+          dollar.add(i);
+          return Number(m[1].replace(/,/g, ""));
+        }
+        m = t.match(/^(-?[\d,]*\.?\d+)\s*%$/);
+        if (m) {
+          percent.add(i);
+          return Number(m[1].replace(/,/g, "")) / 100;
+        }
+        return c;
+      })
+    );
 
   const used = new Set<string>();
   const columns: KpiColumn[] = header.map((label, i) => {
     let key = slug(label || `col ${i + 1}`);
     while (used.has(key)) key += "_2";
     used.add(key);
-    return { key, label: label || `Column ${i + 1}`, type: typeFor(label, body.map((r) => r[i] ?? null), i === 0) };
+    let type = typeFor(label, body.map((r) => r[i] ?? null), i === 0);
+    if (type === "number" && dollar.has(i)) type = "money";
+    if (type === "number" && percent.has(i)) type = "ratio";
+    return { key, label: label || `Column ${i + 1}`, type };
   });
   const nameCol = columns.findIndex((c) => c.type === "name");
 
