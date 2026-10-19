@@ -11,6 +11,7 @@ type Person = {
   team: string | null;
   active: boolean;
   org_id: string | null;
+  in_training?: boolean;
 };
 
 const ROLES = [
@@ -58,7 +59,10 @@ export default function People() {
       return;
     }
 
-    const rows = (data || []) as Person[];
+    // Separate query: an older database without this column must not break the page.
+    const { data: tr } = await supabase.from("profiles").select("id, in_training");
+    const training = new Set(((tr || []) as { id: string; in_training: boolean }[]).filter((x) => x.in_training).map((x) => x.id));
+    const rows = ((data || []) as Person[]).map((p) => ({ ...p, in_training: training.has(p.id) }));
     setPeople(rows);
     setOrgId(rows.find((p) => p.id === user?.id)?.org_id ?? null);
     setMyRole(rows.find((p) => p.id === user?.id)?.role ?? "");
@@ -218,6 +222,24 @@ export default function People() {
                   </option>
                 ))}
               </select>
+
+              {p.role === "rep" && (
+                <label className="muted" style={{ display: "inline-flex", gap: 6, alignItems: "center", whiteSpace: "nowrap" }} title="Reps in training aren't in Master Your Craft">
+                  <input
+                    type="checkbox"
+                    checked={!!p.in_training}
+                    disabled={busy === p.id}
+                    onChange={async (e) => {
+                      const on = e.target.checked;
+                      await patch(p.id, { in_training: on });
+                      // In training means no Master Your Craft day until they graduate.
+                      if (on) await supabase.from("mastery_regular").delete().eq("rep_id", p.id);
+                    }}
+                    style={{ width: "auto" }}
+                  />
+                  In training
+                </label>
+              )}
 
               <button
                 disabled={busy === p.id || p.id === me}

@@ -59,7 +59,10 @@ export default function HubShell({
         .eq("org_id", me?.org_id ?? "")
         .eq("active", true)
         .order("full_name");
-      const all = (people || []) as (Person & { role: string })[];
+      // Separate query: an older database without this column must not break the hub.
+      const { data: tr } = await supabase.from("profiles").select("id, in_training").eq("org_id", me?.org_id ?? "");
+      const training = new Set(((tr || []) as { id: string; in_training: boolean }[]).filter((x) => x.in_training).map((x) => x.id));
+      const all = ((people || []) as (Person & { role: string })[]).map((p) => ({ ...p, in_training: training.has(p.id) }));
       setBase({
         orgId: me?.org_id ?? "",
         me: session.user.id,

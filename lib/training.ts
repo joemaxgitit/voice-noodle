@@ -6,7 +6,7 @@
   1:30 class is 1:30 on every screen and through daylight saving.
 */
 
-export type Person = { id: string; full_name: string | null; role?: string; team?: string | null };
+export type Person = { id: string; full_name: string | null; role?: string; team?: string | null; in_training?: boolean };
 
 export type Topic = {
   id: string;

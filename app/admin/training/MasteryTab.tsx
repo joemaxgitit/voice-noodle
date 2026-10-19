@@ -93,7 +93,10 @@ export default function MasteryTab() {
     load();
   }, [load]);
 
-  const shownReps = reps.filter((r) => team === "all" || r.team === team);
+  // Reps in training don't go to Master Your Craft until they graduate.
+  const classReps = reps.filter((r) => !r.in_training);
+  const trainees = reps.filter((r) => r.in_training);
+  const shownReps = classReps.filter((r) => team === "all" || r.team === team);
   const dayOf = (id: string) => classDayOf(id, regular, moves);
   const capacity = Number(form?.capacity) || 0;
 
@@ -122,6 +125,48 @@ export default function MasteryTab() {
     if (error) return setError(error.message);
     setSaved(publish ? "Published -- reps can see this week's class." : "Saved.");
     setTimeout(() => setSaved(""), 2500);
+    load();
+  }
+
+  // ---------------------------------------------------------------- mixing up the days
+
+  const [mix, setMix] = useState<Map<string, number> | null>(null);
+
+  /** New regular days for everyone: even across Mon-Wed within each team, and as few reps as possible on the day they had. */
+  function proposeMix() {
+    let best: Map<string, number> | null = null;
+    let bestSame = Infinity;
+    for (let t = 0; t < 200; t++) {
+      const plan = new Map<string, number>();
+      // Deal each team round the three days in turn, carrying on where the last team stopped so the days stay even overall.
+      let next = Math.floor(Math.random() * 3);
+      for (const tm of ["closers", "ams", null]) {
+        const group = classReps.filter((r) => (tm === null ? r.team !== "closers" && r.team !== "ams" : r.team === tm));
+        for (const r of [...group].sort(() => Math.random() - 0.5)) {
+          plan.set(r.id, (next % 3) + 1);
+          next++;
+        }
+      }
+      const same = classReps.filter((r) => regular.get(r.id) === plan.get(r.id)).length;
+      if (same < bestSame) {
+        best = plan;
+        bestSame = same;
+      }
+      if (same === 0) break;
+    }
+    setMix(best);
+  }
+
+  async function saveMix() {
+    if (!mix) return;
+    setError("");
+    const now = new Date().toISOString();
+    const rows = [...mix].map(([rep_id, day]) => ({ rep_id, org_id: orgId, day, updated_by: me, updated_at: now }));
+    const { error } = await supabase.from("mastery_regular").upsert(rows);
+    if (error) return setError(error.message);
+    setMix(null);
+    setSaved(`New class days saved for ${rows.length} reps. One-week moves already set stay as they are.`);
+    setTimeout(() => setSaved(""), 4000);
     load();
   }
 
@@ -363,7 +408,56 @@ export default function MasteryTab() {
           {mode === "week"
             ? "Drag a rep, or use their menu, to move them for this week only. Their regular day stays the same."
             : "Moves now change the rep's regular class day for every week from now on."}
+          {mode === "regular" && !mix && (
+            <>
+              {" "}
+              <button className="tr-sm" onClick={proposeMix}>
+                Mix up everyone&rsquo;s days
+              </button>
+            </>
+          )}
         </p>
+
+        {mix && (
+          <div className="card" style={{ marginBottom: 12, borderColor: "var(--live)" }}>
+            <b>New class days -- not saved yet</b>
+            <p className="hint" style={{ marginTop: 4 }}>
+              Spread evenly across Monday to Wednesday, closers and account managers each split three ways, with as few reps as possible
+              staying on the day they had ({classReps.filter((r) => regular.get(r.id) === mix.get(r.id)).length} stay put). Save, then drag anyone you want to change.
+            </p>
+            <div className="tr-roster">
+              {[1, 2, 3].map((d) => {
+                const inDay = classReps.filter((r) => mix.get(r.id) === d).sort((a, b) => (a.full_name || "").localeCompare(b.full_name || ""));
+                return (
+                  <div key={d} className="tr-col">
+                    <h3>
+                      {DAY_NAME[d]}
+                      <span>{inDay.length}</span>
+                    </h3>
+                    {inDay.map((r) => (
+                      <div key={r.id} className="tr-rep">
+                        <span>
+                          {r.full_name || "Unnamed"}
+                          <div className="moved-tag" style={{ color: "var(--muted)" }}>
+                            {regular.get(r.id) ? (regular.get(r.id) === d ? "same day" : `was ${DAY_NAME[regular.get(r.id)!].slice(0, 3)}`) : "new"}
+                            {r.team === "ams" ? " · AM" : ""}
+                          </div>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="rx-actions" style={{ marginTop: 10 }}>
+              <button className="primary" onClick={() => void saveMix()}>
+                Save new days
+              </button>
+              <button onClick={proposeMix}>Shuffle again</button>
+              <button onClick={() => setMix(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
 
         <div className="tr-roster">
           {COLS.map((c) => {
@@ -433,6 +527,13 @@ export default function MasteryTab() {
           })}
         </div>
       </div>
+
+      {trainees.length > 0 && (
+        <p className="hint" style={{ marginTop: 8 }}>
+          In training, not in Master Your Craft yet: {trainees.map((r) => r.full_name || "Unnamed").join(", ")}. Untick &ldquo;In training&rdquo; on People &amp;
+          access when they graduate, then give them a day.
+        </p>
+      )}
 
       {/* ---------- topic history ---------- */}
       <div className="rp-section" style={{ marginTop: 26 }}>
