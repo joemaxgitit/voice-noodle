@@ -23,6 +23,7 @@ import {
 import { MaterialPicker, useHub } from "./shared";
 import IdeaBox, { IDEA_CATEGORY } from "../IdeaBox";
 import LessonText from "./LessonText";
+import AfterClass, { RecordingPlayer } from "./AfterClass";
 
 type WeekForm = {
   topic_id: string | null;
@@ -245,7 +246,7 @@ export default function MasteryTab() {
   // ---------------------------------------------------------------- history
 
   const history = useMemo(() => {
-    type Taught = { week: string; who: string | null; guest?: string; shown: string; notes: string | null };
+    type Taught = { week: string; who: string | null; guest?: string; shown: string; notes: string | null; recordings: NonNullable<MasteryWeek["recordings"]>; leave: string | null };
     const byTopic = new Map<string, { key: string; title: string; content: string | null; dates: Taught[] }>();
     for (const w of all) {
       if (w.status !== "published" || w.week_start > today()) continue;
@@ -254,7 +255,7 @@ export default function MasteryTab() {
       const title = w.title || topics.find((t) => t.id === w.topic_id)?.title || "Untitled";
       const t = topics.find((x) => x.id === w.topic_id);
       const e = byTopic.get(key) || { key, title: t?.title || title, content: t?.description ?? null, dates: [] };
-      e.dates.push({ week: w.week_start, who: w.instructor_id, guest: w.day_instructors?.[GUEST_KEY], shown: w.title || "", notes: w.notes ?? null });
+      e.dates.push({ week: w.week_start, who: w.instructor_id, guest: w.day_instructors?.[GUEST_KEY], shown: w.title || "", notes: w.notes ?? null, recordings: w.recordings ?? [], leave: w.leave_behind ?? null });
       byTopic.set(key, e);
     }
     const rows = topics
@@ -462,6 +463,12 @@ export default function MasteryTab() {
           ))}
         </div>
       )}
+
+      {/* ---------- after class ---------- */}
+      <div className="rp-section" style={{ marginTop: 22 }}>
+        <h2 style={{ margin: "0 0 8px", fontSize: 17 }}>After class</h2>
+        <AfterClass supabase={supabase} orgId={orgId} me={me} week={week} recordings={row?.recordings ?? []} leaveBehind={row?.leave_behind ?? null} onSaved={load} />
+      </div>
 
       {/* ---------- ideas ---------- */}
       <div className="rp-section" style={{ marginTop: 22 }}>
@@ -711,6 +718,27 @@ export default function MasteryTab() {
                             </p>
                           )}
                           {h.content ? <LessonText text={h.content} /> : <p className="muted" style={{ margin: 0 }}>No content saved with this topic.</p>}
+                          {h.dates
+                            .filter((d) => d.recordings.length || d.leave)
+                            .map((d) => (
+                              <div key={`after-${d.week}`} style={{ marginTop: 14 }}>
+                                <p className="lesson-sub">After class &middot; week of {fmtDate(d.week, { month: "short", day: "numeric", year: "numeric" })}</p>
+                                <div style={{ display: "grid", gap: 8, marginBottom: 8 }}>
+                                  {d.recordings.map((r) => (
+                                    <div key={r.added_at + r.name}>
+                                      {r.day && <small className="muted">{r.day} </small>}
+                                      <RecordingPlayer supabase={supabase} rec={r} />
+                                    </div>
+                                  ))}
+                                </div>
+                                {d.leave && (
+                                  <div className="card" style={{ background: "var(--ink-3)" }}>
+                                    <p className="hint" style={{ marginTop: 0 }}>Leave behind</p>
+                                    <LessonText text={d.leave} />
+                                  </div>
+                                )}
+                              </div>
+                            ))}
                           {h.dates.some((d) => d.notes) && (
                             <div style={{ marginTop: 12 }}>
                               <p className="lesson-sub">Notes for the instructor</p>

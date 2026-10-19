@@ -141,6 +141,8 @@ export type MasteryWeek = {
   notes: string | null;
   capacity: number | null;
   status: "draft" | "published";
+  recordings?: { path?: string; link?: string; name: string; size?: number; day?: string; added_at: string }[] | null;
+  leave_behind?: string | null;
 };
 
 export type Attendance = "present" | "absent" | "excused" | "makeup_required" | "makeup_done";
