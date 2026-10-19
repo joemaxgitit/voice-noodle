@@ -251,6 +251,9 @@ export async function buildReviewInput(opts: {
           .join("\n")
       : "(none)",
     "",
+    `EARLIER ONE-ON-ONES FROM THE OLD TRACKER (topic counts only, no dates; total ${h.earlier.reduce((s, x) => s + x.sessions, 0)}):`,
+    h.earlier.length ? h.earlier.map((x) => `${x.topic} ${x.sessions}`).join(", ") : "(none)",
+    "",
     "DAILY ACTIVITY AND ROTATION (from the nightly Sales Dashboard; 1 point makes rotation: talk 2.5h=0.5/4h=1, calls 60=0.5/90=1, 0.5 per deal):",
     h.daily.filter((d) => inWindow(d.day)).length
       ? (() => {

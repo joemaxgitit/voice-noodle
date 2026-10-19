@@ -4,6 +4,9 @@
 */
 
 export type CoachingTopic = { id: string; name: string; hint: string | null; sort_order: number; archived: boolean };
+/** One-on-ones per topic from the old tracker, before Voice Noodle (no dates). */
+export type CoachingHistory = { rep_id: string; topic: string; sessions: number };
+
 export type Commitment = { text: string; status: "open" | "kept" | "missed" };
 export type CoachingSession = {
   id: string;

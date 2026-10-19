@@ -204,6 +204,14 @@ export default function OneOnOne({ ctx }: { ctx: Ctx }) {
     </div>
   );
 
+  // Topic counts across every one-on-one: the old tracker plus the ones saved here.
+  const allTime = (() => {
+    const m = new Map<string, number>();
+    for (const x of h.earlier) m.set(x.topic, (m.get(x.topic) ?? 0) + x.sessions);
+    for (const x of h.sessions) if (!x.private) for (const t of x.topics) m.set(t, (m.get(t) ?? 0) + 1);
+    return [...m].sort((a, b) => b[1] - a[1]);
+  })();
+
   return (
     <div>
       {error && <div className="error">{error}</div>}
@@ -260,6 +268,17 @@ export default function OneOnOne({ ctx }: { ctx: Ctx }) {
               </li>
             )}
           </ul>
+          {allTime.length > 0 && (
+            <p className="hint" style={{ margin: "10px 0 0" }}>
+              Most coached, all time{h.earlier.length ? " (with the old tracker)" : ""}:{" "}
+              {allTime.slice(0, 5).map(([t, n], i) => (
+                <span key={t}>
+                  {i ? ", " : ""}
+                  <b>{t}</b> {n}
+                </span>
+              ))}
+            </p>
+          )}
         </section>
       </div>
 

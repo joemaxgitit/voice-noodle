@@ -113,6 +113,8 @@ export type RepHistory = {
   daily: DailyLite[];
   cards: CardLite[];
   sessions: CoachingSession[];
+  /** One-on-ones per topic from the old tracker (no dates). */
+  earlier: { topic: string; sessions: number }[];
   calls: HistCall[];
   notes: RepNote[];
   files: RepFile[];
@@ -210,6 +212,7 @@ export async function loadRepHistory(
     })),
     cards: rows<CardLite>(cards, [], "cards"),
     sessions: rows<CoachingSession>(sessions, [], "sessions"),
+    earlier: [],
     calls: rows<HistCall>(calls, errors, "calls"),
     notes: rows<RepNote>(notes, errors, "notes"),
     files: rows<RepFile>(files, errors, "files"),
@@ -226,6 +229,9 @@ export async function loadRepHistory(
     prefs: new Map(rows<MetricPref>(prefs, [], "prefs").map((p) => [p.metric_key, p])),
     personas: new Map(rows<{ id: string; name: string; title: string }>(personas, [], "personas").map((p) => [p.id, `${p.name} -- ${p.title}`])),
   };
+  // Separate, so a database without this table still loads the profile.
+  const eh = await supabase.from("coaching_history").select("topic, sessions").eq("rep_id", repId);
+  history.earlier = ((eh.data || []) as { topic: string; sessions: number }[]).filter((x) => x.sessions > 0).sort((a, b) => b.sessions - a.sessions);
   return { history, errors };
 }
 

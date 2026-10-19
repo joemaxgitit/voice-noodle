@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import type { CoachingSession, CoachingTopic } from "@/lib/coaching";
+import type { CoachingHistory, CoachingSession, CoachingTopic } from "@/lib/coaching";
 import "../calls/calls.css";
 import "../reps/reps.css";
 
@@ -29,6 +29,7 @@ export default function CoachingTrends() {
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [newTopic, setNewTopic] = useState("");
+  const [earlier, setEarlier] = useState<CoachingHistory[]>([]);
 
   const load = useCallback(async () => {
     const {
@@ -48,6 +49,9 @@ export default function CoachingTrends() {
     // Personal one-on-ones are memory aids, not coaching data, and never feed AI.
     setSessions(((s.data || []) as CoachingSession[]).filter((x) => !x.private));
     setPeople(new Map((p.data || []).map((x) => [x.id as string, (x.full_name as string) || "Someone"])));
+    // The old tracker's tallies (no dates), counted in "All time". Separate so a missing table doesn't break the page.
+    const eh = await supabase.from("coaching_history").select("rep_id, topic, sessions");
+    setEarlier(((eh.data || []) as CoachingHistory[]).filter((x) => x.sessions > 0));
   }, [supabase]);
 
   useEffect(() => {
@@ -62,15 +66,18 @@ export default function CoachingTrends() {
     const cur = sessions.filter((s) => at(s) >= start);
     const prev = days ? sessions.filter((s) => at(s) >= prevStart && at(s) < start) : [];
     const active = topics.filter((t) => !t.archived);
+    const old = days ? [] : earlier;
     const rows = active
       .map((t) => {
         const mine = cur.filter((s) => s.topics.includes(t.name));
         const reps = new Map<string, number>();
         for (const s of mine) reps.set(s.rep_id, (reps.get(s.rep_id) ?? 0) + 1);
+        const fromOld = old.filter((x) => x.topic === t.name);
+        for (const x of fromOld) reps.set(x.rep_id, (reps.get(x.rep_id) ?? 0) + x.sessions);
         const commits = mine.flatMap((s) => s.commitments);
         return {
           topic: t,
-          n: mine.length,
+          n: mine.length + fromOld.reduce((s, x) => s + x.sessions, 0),
           prev: prev.filter((s) => s.topics.includes(t.name)).length,
           reps: [...reps].sort((a, b) => b[1] - a[1]),
           kept: commits.filter((c) => c.status === "kept").length,
@@ -78,9 +85,9 @@ export default function CoachingTrends() {
         };
       })
       .sort((a, b) => b.n - a.n);
-    const repIds = [...new Set(cur.map((s) => s.rep_id))].sort((a, b) => (people.get(a) || "").localeCompare(people.get(b) || ""));
-    return { cur, rows, repIds, max: Math.max(1, ...rows.map((r) => r.n)) };
-  }, [sessions, topics, days, people]);
+    const repIds = [...new Set([...cur.map((s) => s.rep_id), ...old.map((x) => x.rep_id)])].sort((a, b) => (people.get(a) || "").localeCompare(people.get(b) || ""));
+    return { cur, rows, repIds, max: Math.max(1, ...rows.map((r) => r.n)), oldTotal: old.reduce((s, x) => s + x.sessions, 0) };
+  }, [sessions, topics, days, people, earlier]);
 
   async function toThursday(name: string, reps: [string, number][]) {
     const who = reps.slice(0, 5).map(([id, n]) => `${people.get(id) ?? "?"} (${n})`).join(", ");
@@ -130,10 +137,11 @@ export default function CoachingTrends() {
         ))}
         <span className="hint" style={{ margin: "0 0 0 6px", alignSelf: "center" }}>
           {stats.cur.length} one-on-one{stats.cur.length === 1 ? "" : "s"}
+          {stats.oldTotal ? ` + ${stats.oldTotal} from the old tracker` : days && earlier.length ? " · All time includes the old tracker" : ""}
         </span>
       </div>
 
-      {!stats.cur.length ? (
+      {!stats.cur.length && !stats.oldTotal ? (
         <div className="card">
           <p style={{ margin: 0 }}>
             No one-on-ones saved in this period yet. Open a rep from <Link href="/admin/reps">Reps</Link> and use the One-on-one tab after you meet.
