@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   addDays,
   ATTENDANCE_LABEL,
@@ -22,6 +22,7 @@ import {
 } from "@/lib/training";
 import { MaterialPicker, useHub } from "./shared";
 import IdeaBox, { IDEA_CATEGORY } from "../IdeaBox";
+import LessonText from "./LessonText";
 
 type WeekForm = {
   topic_id: string | null;
@@ -244,14 +245,16 @@ export default function MasteryTab() {
   // ---------------------------------------------------------------- history
 
   const history = useMemo(() => {
-    const byTopic = new Map<string, { title: string; dates: { week: string; who: string | null; guest?: string }[] }>();
+    type Taught = { week: string; who: string | null; guest?: string; shown: string; notes: string | null };
+    const byTopic = new Map<string, { key: string; title: string; content: string | null; dates: Taught[] }>();
     for (const w of all) {
       if (w.status !== "published" || w.week_start > today()) continue;
       const key = (w.topic_id || w.title || "").toLowerCase();
       if (!key) continue;
       const title = w.title || topics.find((t) => t.id === w.topic_id)?.title || "Untitled";
-      const e = byTopic.get(key) || { title, dates: [] };
-      e.dates.push({ week: w.week_start, who: w.instructor_id, guest: w.day_instructors?.[GUEST_KEY] });
+      const t = topics.find((x) => x.id === w.topic_id);
+      const e = byTopic.get(key) || { key, title: t?.title || title, content: t?.description ?? null, dates: [] };
+      e.dates.push({ week: w.week_start, who: w.instructor_id, guest: w.day_instructors?.[GUEST_KEY], shown: w.title || "", notes: w.notes ?? null });
       byTopic.set(key, e);
     }
     const rows = topics
@@ -259,15 +262,17 @@ export default function MasteryTab() {
       .map((t) => {
         const h = byTopic.get(t.id.toLowerCase());
         byTopic.delete(t.id.toLowerCase());
-        return { title: t.title, dates: h?.dates ?? [] };
+        return { key: t.id.toLowerCase(), title: t.title, content: t.description, dates: h?.dates ?? [] };
       });
     for (const h of byTopic.values()) rows.push(h);
     const cutoff = historyDays ? addDays(today(), -historyDays) : null;
     // Only what's actually been taught (live or logged for a past week), newest first.
     return rows
       .filter((r) => r.dates.length && (!cutoff || r.dates[0].week < cutoff))
+      .map((r) => ({ ...r, dates: [...r.dates].sort((a, b) => b.week.localeCompare(a.week)) }))
       .sort((a, b) => b.dates[0].week.localeCompare(a.dates[0].week));
   }, [all, topics, historyDays]);
+  const [openTopic, setOpenTopic] = useState<string | null>(null);
 
   // Saved ideas that haven't been taught yet.
   const ideas = useMemo(
@@ -326,6 +331,17 @@ export default function MasteryTab() {
           </label>
         </div>
         {lastTaught && <p className="hint" style={{ marginTop: -6 }}>{lastTaught}</p>}
+        {(() => {
+          const c = topics.find((t) => t.id === form.topic_id)?.description;
+          return c ? (
+            <details style={{ margin: "0 0 8px" }}>
+              <summary className="hint" style={{ margin: 0, cursor: "pointer" }}>Show this topic&rsquo;s content</summary>
+              <div className="card" style={{ marginTop: 8 }}>
+                <LessonText text={c} />
+              </div>
+            </details>
+          ) : null;
+        })()}
         <div className="field">
           <span>Teaching all three classes</span>
           <div className="tr-chips" role="group">
@@ -458,7 +474,14 @@ export default function MasteryTab() {
               <div key={t.id} className="rx-file">
                 <div>
                   <b>{t.title}</b>
-                  {t.description && <div className="hint" style={{ margin: 0, whiteSpace: "pre-wrap" }}>{t.description}</div>}
+                  {t.description && (
+                    <details style={{ marginTop: 4 }}>
+                      <summary className="hint" style={{ margin: 0, cursor: "pointer" }}>Show the content</summary>
+                      <div style={{ marginTop: 8 }}>
+                        <LessonText text={t.description} />
+                      </div>
+                    </details>
+                  )}
                 </div>
                 <div style={{ whiteSpace: "nowrap" }}>
                   <button
@@ -666,14 +689,45 @@ export default function MasteryTab() {
                   </td>
                 </tr>
               )}
-              {history.map((h, i) => (
-                <tr key={i}>
-                  <td>{h.title}</td>
-                  <td>{h.dates[0] ? fmtDate(h.dates[0].week, { month: "short", day: "numeric", year: "numeric" }) : <span className="muted">Not yet</span>}</td>
-                  <td>{h.dates[0] ? h.dates[0].guest || firstName(personById(h.dates[0].who)) : "--"}</td>
-                  <td>{h.dates.length}</td>
-                </tr>
-              ))}
+              {history.map((h) => {
+                const open = openTopic === h.key;
+                return (
+                  <Fragment key={h.key}>
+                    <tr className={`click${open ? " open" : ""}`} onClick={() => setOpenTopic(open ? null : h.key)} title={open ? "Close" : "Open to see the content"}>
+                      <td>
+                        <span className="muted" style={{ display: "inline-block", width: 14 }}>{open ? "▾" : "▸"}</span>
+                        {h.title}
+                      </td>
+                      <td>{h.dates[0] ? fmtDate(h.dates[0].week, { month: "short", day: "numeric", year: "numeric" }) : <span className="muted">Not yet</span>}</td>
+                      <td>{h.dates[0] ? h.dates[0].guest || firstName(personById(h.dates[0].who)) : "--"}</td>
+                      <td>{h.dates.length}</td>
+                    </tr>
+                    {open && (
+                      <tr>
+                        <td colSpan={4} className="lesson-cell">
+                          {h.dates[0]?.shown && h.dates[0].shown !== h.title && (
+                            <p className="hint" style={{ marginTop: 0 }}>
+                              Reps saw it as: <b>{h.dates[0].shown}</b>
+                            </p>
+                          )}
+                          {h.content ? <LessonText text={h.content} /> : <p className="muted" style={{ margin: 0 }}>No content saved with this topic.</p>}
+                          {h.dates.some((d) => d.notes) && (
+                            <div style={{ marginTop: 12 }}>
+                              <p className="lesson-sub">Notes for the instructor</p>
+                              {h.dates.filter((d) => d.notes).map((d) => (
+                                <div key={d.week} style={{ marginBottom: 8 }}>
+                                  <span className="hint">{fmtDate(d.week, { month: "short", day: "numeric", year: "numeric" })}</span>
+                                  <LessonText text={d.notes!} />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
