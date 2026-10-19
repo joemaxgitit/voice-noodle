@@ -31,7 +31,22 @@ function LoginForm() {
       return;
     }
 
-    router.push(params.get("next") || "/");
+    // Managers and admins land on the manager home; reps on their training home.
+    // A link that sent them here (?next=) still wins.
+    let dest = params.get("next") || "/";
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) {
+      const [{ data: prof }, { data: pw }] = await Promise.all([
+        supabase.from("profiles").select("role, active").eq("id", user.id).maybeSingle(),
+        // Separate query: an old database without this column must not break sign-in.
+        supabase.from("profiles").select("must_change_password").eq("id", user.id).maybeSingle(),
+      ]);
+      if ((pw as { must_change_password?: boolean } | null)?.must_change_password) dest = "/account?first=1";
+      else if (!params.get("next") && prof?.active && ["admin", "manager"].includes(prof.role as string)) dest = "/admin/home";
+    }
+    router.push(dest);
     router.refresh();
   }
 
