@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addDays,
   ATTENDANCE_LABEL,
@@ -20,10 +20,10 @@ import {
   type MasteryWeek,
   type Person,
 } from "@/lib/training";
-import { MaterialPicker, useHub } from "./shared";
-import IdeaBox, { IDEA_CATEGORY } from "../IdeaBox";
+import { useHub } from "./shared";
+import { IDEA_CATEGORY } from "../IdeaBox";
 import LessonText from "./LessonText";
-import AfterClass, { RecordingPlayer } from "./AfterClass";
+import { RecordingPlayer } from "./AfterClass";
 
 type WeekForm = {
   topic_id: string | null;
@@ -33,6 +33,9 @@ type WeekForm = {
   material_ids: string[];
   notes: string;
   capacity: string;
+  content: string;
+  leave_behind: string;
+  recording: string;
 };
 
 const COLS = [
@@ -49,7 +52,9 @@ const ATT_SHORT: Record<Attendance, string> = { present: "P", absent: "A", excus
  * week's topic to three groups; each rep belongs to one day.
  */
 export default function MasteryTab() {
-  const { supabase, orgId, me, reps, topics, managers, personById, reloadLibrary } = useHub();
+  const { supabase, orgId, me, reps, topics, managers, personById } = useHub();
+  const topicsRef = useRef(topics);
+  topicsRef.current = topics;
   // Patrick, Kevin and Max teach; anyone else is typed in as a guest. Falls back to every manager if none match.
   const mycTeachers = managers.filter(isMycTeacher).length ? managers.filter(isMycTeacher) : managers;
   const [guestOn, setGuestOn] = useState(false);
@@ -91,6 +96,9 @@ export default function MasteryTab() {
       material_ids: wk?.material_ids ?? [],
       notes: wk?.notes ?? "",
       capacity: wk?.capacity ? String(wk.capacity) : "",
+      content: wk?.content ?? topicsRef.current.find((t) => t.id === wk?.topic_id)?.description ?? "",
+      leave_behind: wk?.leave_behind ?? "",
+      recording: wk?.recordings?.find((r) => r.link)?.link ?? "",
     });
     setAll((a.data || []) as MasteryWeek[]);
     setRegular(new Map((r.data || []).map((x) => [x.rep_id as string, x.day as number])));
@@ -127,12 +135,16 @@ export default function MasteryTab() {
       material_ids: form.material_ids,
       notes: form.notes.trim() || null,
       capacity: Number(form.capacity) || null,
+      content: form.content.trim() || null,
+      leave_behind: form.leave_behind.trim() || null,
+      recordings: form.recording.trim() ? [{ link: form.recording.trim(), name: "Recording", added_at: new Date().toISOString() }] : [],
       status: publish === undefined ? row?.status ?? "draft" : publish ? "published" : "draft",
       updated_by: me,
       updated_at: new Date().toISOString(),
     };
+    if (payload.recordings.length && !/^https?:\/\//i.test(form.recording.trim())) return setError("Paste the full recording link, starting with https://");
     const { error } = await supabase.from("mastery_weeks").upsert(payload, { onConflict: "org_id,week_start" });
-    if (error) return setError(error.message);
+    if (error) return setError(/content|leave_behind|recordings/.test(error.message) ? `${error.message} -- run supabase/myc-after-class.sql first.` : error.message);
     setSaved(publish ? "Published -- reps can see this week's class." : "Saved.");
     setTimeout(() => setSaved(""), 2500);
     load();
@@ -246,7 +258,7 @@ export default function MasteryTab() {
   // ---------------------------------------------------------------- history
 
   const history = useMemo(() => {
-    type Taught = { week: string; who: string | null; guest?: string; shown: string; notes: string | null; recordings: NonNullable<MasteryWeek["recordings"]>; leave: string | null };
+    type Taught = { week: string; who: string | null; guest?: string; shown: string; notes: string | null; content: string | null; recordings: NonNullable<MasteryWeek["recordings"]>; leave: string | null };
     const byTopic = new Map<string, { key: string; title: string; content: string | null; dates: Taught[] }>();
     for (const w of all) {
       if (w.status !== "published" || w.week_start > today()) continue;
@@ -255,7 +267,7 @@ export default function MasteryTab() {
       const title = w.title || topics.find((t) => t.id === w.topic_id)?.title || "Untitled";
       const t = topics.find((x) => x.id === w.topic_id);
       const e = byTopic.get(key) || { key, title: t?.title || title, content: t?.description ?? null, dates: [] };
-      e.dates.push({ week: w.week_start, who: w.instructor_id, guest: w.day_instructors?.[GUEST_KEY], shown: w.title || "", notes: w.notes ?? null, recordings: w.recordings ?? [], leave: w.leave_behind ?? null });
+      e.dates.push({ week: w.week_start, who: w.instructor_id, guest: w.day_instructors?.[GUEST_KEY], shown: w.title || "", notes: w.notes ?? null, content: w.content ?? null, recordings: w.recordings ?? [], leave: w.leave_behind ?? null });
       byTopic.set(key, e);
     }
     const rows = topics
@@ -275,11 +287,7 @@ export default function MasteryTab() {
   }, [all, topics, historyDays]);
   const [openTopic, setOpenTopic] = useState<string | null>(null);
 
-  // Saved ideas that haven't been taught yet.
-  const ideas = useMemo(
-    () => topics.filter((t) => t.category === IDEA_CATEGORY && !t.archived && !all.some((w) => w.topic_id === t.id && w.status === "published")),
-    [topics, all],
-  );
+
 
   const mycTopics = useMemo(
     () => topics.filter((t) => !t.archived && (t.category === IDEA_CATEGORY || all.some((w) => w.topic_id === t.id))),
@@ -409,22 +417,18 @@ export default function MasteryTab() {
             ))}
           </div>
         </details>
-        <div className="tr-two">
-          <div className="field">
-            <span>Materials</span>
-            <MaterialPicker value={form.material_ids} onChange={(v) => setForm({ ...form, material_ids: v })} />
-          </div>
-          <div>
-            <label className="field">
-              <span>Seats per class (optional)</span>
-              <input type="number" min={1} value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} />
-            </label>
-            <label className="field">
-              <span>Notes for the instructor</span>
-              <textarea rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} style={{ fontFamily: "var(--font)" }} />
-            </label>
-          </div>
-        </div>
+        <label className="field">
+          <span>Content</span>
+          <textarea rows={8} value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Paste the class content. It's kept word for word." style={{ fontFamily: "var(--font)" }} />
+        </label>
+        <label className="field">
+          <span>Leave behind (what goes in the reps&rsquo; chat after class)</span>
+          <textarea rows={5} value={form.leave_behind} onChange={(e) => setForm({ ...form, leave_behind: e.target.value })} style={{ fontFamily: "var(--font)" }} />
+        </label>
+        <label className="field">
+          <span>Recording link (optional)</span>
+          <input value={form.recording} onChange={(e) => setForm({ ...form, recording: e.target.value })} placeholder="Paste the Teams recording link" />
+        </label>
         <div className="row">
           <button onClick={() => saveWeek()}>Save</button>
           {row?.status !== "published" ? (
@@ -454,59 +458,6 @@ export default function MasteryTab() {
           ))}
         </div>
       )}
-
-      {/* ---------- after class ---------- */}
-      <div className="rp-section" style={{ marginTop: 22 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 17 }}>After class</h2>
-        <AfterClass supabase={supabase} orgId={orgId} me={me} week={week} recordings={row?.recordings ?? []} leaveBehind={row?.leave_behind ?? null} onSaved={load} />
-      </div>
-
-      {/* ---------- ideas ---------- */}
-      <div className="rp-section" style={{ marginTop: 22 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 17 }}>Ideas for future weeks</h2>
-        <div className="card" style={{ display: "grid", gap: 10 }}>
-          {ideas.length === 0 ? (
-            <p className="hint" style={{ margin: 0 }}>No ideas saved yet. Jot one down below, or use &ldquo;Log an idea&rdquo; on Home.</p>
-          ) : (
-            ideas.map((t) => (
-              <div key={t.id} className="rx-file">
-                <div>
-                  <b>{t.title}</b>
-                  {t.description && (
-                    <details style={{ marginTop: 4 }}>
-                      <summary className="hint" style={{ margin: 0, cursor: "pointer" }}>Show the content</summary>
-                      <div style={{ marginTop: 8 }}>
-                        <LessonText text={t.description} />
-                      </div>
-                    </details>
-                  )}
-                </div>
-                <div style={{ whiteSpace: "nowrap" }}>
-                  <button
-                    className="tr-sm"
-                    onClick={() => {
-                      setForm({ ...form, topic_id: t.id, title: t.title });
-                      window.scrollTo({ top: 0, behavior: "smooth" });
-                    }}
-                  >
-                    Use this week
-                  </button>{" "}
-                  <button
-                    className="tr-sm"
-                    onClick={async () => {
-                      await supabase.from("training_topics").update({ archived: true }).eq("id", t.id);
-                      await reloadLibrary();
-                    }}
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
-          <IdeaBox supabase={supabase} orgId={orgId} me={me} initial="myc" fixed onSaved={() => void reloadLibrary()} />
-        </div>
-      </div>
 
       {/* ---------- roster ---------- */}
       <div className="rp-section" style={{ marginTop: 22 }}>
@@ -703,44 +654,27 @@ export default function MasteryTab() {
                     {open && (
                       <tr>
                         <td colSpan={4} className="lesson-cell">
-                          {h.dates[0]?.shown && h.dates[0].shown !== h.title && (
-                            <p className="hint" style={{ marginTop: 0 }}>
-                              Reps saw it as: <b>{h.dates[0].shown}</b>
-                            </p>
-                          )}
-                          {h.content ? <LessonText text={h.content} /> : <p className="muted" style={{ margin: 0 }}>No content saved with this topic.</p>}
-                          {h.dates
-                            .filter((d) => d.recordings.length || d.leave)
-                            .map((d) => (
-                              <div key={`after-${d.week}`} style={{ marginTop: 14 }}>
-                                <p className="lesson-sub">After class &middot; week of {fmtDate(d.week, { month: "short", day: "numeric", year: "numeric" })}</p>
-                                <div style={{ display: "grid", gap: 8, marginBottom: 8 }}>
-                                  {d.recordings.map((r) => (
-                                    <div key={r.added_at + r.name}>
-                                      {r.day && <small className="muted">{r.day} </small>}
-                                      <RecordingPlayer supabase={supabase} rec={r} />
-                                    </div>
-                                  ))}
-                                </div>
-                                {d.leave && (
-                                  <div className="card" style={{ background: "var(--ink-3)" }}>
-                                    <p className="hint" style={{ marginTop: 0 }}>Leave behind</p>
-                                    <LessonText text={d.leave} />
+                          {(() => {
+                            const content = h.dates.find((x) => x.content)?.content || h.content;
+                            const leave = h.dates.find((x) => x.leave)?.leave;
+                            const rec = h.dates.flatMap((x) => x.recordings)[0];
+                            return (
+                              <>
+                                {rec && (
+                                  <p style={{ marginTop: 0 }}>
+                                    <RecordingPlayer supabase={supabase} rec={rec} />
+                                  </p>
+                                )}
+                                {content ? <LessonText text={content} /> : <p className="muted" style={{ margin: 0 }}>No content saved for this class.</p>}
+                                {leave && (
+                                  <div className="card" style={{ background: "var(--ink-3)", marginTop: 12 }}>
+                                    <p className="lesson-sub" style={{ marginTop: 0 }}>Leave behind</p>
+                                    <LessonText text={leave} />
                                   </div>
                                 )}
-                              </div>
-                            ))}
-                          {h.dates.some((d) => d.notes) && (
-                            <div style={{ marginTop: 12 }}>
-                              <p className="lesson-sub">Notes for the instructor</p>
-                              {h.dates.filter((d) => d.notes).map((d) => (
-                                <div key={d.week} style={{ marginBottom: 8 }}>
-                                  <span className="hint">{fmtDate(d.week, { month: "short", day: "numeric", year: "numeric" })}</span>
-                                  <LessonText text={d.notes!} />
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                              </>
+                            );
+                          })()}
                         </td>
                       </tr>
                     )}

@@ -143,6 +143,7 @@ export type MasteryWeek = {
   status: "draft" | "published";
   recordings?: { path?: string; link?: string; name: string; size?: number; day?: string; added_at: string }[] | null;
   leave_behind?: string | null;
+  content?: string | null;
 };
 
 export type Attendance = "present" | "absent" | "excused" | "makeup_required" | "makeup_done";
