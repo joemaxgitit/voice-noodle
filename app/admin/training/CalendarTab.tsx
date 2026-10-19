@@ -52,7 +52,7 @@ const blank = (date: string, start = "09:00"): Draft => ({
   material_ids: [],
 });
 
-/** The combined calendar: general and new-hire training, plus Master Your Craft and the Thursday meeting. */
+/** The training calendar: new-hire and general training only. */
 export default function CalendarTab({ openTab }: { openTab: (t: string) => void }) {
   const { supabase, orgId, me, topics, managers, personById } = useHub();
   const [view, setView] = useState<"week" | "month">("week");
@@ -107,16 +107,7 @@ export default function CalendarTab({ openTab }: { openTab: (t: string) => void 
       const out: Item[] = events
         .filter((e) => e.event_date === date)
         .map((ev) => ({ key: ev.id, kind: "event" as const, date, start: ev.start_time.slice(0, 5), minutes: ev.minutes, ev }));
-      const wd = weekdayOf(date);
-      if (wd <= 3) {
-        const week = weeks.find((w) => w.week_start === mondayOf(date)) ?? null;
-        out.push({ key: `myc-${date}`, kind: "mastery", date, start: MASTERY.start, minutes: MASTERY.minutes, week, day: wd });
-      }
-      if (wd === 4) {
-        const meeting = meetings.find((x) => x.meeting_date === date) ?? null;
-        const total = meeting ? items.filter((i) => i.meeting_id === meeting.id).reduce((s, i) => s + i.minutes, 0) : 0;
-        out.push({ key: `mtg-${date}`, kind: "meeting", date, start: meeting?.start_time.slice(0, 5) ?? MEETING.start, minutes: total || MEETING.target, meeting, total });
-      }
+      // New-hire training only: Master Your Craft and the Thursday meeting live on their own pages.
       return out.sort((a, b) => minutesOf(a.start) - minutesOf(b.start));
     },
     [events, weeks, meetings, items]
@@ -130,19 +121,6 @@ export default function CalendarTab({ openTab }: { openTab: (t: string) => void 
     for (const e of events) {
       if (e.instructor_ids.includes(me))
         out.push({ key: `${e.event_date} ${e.start_time}`, text: `${fmtDate(e.event_date)} ${fmtTime(e.start_time)} -- ${e.title}` });
-    }
-    for (const w of weeks) {
-      if (w.instructor_id === me)
-        out.push({ key: `${w.week_start} 13:30`, text: `Master Your Craft, Mon-Wed 1:30 -- ${w.title || "topic not set"}` });
-    }
-    for (const i of items) {
-      if (i.presenter_id === me) {
-        const mt = meetings.find((x) => x.id === i.meeting_id);
-        out.push({
-          key: `${mt?.meeting_date ?? ""} 10:00`,
-          text: `Thursday meeting -- ${i.title} (${i.minutes} min${i.prep === "ready" ? ", ready" : ", needs prep"})`,
-        });
-      }
     }
     return out.sort((a, b) => a.key.localeCompare(b.key)).map((x) => x.text);
   }, [events, weeks, items, meetings, me]);
@@ -468,8 +446,6 @@ export default function CalendarTab({ openTab }: { openTab: (t: string) => void 
 
       <div className="tr-legend">
         <span><i style={{ background: "var(--tone)" }} />Training</span>
-        <span><i style={{ background: "var(--live)" }} />Master Your Craft</span>
-        <span><i style={{ background: "var(--ok)" }} />Thursday meeting</span>
         <span><i style={{ border: "1px dashed var(--muted)" }} />Draft -- reps can&rsquo;t see it yet</span>
       </div>
 
