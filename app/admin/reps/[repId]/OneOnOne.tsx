@@ -67,7 +67,10 @@ export default function OneOnOne({ ctx }: { ctx: Ctx }) {
       kpi.good.push(...hl.good.slice(0, 3).map((m) => `${m.label} ${fmtChange(m)}`));
       kpi.bad.push(...hl.bad.slice(0, 3).map((m) => `${m.label} ${fmtChange(m)}`));
     }
+    const days = h.daily.filter((d) => new Date(`${d.day}T12:00:00`).getTime() >= from);
+    const rotation = days.length ? { made: days.filter((d) => d.override_made ?? d.made).length, n: days.length, missed: days.filter((d) => !(d.override_made ?? d.made)).map((d) => d.day) } : null;
     return {
+      rotation,
       real: after.filter((c) => c.source !== "roleplay").length,
       practice: after.filter((c) => c.source === "roleplay").length,
       slp: avg(after),
@@ -228,6 +231,18 @@ export default function OneOnOne({ ctx }: { ctx: Ctx }) {
                 </>
               )}
             </li>
+            {since.rotation && (
+              <li>
+                Rotation: made it <b>{since.rotation.made} of {since.rotation.n}</b> days
+                {since.rotation.missed.length > 0 && (
+                  <span className="muted">
+                    {" "}
+                    &middot; missed {since.rotation.missed.slice(0, 4).map((d) => new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: "short" })).join(", ")}
+                    {since.rotation.missed.length > 4 ? "…" : ""}
+                  </span>
+                )}
+              </li>
+            )}
             {since.openCards.map((c) => (
               <li key={c.id}>
                 Open {CARD_KIND[c.kind as keyof typeof CARD_KIND]?.label.toLowerCase() ?? "card"}: <b>{c.skill}</b> &middot;{" "}

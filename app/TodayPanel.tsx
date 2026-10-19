@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import MyCards from "./training/MyCards";
+import RotationCard from "./RotationCard";
 
 type Mod = { id: string; title: string; total: number; complete: number };
 
@@ -16,7 +17,9 @@ export default function TodayPanel({
   resume,
   roleplayOn,
   openPractice,
+  userId,
 }: {
+  userId: string;
   supabase: SupabaseClient;
   es: boolean;
   resume: Mod | null;
@@ -41,6 +44,8 @@ export default function TodayPanel({
           </section>
         }
       />
+
+      {userId && <RotationCard supabase={supabase} userId={userId} es={es} />}
 
       <section className="my-section">
         <h2>{es ? "Práctica rápida" : "Quick practice"}</h2>

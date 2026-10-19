@@ -22,6 +22,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
     title: "Team",
     items: [
       { href: "/admin/reps", label: "Reps", icon: "people", match: (p) => p.startsWith("/admin/reps") },
+      { href: "/admin/rotation", label: "Rotation", icon: "rotate", match: (p) => p.startsWith("/admin/rotation") },
       { href: "/admin/coaching", label: "Coaching trends", icon: "chart", match: (p) => p.startsWith("/admin/coaching") },
       { href: "/admin/reports", label: "Sales reports", icon: "table", match: (p) => p.startsWith("/admin/reports") },
     ],
@@ -67,6 +68,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
 
 const ICONS = {
   home: "M3 11l9-7 9 7M5 10v10h5v-6h4v6h5V10",
+  rotate: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7",
   dollar: "M12 3v18M16.5 7.5c-.8-1.2-2.4-2-4.5-2-2.6 0-4.2 1.3-4.2 3s1.6 2.6 4.2 3 4.5 1.4 4.5 3.2-1.9 3.3-4.5 3.3c-2.2 0-3.9-.9-4.7-2.3",
   table: "M4 4h16v16H4zM4 9h16M4 14h16M10 9v11",
   cap: "M2 9l10-5 10 5-10 5zM6 11v5c3 2.5 9 2.5 12 0v-5M22 9v6",

@@ -268,7 +268,7 @@ export default function HomeView() {
 
       {error && <div className="error">{error}</div>}
 
-      {tab === "today" && <TodayPanel supabase={supabase} es={es} resume={resume} roleplayOn={roleplayOn} openPractice={() => setTab("practice")} />}
+      {tab === "today" && <TodayPanel supabase={supabase} userId={userId} es={es} resume={resume} roleplayOn={roleplayOn} openPractice={() => setTab("practice")} />}
       {tab === "progress" && userId && <ProgressPanel supabase={supabase} userId={userId} es={es} linesDone={done.size} />}
       {tab === "practice" && (
         <>

@@ -77,6 +77,24 @@ export default function Overview({ ctx }: { ctx: Ctx }) {
           <div className="v">{practice.length}</div>
           <div className="d">{practice.filter((c) => t(c) >= now - 30 * DAY).length} in the last 30 days</div>
         </div>
+        {h.daily.length > 0 && (() => {
+          const last20 = h.daily.slice(0, 20);
+          const made = last20.filter((d) => d.override_made ?? d.made).length;
+          let streak = 0;
+          for (const d of h.daily) {
+            if (d.override_made ?? d.made) streak++;
+            else break;
+          }
+          return (
+            <div className="rx-tile">
+              <div className="k">Rotation</div>
+              <div className="v">
+                {made}/{last20.length}
+              </div>
+              <div className="d">{streak > 1 ? `${streak} days in a row` : `last ${last20.length} working days`}</div>
+            </div>
+          );
+        })()}
         <div className="rx-tile">
           <div className="k">Knowledge checks</div>
           <div className="v">{quizPassRate === null ? "--" : `${quizPassRate}%`}</div>

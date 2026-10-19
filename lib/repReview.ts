@@ -251,6 +251,22 @@ export async function buildReviewInput(opts: {
           .join("\n")
       : "(none)",
     "",
+    "DAILY ACTIVITY AND ROTATION (from the nightly Sales Dashboard; 1 point makes rotation: talk 2.5h=0.5/4h=1, calls 60=0.5/90=1, 0.5 per deal):",
+    h.daily.filter((d) => inWindow(d.day)).length
+      ? (() => {
+          const ds = h.daily.filter((d) => inWindow(d.day));
+          const made = ds.filter((d) => d.override_made ?? d.made).length;
+          const avg = (f: (d: (typeof ds)[number]) => number | null) => {
+            const xs = ds.map(f).filter((x): x is number => x !== null);
+            return xs.length ? Math.round((xs.reduce((s, x) => s + x, 0) / xs.length) * 10) / 10 : null;
+          };
+          return [
+            `Made rotation ${made} of ${ds.length} working days; average ${avg((d) => d.talk_hours)}h talk, ${avg((d) => d.calls)} calls, ${avg((d) => d.deals)} deals a day.`,
+            ...ds.slice(0, 40).map((d) => `${d.day}: ${d.talk_hours ?? "-"}h talk, ${d.calls ?? "-"} calls, ${d.deals ?? "-"} deals, ${d.points} pt ${(d.override_made ?? d.made) ? "MADE" : "missed"}`),
+          ].join("\n");
+        })()
+      : "(no daily numbers yet)",
+    "",
     "TRAINING CARDS SENT (one behavior each; did the behavior then show up in the calls after?):",
     h.cards.filter((c) => !since || (c.sent_at ?? "") >= since).length
       ? h.cards

@@ -123,6 +123,9 @@ export default function ManagerHome() {
       <h1>{name ? `Hi ${name}` : "Home"}</h1>
 
       <div className="rx-actions" style={{ margin: "6px 0 16px" }}>
+        <Link className="btn primary" href="/admin/rotation" style={{ textDecoration: "none" }}>
+          Nightly close: rotation
+        </Link>
         <Link className="btn" href="/admin/calls" style={{ textDecoration: "none" }}>
           Upload a call
         </Link>

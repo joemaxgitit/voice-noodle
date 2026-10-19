@@ -107,7 +107,10 @@ export type CardLite = {
   signed_name: string | null;
 };
 
+export type DailyLite = { day: string; talk_hours: number | null; calls: number | null; deals: number | null; points: number; made: boolean; override_made: boolean | null };
+
 export type RepHistory = {
+  daily: DailyLite[];
   cards: CardLite[];
   sessions: CoachingSession[];
   calls: HistCall[];
@@ -169,7 +172,7 @@ export async function loadRepHistory(
     .limit(opts.callLimit ?? 300);
   if (opts.since) callQ = callQ.gte("created_at", opts.since);
 
-  const [calls, notes, files, reviews, quizzes, completions, attendance, reports, kpiRows, prefs, personas, mats, cards, sessions] = await Promise.all([
+  const [calls, notes, files, reviews, quizzes, completions, attendance, reports, kpiRows, prefs, personas, mats, cards, sessions, daily] = await Promise.all([
     callQ,
     supabase.from("rep_notes").select("*").eq("rep_id", repId).order("note_date", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("rep_files").select("*").eq("rep_id", repId).order("created_at", { ascending: false }),
@@ -189,10 +192,22 @@ export async function loadRepHistory(
       .in("status", ["sent", "closed"])
       .order("sent_at", { ascending: false }),
     supabase.from("coaching_sessions").select("*").eq("rep_id", repId).order("session_date", { ascending: false }).order("created_at", { ascending: false }),
+    supabase
+      .from("rep_daily")
+      .select("day, talk_hours, calls, deals, points, made, override_made")
+      .eq("rep_id", repId)
+      .order("day", { ascending: false })
+      .limit(130),
   ]);
 
   const matById = new Map(rows<{ id: string; title: string; kind: string }>(mats, [], "materials").map((m) => [m.id, m]));
   const history: RepHistory = {
+    daily: rows<DailyLite>(daily, [], "daily").map((d) => ({
+      ...d,
+      talk_hours: d.talk_hours === null ? null : Number(d.talk_hours),
+      deals: d.deals === null ? null : Number(d.deals),
+      points: Number(d.points),
+    })),
     cards: rows<CardLite>(cards, [], "cards"),
     sessions: rows<CoachingSession>(sessions, [], "sessions"),
     calls: rows<HistCall>(calls, errors, "calls"),
