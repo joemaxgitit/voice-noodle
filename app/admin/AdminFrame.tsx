@@ -173,10 +173,6 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
             <Icon name="key" />
             Change password
           </Link>
-          <Link href="/proedgesolutions?view=rep" className="af-link">
-            <Icon name="back" />
-            Rep view
-          </Link>
         </div>
       </aside>
 
