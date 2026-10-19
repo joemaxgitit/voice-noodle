@@ -24,6 +24,15 @@ const saveName = (name: string) => {
     localStorage.setItem(NAME_KEY, JSON.stringify({ day: todayIso(), name }));
   } catch {}
 };
+// "If Two a Day" is a once-or-twice-a-month play, so it's off unless switched on.
+const TWO_KEY = "vn.dealclip.two";
+const loadTwo = () => {
+  try {
+    return localStorage.getItem(TWO_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /**
@@ -41,7 +50,12 @@ export default function DealClip() {
   const [title, setTitle] = useState("");
   const nameRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => setTitle(loadName()), []);
+  const [showTwo, setShowTwo] = useState(false);
+
+  useEffect(() => {
+    setTitle(loadName());
+    setShowTwo(loadTwo());
+  }, []);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [over, setOver] = useState(false);
@@ -83,8 +97,8 @@ export default function DealClip() {
   const left = Math.max(0, total - gone);
   const pct = (r: number | null) => (r === null ? "--" : `${Math.round(r * 100)}%`);
 
-  const COLS = ["Deals", "Closing Ratio", "Deal Clip", "Days Remaining", "If Two a Day"];
-  const cells = (r: (typeof ranked)[number]) => [String(r.deals), pct(r.ratio), round1(r.clip), String(left), round1(r.two)];
+  const COLS = ["Deals", "Closing Ratio", "Deal Clip", "Days Remaining", ...(showTwo ? ["If Two a Day"] : [])];
+  const cells = (r: (typeof ranked)[number]) => [String(r.deals), pct(r.ratio), round1(r.clip), String(left), ...(showTwo ? [round1(r.two)] : [])];
 
   /** Copies the clip as a table (for chats that take one) with a plain-text version underneath for the rest. */
   async function copy() {
@@ -94,7 +108,7 @@ export default function DealClip() {
     }
     setError("");
     const name = title.trim();
-    const text = [name, `Through ${fmtDay(through, true)} · ${left} work days left`, "", ...ranked.map((r, i) => `${i + 1}. ${r.name}: ${r.deals} deals · ${pct(r.ratio)} · clip ${round1(r.clip)} · two a day ${round1(r.two)}`)].join("\n");
+    const text = [name, `Through ${fmtDay(through, true)} · ${left} work days left`, "", ...ranked.map((r, i) => `${i + 1}. ${r.name}: ${r.deals} deals · ${pct(r.ratio)} · clip ${round1(r.clip)}${showTwo ? ` · two a day ${round1(r.two)}` : ""}`)].join("\n");
     const td = "border:1px solid #bbb;padding:4px 8px";
     const html =
       `<table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px">` +
@@ -116,7 +130,7 @@ export default function DealClip() {
       <h1>Deal Clip</h1>
       <p className="muted" style={{ maxWidth: "66ch" }}>
         Each morning, drop last night&rsquo;s month-to-date Sales Dashboard. The team is ranked by deals with a month-end projection. The clip is
-        deals per work day so far × work days in the month. &ldquo;Two a day&rdquo; is where they finish with 2 deals a day from here. Only managers
+        deals per work day so far × work days in the month. Switch on &ldquo;If Two a Day&rdquo; when you want it: deals so far + 2 per work day left. Only managers
         see this page and nothing is saved.
       </p>
       {error && <div className="error">{error}</div>}
@@ -169,7 +183,22 @@ export default function DealClip() {
             </button>
           </div>
 
-          <div className="rx-scroll" style={{ marginTop: 14 }}>
+          <label className="hint" style={{ display: "inline-flex", gap: 6, alignItems: "center", margin: "10px 0 0" }}>
+            <input
+              type="checkbox"
+              checked={showTwo}
+              onChange={(e) => {
+                setShowTwo(e.target.checked);
+                try {
+                  localStorage.setItem(TWO_KEY, e.target.checked ? "1" : "0");
+                } catch {}
+              }}
+              style={{ width: "auto" }}
+            />
+            Show &ldquo;If Two a Day&rdquo;
+          </label>
+
+          <div className="rx-scroll" style={{ marginTop: 10 }}>
             <table className="rx-table dc-table">
               <thead>
                 <tr>
