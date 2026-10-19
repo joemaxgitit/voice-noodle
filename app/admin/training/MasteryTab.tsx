@@ -281,12 +281,17 @@ export default function MasteryTab() {
     [topics, all],
   );
 
+  const mycTopics = useMemo(
+    () => topics.filter((t) => !t.archived && (t.category === IDEA_CATEGORY || all.some((w) => w.topic_id === t.id))),
+    [topics, all],
+  );
+
   const lastTaught = useMemo(() => {
     if (!form) return null;
     const key = form.topic_id || form.title.trim().toLowerCase();
     if (!key) return null;
     const past = all.filter((w) => w.week_start !== week && w.status === "published" && (w.topic_id === form.topic_id && form.topic_id ? true : (w.title || "").toLowerCase() === form.title.trim().toLowerCase() && !!form.title.trim()));
-    if (!past.length) return "Not taught before.";
+    if (!past.length) return null;
     const p = past[0];
     return `Last taught the week of ${fmtDate(p.week_start, { month: "short", day: "numeric", year: "numeric" })} by ${p.day_instructors?.[GUEST_KEY] || firstName(personById(p.instructor_id))} · ${past.length} time${past.length === 1 ? "" : "s"} in all.`;
   }, [form, all, week, personById]);
@@ -310,39 +315,25 @@ export default function MasteryTab() {
 
       {/* ---------- the week ---------- */}
       <div className="card" style={{ display: "grid", gap: 4 }}>
-        <div className="tr-two">
-          <label className="field">
-            <span>Topic</span>
-            <select
-              value={form.topic_id ?? ""}
-              onChange={(e) => {
-                const t = topics.find((x) => x.id === e.target.value);
-                setForm({ ...form, topic_id: t?.id ?? null, title: t?.title ?? form.title });
-              }}
-            >
-              <option value="">-- pick a topic, or type one below --</option>
-              {topics.filter((t) => !t.archived).map((t) => (
-                <option key={t.id} value={t.id}>{t.title}</option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Title reps see</span>
-            <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Handling Objections" />
-          </label>
-        </div>
+        <label className="field">
+          <span>Topic</span>
+          <input
+            list="myc-topics"
+            value={form.title}
+            placeholder="Type the topic, or pick a saved idea"
+            onChange={(e) => {
+              const title = e.target.value;
+              const t = mycTopics.find((x) => x.title.trim().toLowerCase() === title.trim().toLowerCase());
+              setForm({ ...form, title, topic_id: t?.id ?? null });
+            }}
+          />
+          <datalist id="myc-topics">
+            {mycTopics.map((t) => (
+              <option key={t.id} value={t.title} />
+            ))}
+          </datalist>
+        </label>
         {lastTaught && <p className="hint" style={{ marginTop: -6 }}>{lastTaught}</p>}
-        {(() => {
-          const c = topics.find((t) => t.id === form.topic_id)?.description;
-          return c ? (
-            <details style={{ margin: "0 0 8px" }}>
-              <summary className="hint" style={{ margin: 0, cursor: "pointer" }}>Show this topic&rsquo;s content</summary>
-              <div className="card" style={{ marginTop: 8 }}>
-                <LessonText text={c} />
-              </div>
-            </details>
-          ) : null;
-        })()}
         <div className="field">
           <span>Teaching all three classes</span>
           <div className="tr-chips" role="group">
