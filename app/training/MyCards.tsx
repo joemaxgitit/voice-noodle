@@ -6,15 +6,18 @@ import { CARD_KIND, type Card } from "@/lib/cards";
 import CardView from "./CardView";
 
 /** The rep's open training cards, newest first, with past ones folded away. */
-export default function MyCards({ supabase, openOnly, empty }: { supabase: SupabaseClient; openOnly?: boolean; empty?: ReactNode }) {
+export default function MyCards({ supabase, openOnly, empty, repId }: { supabase: SupabaseClient; openOnly?: boolean; empty?: ReactNode; repId?: string }) {
   const [cards, setCards] = useState<Card[] | null>(null);
 
   const load = useCallback(async () => {
-    const { data } = await supabase.from("training_cards").select("*").order("sent_at", { ascending: false }).limit(40);
+    // A manager looking at a rep's view passes repId: show that rep's cards and don't mark them seen.
+    let q = supabase.from("training_cards").select("*").in("status", ["sent", "closed"]).order("sent_at", { ascending: false }).limit(40);
+    if (repId) q = q.eq("rep_id", repId);
+    const { data } = await q;
     const list = (data || []) as Card[];
     setCards(list);
-    for (const c of list) if (c.status === "sent" && !c.read_at) void supabase.rpc("training_card_seen", { p_card: c.id });
-  }, [supabase]);
+    if (!repId) for (const c of list) if (c.status === "sent" && !c.read_at) void supabase.rpc("training_card_seen", { p_card: c.id });
+  }, [supabase, repId]);
 
   useEffect(() => {
     void load();

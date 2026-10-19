@@ -18,8 +18,11 @@ export default function TodayPanel({
   roleplayOn,
   openPractice,
   userId,
+  viewing,
 }: {
   userId: string;
+  /** A manager looking at this rep's view. */
+  viewing?: boolean;
   supabase: SupabaseClient;
   es: boolean;
   resume: Mod | null;
@@ -30,6 +33,7 @@ export default function TodayPanel({
     <div>
       <MyCards
         supabase={supabase}
+        repId={viewing ? userId : undefined}
         openOnly
         empty={
           <section className="my-section">
