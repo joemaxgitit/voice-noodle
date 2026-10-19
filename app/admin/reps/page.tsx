@@ -30,6 +30,8 @@ export default function Reps() {
   const [notes, setNotes] = useState<Map<string, number>>(new Map());
   const [reviews, setReviews] = useState<ReviewLite[]>([]);
   const [showAll, setShowAll] = useState(false);
+  // Every lost client on record (once each), for the 3-month look back.
+  const [cancels, setCancels] = useState<{ rep_id: string; requested: string; stage: string }[]>([]);
   // Latest Friday retention lookback, per rep.
   const [ret, setRet] = useState<{ end: string; byRep: Map<string, { rate: number | null; prior: number | null; pos: number; reasons: Record<string, number> }> } | null>(null);
   const [error, setError] = useState("");
@@ -64,6 +66,8 @@ export default function Reps() {
     setReviews((v.data || []) as ReviewLite[]);
     // Separate, so a database without the retention tables still loads this page.
     const lr = await supabase.from("retention_reports").select("id, period_end").order("period_end", { ascending: false }).limit(1).maybeSingle();
+    const rc = await supabase.from("retention_cancels").select("rep_id, requested, stage").not("rep_id", "is", null).limit(20000);
+    setCancels((rc.data || []) as { rep_id: string; requested: string; stage: string }[]);
     if (lr.data) {
       const rr = await supabase.from("retention_reps").select("rep_id, before1_rate, prior_rate, pos_lost, pos_reasons").eq("report_id", lr.data.id).not("rep_id", "is", null);
       setRet({
@@ -94,6 +98,27 @@ export default function Reps() {
     return { cur, prev, curRows: rowsOf(cur), prevRows: rowsOf(prev) };
   }, [reports, kpiRows]);
 
+  // 3-month look back: clients who cancelled (before or after the 1st payment) in the
+  // 90 days up to the latest lookback, against the rep's deals in the last 3 report months.
+  const look = useMemo(() => {
+    if (!cancels.length) return null;
+    const end = ret?.end ?? new Date().toISOString().slice(0, 10);
+    const start = new Date(new Date(`${end}T12:00:00`).getTime() - 90 * DAY).toISOString().slice(0, 10);
+    const byGroup = monthlyReports(reports.filter((r) => r.kind === "sales_dashboard" || r.kind === "monthly_report"));
+    const g = byGroup.get("sales_dashboard") ?? byGroup.get("monthly_report");
+    const months = g ? [...g.keys()].filter((m) => m <= end.slice(0, 7)).sort().slice(-3) : [];
+    const deals = new Map<string, number>();
+    for (const m of months) {
+      const rep = g!.get(m)!;
+      for (const row of kpiRows.filter((x) => x.report_id === rep.id && x.rep_id)) {
+        const d = headlineValue(row, rep.columns, "deals");
+        if (typeof d?.v === "number") deals.set(row.rep_id!, (deals.get(row.rep_id!) ?? 0) + d.v);
+      }
+    }
+    const inWin = cancels.filter((c) => c.requested >= start && c.requested <= end);
+    return { start, end, months, deals, inWin };
+  }, [cancels, ret, reports, kpiRows]);
+
   const rows = useMemo(() => {
     const now = Date.now();
     return people
@@ -123,9 +148,15 @@ export default function Reps() {
           notes: notes.get(p.id) ?? 0,
           review,
           ret: ret?.byRep.get(p.id) ?? null,
+          look: (() => {
+            if (!look) return null;
+            const mine = look.inWin.filter((c) => c.rep_id === p.id);
+            const d = look.deals.get(p.id) ?? 0;
+            return { n: mine.length, before: mine.filter((c) => c.stage === "before_1st").length, after: mine.filter((c) => c.stage === "after_1st").length, deals: d, rate: d ? mine.length / d : null };
+          })(),
         };
       });
-  }, [people, calls, kpi, notes, reviews, showAll, ret]);
+  }, [people, calls, kpi, notes, reviews, showAll, ret, look]);
 
   return (
     <main className="shell rx-page">
@@ -148,6 +179,12 @@ export default function Reps() {
               <th className="num">Closing ratio</th>
               <th className="num" title="Cancelled before the 1st payment, from the latest Friday retention lookback. Lower is better.">
                 {ret ? `Cancel before 1st, ${new Date(`${ret.end}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Cancel before 1st"}
+              </th>
+              <th
+                className="num"
+                title="Clients who cancelled before or after the 1st payment in the last 3 months, as a share of the rep's deals in the last 3 report months. Lower is better."
+              >
+                Cancelled, 3 mo
               </th>
               <th className="num">Notes</th>
               <th>Last review</th>
@@ -204,6 +241,12 @@ export default function Reps() {
                       {Math.abs(Math.round((r.ret.rate - r.ret.prior) * 100))}
                     </small>
                   )}
+                </td>
+                <td
+                  className="num"
+                  title={r.look ? `${r.look.n} cancelled (${r.look.before} before the 1st payment, ${r.look.after} after) ÷ ${r.look.deals} deals` : undefined}
+                >
+                  {r.look?.rate != null ? `${Math.round(r.look.rate * 100)}%` : r.look?.n ? `${r.look.n} cancels` : "--"}
                 </td>
                 <td className="num">{r.notes || ""}</td>
                 <td>

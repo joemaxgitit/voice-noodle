@@ -17,7 +17,6 @@ import {
   scoreBand,
   slpScoreOf,
   OUTCOME_LABEL,
-  bleepPlan,
   stageLabel,
   stageTerm,
   CANCEL_REASONS,
@@ -38,7 +37,7 @@ import {
 } from "@/lib/calls";
 import { decodeMono } from "@/lib/shrinkAudio";
 import { measureVoice } from "@/lib/voice";
-import { bleepAudio } from "@/lib/bleep";
+import { cleanRecording as cleanRecordingFor } from "@/lib/cleanRecording";
 import type { RoleplayInfo } from "@/lib/roleplay";
 import "../calls.css";
 
@@ -491,73 +490,10 @@ export default function CallDetail() {
     The claim (state null -> working) stops two open tabs doing it twice.
   */
   async function cleanRecording(retry = false) {
-    if (!call?.audio_path || !call.transcript || !audioUrl) return;
+    if (!call?.audio_path || !call.transcript) return;
     setError("");
-    const from = retry ? call.audio_redact_state : null;
-    const claim = supabase
-      .from("calls")
-      .update({ audio_redact_state: "working", audio_redact_note: null, audio_redacted_at: new Date().toISOString() })
-      .eq("id", call.id);
-    const { data: claimed, error: claimErr } = await (from ? claim.eq("audio_redact_state", from) : claim.is("audio_redact_state", null)).select("id");
-    if (claimErr) {
-      // Most likely the SQL for this step has not been run yet.
-      setError(`Could not start cleaning the recording. ${claimErr.message}`);
-      return;
-    }
-    if (!claimed?.length) return; // another tab got there first
-
-    const oldPath = call.audio_path;
-    const plan = bleepPlan(call.transcript);
-    try {
-      if (plan.spans.length === 0) {
-        await supabase
-          .from("calls")
-          .update({ audio_redact_state: "done", audio_redact_note: "No numbers to remove." })
-          .eq("id", call.id);
-        await load();
-        return;
-      }
-
-      setBleepBusy("Downloading recording...");
-      const res = await fetch(audioUrl);
-      if (!res.ok) throw new Error(`Could not download the recording (${res.status}).`);
-      const out = await bleepAudio(await res.arrayBuffer(), plan.spans, call.file_name || "call.mp3", setBleepBusy);
-
-      setBleepBusy("Uploading cleaned recording...");
-      const newPath = `${oldPath.replace(/\.[^./]+$/, "")}-redacted-${Date.now()}.mp3`;
-      const { error: upErr } = await supabase.storage
-        .from("call-audio")
-        .upload(newPath, out.file, { contentType: "audio/mpeg", upsert: false });
-      if (upErr) throw new Error(`Upload failed. ${upErr.message}`);
-
-      const note =
-        `${out.spans} spot${out.spans === 1 ? "" : "s"} bleeped` +
-        (plan.method === "lines" ? " (whole lines, because this call was transcribed before exact timing was kept)" : "");
-      const { error: updErr } = await supabase
-        .from("calls")
-        .update({
-          audio_path: newPath,
-          audio_redact_state: "done",
-          audio_redacted_at: new Date().toISOString(),
-          audio_redact_note: note,
-        })
-        .eq("id", call.id);
-      if (updErr) throw new Error(updErr.message);
-
-      // Only now is the original safe to remove.
-      const { error: rmErr } = await supabase.storage.from("call-audio").remove([oldPath]);
-      if (rmErr) {
-        await supabase
-          .from("calls")
-          .update({ audio_redact_note: `${note}. The original file could not be deleted: ${rmErr.message}` })
-          .eq("id", call.id);
-      }
-    } catch (e) {
-      await supabase
-        .from("calls")
-        .update({ audio_redact_state: "failed", audio_redact_note: e instanceof Error ? e.message : String(e) })
-        .eq("id", call.id);
-    }
+    const r = await cleanRecordingFor(supabase, call, { retry, onProgress: setBleepBusy });
+    if (r.error && /Could not start/.test(r.error)) setError(r.error);
     setBleepBusy("");
     await load();
   }

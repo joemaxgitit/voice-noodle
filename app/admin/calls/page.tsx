@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { startJob } from "@/lib/callsClient";
+import { cleanRecording } from "@/lib/cleanRecording";
 import { estimateFor, okToSpend, transcribeEstimate, usd } from "@/lib/spend";
 import {
   OUTCOME_LABEL,
@@ -127,6 +128,10 @@ export default function Calls() {
   // calls this tab has already kicked so a poll does not start it twice.
   const kicked = useRef(new Set<string>());
   const kickedTranslate = useRef(new Set<string>());
+  // Bleeping numbers out of recordings, one at a time, right here -- no need to open each call.
+  const bleeping = useRef(false);
+  const triedBleep = useRef(new Set<string>());
+  const [bleepNote, setBleepNote] = useState("");
 
   const loadCalls = useCallback(async () => {
     const { data, error } = await supabase
@@ -179,6 +184,32 @@ export default function Calls() {
     const t = setInterval(loadCalls, 5000);
     return () => clearInterval(t);
   }, [anyBusy, loadCalls]);
+
+  // Transcript has numbers in it -> bleep them out of the stored recording.
+  useEffect(() => {
+    if (bleeping.current) return;
+    const next = calls.find(
+      (c) =>
+        c.redaction_count > 0 &&
+        c.audio_path &&
+        c.audio_redact_state === null &&
+        !["uploading", "uploaded", "transcribing"].includes(c.status) &&
+        !triedBleep.current.has(c.id)
+    );
+    if (!next) return;
+    bleeping.current = true;
+    triedBleep.current.add(next.id);
+    void (async () => {
+      const { data } = await supabase.from("calls").select("id, audio_path, transcript, file_name, audio_redact_state").eq("id", next.id).single();
+      if (data?.transcript) {
+        const who = next.client_label || "a call";
+        await cleanRecording(supabase, data as Parameters<typeof cleanRecording>[1], { onProgress: (stage) => setBleepNote(`Removing numbers from ${who}: ${stage.toLowerCase()}`) });
+      }
+      setBleepNote("");
+      bleeping.current = false;
+      await loadCalls();
+    })();
+  }, [calls, supabase, loadCalls]);
 
   // Transcript ready -> start grading.
   useEffect(() => {
@@ -518,6 +549,7 @@ export default function Calls() {
         </div>
 
         {error && <div className="error">{error}</div>}
+        {bleepNote && <div className="status">{bleepNote}</div>}
       </div>
 
       <div className="row" style={{ marginTop: 28, justifyContent: "space-between" }}>

@@ -99,6 +99,20 @@ export default function RetentionUpload({
       setBusy(false);
       return setError(e2.message);
     }
+    // Every lost client, once each, for the 3-month look back.
+    if (parsed.cancels.length) {
+      const rows = parsed.cancels.map((c) => {
+        const m = pick(c.salesman);
+        return { org_id: orgId, rep_id: m === SKIP ? null : m, salesman: c.salesman, client_id: c.client_id, requested: c.requested, stage: c.stage };
+      });
+      for (let i = 0; i < rows.length; i += 500) {
+        const { error } = await supabase.from("retention_cancels").upsert(rows.slice(i, i + 500), { onConflict: "org_id,client_id" });
+        if (error && !/retention_cancels|does not exist/i.test(error.message)) {
+          setBusy(false);
+          return setError(error.message);
+        }
+      }
+    }
     // Remember hand-picked names.
     for (const r of reps) {
       const m = match[nameKey(r.salesman)];
@@ -109,6 +123,9 @@ export default function RetentionUpload({
     if (ideas) {
       for (const [reason, n] of parsed.team.top_reasons.slice(0, 3)) {
         if (n < 2) continue;
+        // Don't pile up the same idea week after week.
+        const { count } = await supabase.from("meeting_items").select("id", { count: "exact", head: true }).is("meeting_id", null).eq("title", `Retention: "${reason}"`);
+        if (count) continue;
         const { error } = await supabase.from("meeting_items").insert({
           org_id: orgId,
           meeting_id: null,

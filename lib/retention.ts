@@ -20,7 +20,11 @@ export type RetentionRep = {
   pos_lost: number;
   pos_reasons: Record<string, number>;
 };
+/** One lost (cancelled) client, kept by client ID only so overlapping weekly lookbacks count each client once. */
+export type RetentionCancel = { client_id: string; salesman: string; requested: string; stage: "before_1st" | "after_1st" | "other" };
+
 export type RetentionParsed = {
+  cancels: RetentionCancel[];
   period_start: string;
   period_end: string;
   team: { requests: number | null; lost: number | null; saved: number | null; save_rate: number | null; before1_rate: number | null; pos_lost: number; top_reasons: [string, number][] };
@@ -93,12 +97,32 @@ export function parseRetention(sheets: { name: string; grid: Cell[][] }[]): Rete
   const ar = get("all requests");
   const ai = ar.findIndex((r) => r.some((x) => typeof x === "string" && /^outcome$/i.test(x.trim())));
   const team: Record<string, number> = {};
+  const cancels: RetentionCancel[] = [];
   let teamPos = 0;
   if (ai >= 0) {
     const ah = ar[ai].map((x) => (x == null ? "" : String(x).toLowerCase().trim()));
     const ix = (re: RegExp) => ah.findIndex((x) => re.test(x));
     const [o, w, s, t, k] = [ix(/^outcome$/), ix(/^in window$/), ix(/^salesman$/), ix(/^theme$/), ix(/^category$/)];
+    const [cid, req, st] = [ix(/^client id$/), ix(/^requested$/), ix(/^client status$/)];
     for (const r of ar.slice(ai + 1)) {
+      // Every lost client, for the 3-month look back.
+      if (String(r[o] ?? "") === "Lost" && cid >= 0 && r[cid]) {
+        const v = r[req];
+        const requested =
+          typeof v === "number" && v > 20000
+            ? new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 86400000).toISOString().slice(0, 10)
+            : typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)
+              ? v.slice(0, 10)
+              : null;
+        const status = String(r[st] ?? "").toLowerCase();
+        if (requested)
+          cancels.push({
+            client_id: String(r[cid]).trim(),
+            salesman: String(r[s] ?? "").trim(),
+            requested,
+            stage: /before 1st/.test(status) ? "before_1st" : /after 1st/.test(status) ? "after_1st" : "other",
+          });
+      }
       if (String(r[o] ?? "") !== "Lost" || !/^yes$/i.test(String(r[w] ?? "")) || !/point-of-sale/i.test(String(r[k] ?? ""))) continue;
       const name = String(r[s] ?? "").trim();
       const reason = reasonOf(String(r[t] ?? ""));
@@ -120,6 +144,7 @@ export function parseRetention(sheets: { name: string; grid: Cell[][] }[]): Rete
   const saved = row(/^saved/i);
   const lost = row(/^lost/i);
   return {
+    cancels,
     period_start,
     period_end,
     team: {
