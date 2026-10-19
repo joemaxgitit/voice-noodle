@@ -262,7 +262,7 @@ export async function buildReviewInput(opts: {
           };
           return [
             `Made rotation ${made} of ${ds.length} working days; average ${avg((d) => d.talk_hours)}h talk, ${avg((d) => d.calls)} calls, ${avg((d) => d.deals)} deals a day.`,
-            ...ds.slice(0, 40).map((d) => `${d.day}: ${d.talk_hours ?? "-"}h talk, ${d.calls ?? "-"} calls, ${d.deals ?? "-"} deals, ${d.points} pt ${(d.override_made ?? d.made) ? "MADE" : "missed"}`),
+            ...ds.slice(0, 40).map((d) => `${d.day}: ${d.talk_hours ?? "-"}h talk, ${d.calls ?? "-"} calls, ${d.deals ?? "-"} deals, ${d.points ?? "-"} pt ${(d.override_made ?? d.made) ? "MADE" : "missed"}`),
           ].join("\n");
         })()
       : "(no daily numbers yet)",

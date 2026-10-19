@@ -107,7 +107,7 @@ export type CardLite = {
   signed_name: string | null;
 };
 
-export type DailyLite = { day: string; talk_hours: number | null; calls: number | null; deals: number | null; points: number; made: boolean; override_made: boolean | null };
+export type DailyLite = { day: string; talk_hours: number | null; calls: number | null; deals: number | null; points: number | null; made: boolean; override_made: boolean | null; status?: string };
 
 export type RepHistory = {
   daily: DailyLite[];
@@ -194,7 +194,7 @@ export async function loadRepHistory(
     supabase.from("coaching_sessions").select("*").eq("rep_id", repId).order("session_date", { ascending: false }).order("created_at", { ascending: false }),
     supabase
       .from("rep_daily")
-      .select("day, talk_hours, calls, deals, points, made, override_made")
+      .select("*")
       .eq("rep_id", repId)
       .order("day", { ascending: false })
       .limit(130),
@@ -202,11 +202,11 @@ export async function loadRepHistory(
 
   const matById = new Map(rows<{ id: string; title: string; kind: string }>(mats, [], "materials").map((m) => [m.id, m]));
   const history: RepHistory = {
-    daily: rows<DailyLite>(daily, [], "daily").map((d) => ({
+    daily: rows<DailyLite>(daily, [], "daily").filter((d) => d.status !== "absent").map((d) => ({
       ...d,
       talk_hours: d.talk_hours === null ? null : Number(d.talk_hours),
       deals: d.deals === null ? null : Number(d.deals),
-      points: Number(d.points),
+      points: d.points === null ? null : Number(d.points),
     })),
     cards: rows<CardLite>(cards, [], "cards"),
     sessions: rows<CoachingSession>(sessions, [], "sessions"),

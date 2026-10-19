@@ -133,3 +133,61 @@ export function readDay(grid: Cell[][], people: { id: string; full_name: string 
     });
   return { header, cols, rows };
 }
+
+/* ---------------- importing a colour-coded tracker ---------------- */
+
+export type TrackerStatus = "made" | "missed" | "absent" | "holiday";
+export type TrackerEntry = { name: string; day: string; status: TrackerStatus; note: string | null; calls: number | null; talk_hours: number | null };
+
+/** "66c 2:22tt", "3:52m 25 dials", "58/2:08", "3:37 & 36" -> calls and talk time, when they're there. */
+export function parseTrackerNote(text: string): { calls: number | null; talk_hours: number | null } {
+  const t = text.toLowerCase();
+  // "Left at 2:24" is a time of day, not talk time.
+  const time = /left at|\bat \d/.test(t) ? null : t.match(/(\d{1,2}):(\d{2})/);
+  const talk = time ? Math.round((Number(time[1]) + Number(time[2]) / 60) * 100) / 100 : null;
+  const rest = time ? t.replace(time[0], " ") : t;
+  const c = rest.match(/(\d{1,3})\s*(?:c\b|dials?|calls?)/) ?? rest.match(/(?:^|[\s/&])(\d{1,3})(?=\s|$|[^\d:])/);
+  return { calls: c ? Number(c[1]) : null, talk_hours: talk };
+}
+
+/**
+ * Reads the Sales Rotation Tracker: a row per rep, a column per date, each
+ * cell coloured by its result. The colour legend at the bottom ("Yes",
+ * "No", "Absent", "Holiday") says which colour means what. Text in a cell
+ * (calls and talk time, "partial shift") is kept as a note.
+ */
+export function readTracker(grid: Cell[][], fills: (string | null)[][], toDate: (v: Cell) => string | null): { entries: TrackerEntry[]; names: string[]; from: string; to: string } {
+  const legend = new Map<string, TrackerStatus>();
+  grid.forEach((r, i) => {
+    const label = String(r[0] ?? "").trim().toLowerCase();
+    const key = fills[i]?.[0];
+    if (!key) return;
+    if (label === "yes") legend.set(key, "made");
+    else if (label === "no") legend.set(key, "missed");
+    else if (label === "absent") legend.set(key, "absent");
+    else if (label === "holiday") legend.set(key, "holiday");
+  });
+  if (!legend.size) throw new Error("Couldn't find the colour legend (Yes / No / Absent / Holiday) in column A.");
+  const hi = grid.findIndex((r) => r.filter((c) => toDate(c)).length >= 5);
+  if (hi < 0) throw new Error("Couldn't find the row of dates.");
+  const dates = grid[hi].map((c) => toDate(c));
+  const stop = grid.findIndex((r, i) => i > hi && /color code/i.test(String(r[0] ?? "")));
+  const entries: TrackerEntry[] = [];
+  const names: string[] = [];
+  for (let i = hi + 1; i < (stop > 0 ? stop : grid.length); i++) {
+    const name = String(grid[i]?.[0] ?? "").trim();
+    if (!name || /^employee|^#n\/a/i.test(name)) continue;
+    names.push(name);
+    dates.forEach((day, j) => {
+      if (!day || j === 0) return;
+      const status = legend.get(fills[i]?.[j] ?? "");
+      if (!status || status === "holiday") return;
+      const raw = grid[i]?.[j];
+      const note = raw === null || raw === undefined || raw === "" ? null : String(raw).trim();
+      const parsed = note ? parseTrackerNote(note) : { calls: null, talk_hours: null };
+      entries.push({ name, day, status, note, ...parsed });
+    });
+  }
+  const days = entries.map((e) => e.day).sort();
+  return { entries, names, from: days[0] ?? "", to: days.at(-1) ?? "" };
+}

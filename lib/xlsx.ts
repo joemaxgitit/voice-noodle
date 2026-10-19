@@ -155,3 +155,60 @@ export function sheetAsText(grid: Cell[][], maxRows = 200): string {
     .map((r) => r.map((c) => (c === null ? "" : String(c))).join("\t"))
     .join("\n");
 }
+
+/**
+ * The first worksheet (or the one whose name matches) with each cell's fill
+ * colour as well as its value: "rgb:FF00B050" or "theme:6", null if none.
+ * For trackers that record a result by colouring the cell.
+ */
+export function readSheetWithFills(bytes: Uint8Array, nameLike?: RegExp): { name: string; grid: Cell[][]; fills: (string | null)[][] } {
+  const files = unzipSync(bytes, { filter: (f) => f.name.startsWith("xl/") });
+  const shared = sharedStrings(files);
+  const styles = files["xl/styles.xml"] ? strFromU8(files["xl/styles.xml"]) : "";
+  const fillsXml = styles.match(/<fills[^>]*>([\s\S]*?)<\/fills>/)?.[1] ?? "";
+  const fillKeys = [...fillsXml.matchAll(/<fill>([\s\S]*?)<\/fill>/g)].map((m) => {
+    const fg = m[1].match(/<fgColor\b([^>]*)\/?>/)?.[1] ?? "";
+    if (!/patternType="solid"/.test(m[1])) return null;
+    const rgb = fg.match(/rgb="([0-9A-Fa-f]+)"/)?.[1];
+    const theme = fg.match(/theme="(\d+)"/)?.[1];
+    return rgb ? `rgb:${rgb.toUpperCase()}` : theme ? `theme:${theme}` : null;
+  });
+  const xfs = styles.match(/<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/)?.[1] ?? "";
+  const xfFill = [...xfs.matchAll(/<xf\b([^>]*?)(?:\/>|>)/g)].map((m) => Number(m[1].match(/fillId="(\d+)"/)?.[1] ?? 0));
+
+  const wb = files["xl/workbook.xml"] ? strFromU8(files["xl/workbook.xml"]) : "";
+  const rels = files["xl/_rels/workbook.xml.rels"] ? strFromU8(files["xl/_rels/workbook.xml.rels"]) : "";
+  const sheets = [...wb.matchAll(/<sheet\b[^>]*>/g)].map((m) => ({
+    name: unxml(m[0].match(/\bname="([^"]*)"/)?.[1] ?? "Sheet"),
+    rid: m[0].match(/\br:id="([^"]+)"/)?.[1],
+  }));
+  const chosen = (nameLike && sheets.find((s) => nameLike.test(s.name))) || sheets[0];
+  const rel = [...rels.matchAll(/<Relationship\b[^>]*>/g)].map((x) => x[0]).find((r) => r.includes(`Id="${chosen?.rid}"`));
+  const target = rel?.match(/Target="([^"]+)"/)?.[1];
+  const path = target ? (target.startsWith("/") ? target.slice(1) : `xl/${target}`) : firstSheetPath(files);
+  if (!path || !files[path]) throw new Error("No worksheet found in this file.");
+  const xml = strFromU8(files[path]);
+  const grid = parseSheet(xml, shared);
+  const fills: (string | null)[][] = [];
+  for (const rm of xml.matchAll(/<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g)) {
+    const r = Number(rm[1].match(/\br="(\d+)"/)?.[1] ?? fills.length + 1) - 1;
+    const row: (string | null)[] = [];
+    let next = 0;
+    for (const cm of (rm[2] ?? "").matchAll(/<c\b([^>]*?)(?:\/>|>[\s\S]*?<\/c>)/g)) {
+      const ref = cm[1].match(/\br="([A-Z]+\d+)"/)?.[1];
+      const ci = ref ? colIndex(ref) : next;
+      next = ci + 1;
+      const s = Number(cm[1].match(/\bs="(\d+)"/)?.[1] ?? 0);
+      row[ci] = fillKeys[xfFill[s] ?? 0] ?? null;
+    }
+    fills[r] = Array.from(row, (x) => x ?? null);
+  }
+  return { name: chosen?.name ?? "Sheet", grid, fills: Array.from(fills, (x) => x ?? []) };
+}
+
+/** Excel's serial date (days since 1899-12-30) as YYYY-MM-DD. */
+export function excelDate(v: Cell): string | null {
+  if (typeof v !== "number" || v < 20000 || v > 80000) return null;
+  const d = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
+  return d.toISOString().slice(0, 10);
+}

@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { readSheet, type Cell } from "@/lib/xlsx";
+import { excelDate, readSheet, readSheetWithFills, type Cell } from "@/lib/xlsx";
 import { exportDateFromFile, matchRep } from "@/lib/kpi";
-import { fmtDay, fmtHours, isoOf, nextWorkDay, readDay, RULES, score, type ColumnPick, type DayRow } from "@/lib/rotation";
+import { fmtDay, fmtHours, isoOf, nextWorkDay, readDay, readTracker, RULES, score, type ColumnPick, type DayRow, type TrackerEntry } from "@/lib/rotation";
 import "../calls/calls.css";
 import "../reps/reps.css";
 
@@ -19,7 +19,8 @@ type Daily = {
   talk_hours: number | null;
   calls: number | null;
   deals: number | null;
-  points: number;
+  points: number | null;
+  status: "worked" | "absent";
   made: boolean;
   override_made: boolean | null;
   override_note: string | null;
@@ -27,6 +28,13 @@ type Daily = {
 };
 const SKIP = "__skip";
 const madeOf = (d: Daily) => d.override_made ?? d.made;
+/** One line of numbers. Old tracker days often only have a colour, so say what we know. */
+const lineOf = (d: Daily) => {
+  if (d.status === "absent") return "Absent";
+  if (d.points === null && d.calls === null && d.talk_hours === null) return d.source === "import" ? `From the old tracker${d.override_note ? `: ${d.override_note}` : ""}` : "No numbers";
+  const bits = [d.points !== null ? `${d.points} pt` : "", d.talk_hours !== null ? fmtHours(d.talk_hours) : "", d.calls !== null ? `${d.calls} calls` : "", d.deals !== null ? dealsText(d.deals) : ""].filter(Boolean);
+  return bits.join(" · ") + (d.source === "import" && d.override_note ? ` (${d.override_note})` : "");
+};
 const dealsText = (n: number | null) => `${n ?? 0} deal${n === 1 ? "" : "s"}`;
 
 /** Today, or the last weekday if it's the weekend. */
@@ -62,6 +70,11 @@ export default function Rotation() {
   const [busy, setBusy] = useState(false);
   const [weeks, setWeeks] = useState(4);
   const [copied, setCopied] = useState(false);
+  // history import
+  const [imp, setImp] = useState<{ file: string; entries: TrackerEntry[]; names: string[]; from: string; to: string } | null>(null);
+  const [impMap, setImpMap] = useState<Record<string, string>>({});
+  const [impBusy, setImpBusy] = useState("");
+  const impInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     const {
@@ -72,14 +85,25 @@ export default function Rotation() {
     const { data: prof } = await supabase.from("profiles").select("org_id").eq("id", session.user.id).single();
     setOrgId(prof?.org_id ?? "");
     const since = new Date();
-    since.setDate(since.getDate() - 120);
+    since.setDate(since.getDate() - 380);
+    // Supabase hands back at most 1,000 rows at a time; a year of rotation is a few thousand.
+    const allDays = async () => {
+      const out: Daily[] = [];
+      for (let from = 0; from < 20000; from += 1000) {
+        const r = await supabase.from("rep_daily").select("*").gte("day", isoOf(since)).order("day", { ascending: false }).order("id").range(from, from + 999);
+        if (r.error) return { data: out, error: r.error };
+        out.push(...((r.data || []) as Daily[]));
+        if ((r.data || []).length < 1000) break;
+      }
+      return { data: out, error: null };
+    };
     const [p, d] = await Promise.all([
       supabase.from("profiles").select("id, full_name, role, active, kpi_name").eq("org_id", prof?.org_id ?? "").order("full_name"),
-      supabase.from("rep_daily").select("*").gte("day", isoOf(since)).order("day", { ascending: false }).limit(10000),
+      allDays(),
     ]);
     if (d.error) setError(/rep_daily|does not exist/i.test(d.error.message) ? `${d.error.message} -- run supabase/rotation.sql first.` : d.error.message);
     setPeople((p.data || []) as Person[]);
-    setDays(((d.data || []) as Daily[]).map((x) => ({ ...x, talk_hours: x.talk_hours === null ? null : Number(x.talk_hours), deals: x.deals === null ? null : Number(x.deals), points: Number(x.points) })));
+    setDays(((d.data || []) as Daily[]).map((x) => ({ ...x, talk_hours: x.talk_hours === null ? null : Number(x.talk_hours), deals: x.deals === null ? null : Number(x.deals), points: x.points === null ? null : Number(x.points) })));
   }, [supabase]);
 
   useEffect(() => {
@@ -136,6 +160,7 @@ export default function Rotation() {
       deals: r.numbers.deals,
       points: r.scored.points,
       made: r.scored.made,
+      status: "worked",
       source: "upload",
       updated_by: me,
       updated_at: new Date().toISOString(),
@@ -168,6 +193,62 @@ export default function Rotation() {
     const list = days.filter((x) => x.day === d).sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
     return { day: d, forDay: list[0].for_day, made: list.filter(madeOf), missed: list.filter((x) => !madeOf(x)) };
   }, [days, nameOf]);
+
+  async function pickTracker(f: File) {
+    setError("");
+    setStatus("");
+    try {
+      const s = readSheetWithFills(new Uint8Array(await f.arrayBuffer()), /rotation/i);
+      const t = readTracker(s.grid, s.fills, excelDate);
+      setImp({ file: f.name, ...t });
+      setImpMap(Object.fromEntries(t.names.map((n) => [n, matchRep(n, people) ?? ""])));
+    } catch (e) {
+      setError(`Couldn't read ${f.name}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async function runImport() {
+    if (!imp) return;
+    const kept = imp.entries.filter((e) => impMap[e.name] !== SKIP);
+    const rows = kept.map((e) => {
+      const repId = impMap[e.name] || null;
+      const name = repId ? people.find((p) => p.id === repId)?.full_name || e.name : e.name;
+      const sc = e.calls !== null && e.talk_hours !== null ? score({ calls: e.calls, talk_hours: e.talk_hours, deals: null }) : null;
+      return {
+        org_id: orgId,
+        rep_id: repId,
+        salesman: name,
+        day: e.day,
+        for_day: nextWorkDay(e.day),
+        talk_hours: e.talk_hours,
+        calls: e.calls,
+        deals: null,
+        points: sc ? sc.points : null,
+        made: e.status === "made",
+        status: e.status === "absent" ? "absent" : "worked",
+        override_note: e.note && e.status !== "absent" ? e.note : null,
+        source: "import",
+        updated_by: me,
+      };
+    });
+    // Days already uploaded from the CRM keep their real numbers.
+    for (let i = 0; i < rows.length; i += 500) {
+      setImpBusy(`Importing ${Math.min(i + 500, rows.length)} of ${rows.length}…`);
+      const { error } = await supabase.from("rep_daily").upsert(rows.slice(i, i + 500), { onConflict: "org_id,salesman,day", ignoreDuplicates: true });
+      if (error) {
+        setImpBusy("");
+        return setError(error.message);
+      }
+    }
+    for (const [n, id] of Object.entries(impMap)) {
+      const p = people.find((x) => x.id === id);
+      if (p && !matchRep(n, [p])) await supabase.from("profiles").update({ kpi_name: n }).eq("id", p.id);
+    }
+    setImpBusy("");
+    setImp(null);
+    setStatus(`Imported ${rows.length} days of history.`);
+    await load();
+  }
 
   async function copyList() {
     if (!latest) return;
@@ -368,7 +449,7 @@ export default function Rotation() {
                 <button key={d.id} className="rot-name" onClick={() => void override(d)}>
                   <b>{nameOf(d)}</b>
                   <small>
-                    {d.points} pt &middot; {fmtHours(d.talk_hours)}, {d.calls ?? 0} calls, {dealsText(d.deals)}
+                    {lineOf(d)}
                     {d.override_made !== null ? ` · override: ${d.override_note || "no reason"}` : ""}
                   </small>
                 </button>
@@ -382,7 +463,7 @@ export default function Rotation() {
                 <button key={d.id} className="rot-name" onClick={() => void override(d)}>
                   <b>{nameOf(d)}</b>
                   <small>
-                    {d.points} pt &middot; {fmtHours(d.talk_hours)}, {d.calls ?? 0} calls, {dealsText(d.deals)}
+                    {lineOf(d)}
                     {d.override_made !== null ? ` · override: ${d.override_note || "no reason"}` : ` · ${score(d).hint}`}
                   </small>
                 </button>
@@ -399,9 +480,9 @@ export default function Rotation() {
               History
             </h3>
             <div className="rx-presets" style={{ margin: 0 }}>
-              {[2, 4, 8, 16].map((w) => (
+              {[2, 4, 8, 16, 52].map((w) => (
                 <button key={w} className={weeks === w ? "on" : ""} onClick={() => setWeeks(w)}>
-                  {w} weeks
+                  {w === 52 ? "Year" : `${w} weeks`}
                 </button>
               ))}
             </div>
@@ -422,7 +503,7 @@ export default function Rotation() {
               <tbody>
                 {grid2.reps.map((name) => {
                   const m = grid2.byName.get(name)!;
-                  const worked = grid2.allDays.filter((d) => m.has(d));
+                  const worked = grid2.allDays.filter((d) => m.has(d) && m.get(d)!.status !== "absent");
                   const made = worked.filter((d) => madeOf(m.get(d)!)).length;
                   const repId = [...m.values()][0]?.rep_id;
                   return (
@@ -434,12 +515,20 @@ export default function Rotation() {
                       {grid2.allDays.map((d) => {
                         const x = m.get(d);
                         if (!x) return <td key={d} className="num muted">·</td>;
+                        if (x.status === "absent")
+                          return (
+                            <td key={d} className="num">
+                              <span className="rot-cell ab" title={`${fmtDay(d, true)}: absent`}>
+                                A
+                              </span>
+                            </td>
+                          );
                         const ok = madeOf(x);
                         return (
                           <td key={d} className="num">
                             <button
                               className={`rot-cell ${ok ? "in" : "out"}${x.override_made !== null ? " ov" : ""}`}
-                              title={`${fmtDay(d, true)}: ${x.points} pt -- ${fmtHours(x.talk_hours)}, ${x.calls ?? 0} calls, ${x.deals ?? 0} deals${x.override_made !== null ? ` (override: ${x.override_note || "no reason"})` : ""}`}
+                              title={`${fmtDay(d, true)}: ${lineOf(x)}${x.override_made !== null ? ` (override: ${x.override_note || "no reason"})` : ""}`}
                               onClick={() => void override(x)}
                             >
                               {ok ? "✓" : "✗"}
@@ -454,10 +543,60 @@ export default function Rotation() {
             </table>
           </div>
           <p className="hint" style={{ marginBottom: 0 }}>
-            ✓ made rotation, ✗ missed, · no numbers that day. A ring marks a manager override. Tap any day to change it.
+            ✓ made rotation, ✗ missed, A absent, · no numbers that day. A ring marks a manager override or a note from the old tracker. Tap any day to change it.
           </p>
         </section>
       )}
+      <details className="card" style={{ marginTop: 14 }} open={!!imp}>
+        <summary style={{ cursor: "pointer", fontWeight: 650 }}>Import past rotation records</summary>
+        {!imp ? (
+          <div style={{ marginTop: 10 }}>
+            <p className="hint" style={{ marginTop: 0 }}>
+              The colour-coded Sales Rotation Tracker: a row per rep, a column per day, coloured by the legend (Yes / No / Absent). Calls and talk
+              time written in a cell are kept. Days already uploaded from the CRM aren&rsquo;t touched.
+            </p>
+            <input
+              ref={impInput}
+              type="file"
+              accept=".xlsx"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void pickTracker(f);
+                e.target.value = "";
+              }}
+            />
+          </div>
+        ) : (
+          <div style={{ marginTop: 10 }}>
+            <p style={{ marginTop: 0 }}>
+              <b>{imp.file}</b>: {imp.names.length} reps, {imp.entries.length} days from {fmtDay(imp.from, true)} to {fmtDay(imp.to, true)} &middot;{" "}
+              {imp.entries.filter((e) => e.status === "made").length} made, {imp.entries.filter((e) => e.status === "missed").length} missed,{" "}
+              {imp.entries.filter((e) => e.status === "absent").length} absent
+            </p>
+            <div className="rx-scroll">
+              <table className="rx-table">
+                <tbody>
+                  {imp.names.map((n) => (
+                    <tr key={n}>
+                      <td>{n}</td>
+                      <td>{repSelect(impMap[n] || null, (v) => setImpMap((m) => ({ ...m, [n]: v })))}</td>
+                      <td className="num muted">{imp.entries.filter((e) => e.name === n).length} days</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="rx-actions" style={{ marginTop: 10 }}>
+              <button className="primary" disabled={!!impBusy} onClick={() => void runImport()}>
+                {impBusy || "Import history"}
+              </button>
+              <button disabled={!!impBusy} onClick={() => setImp(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </details>
     </main>
   );
 }

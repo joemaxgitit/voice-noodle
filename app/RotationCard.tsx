@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fmtDay, fmtHours, score } from "@/lib/rotation";
 
-type Daily = { day: string; for_day: string; talk_hours: number | null; calls: number | null; deals: number | null; points: number; made: boolean; override_made: boolean | null };
+type Daily = { day: string; for_day: string; talk_hours: number | null; calls: number | null; deals: number | null; points: number | null; made: boolean; override_made: boolean | null; status?: string };
 
 /**
  * A rep's own last working day and rotation result, from the manager's
@@ -16,12 +16,12 @@ export default function RotationCard({ supabase, userId, es, strip }: { supabase
   useEffect(() => {
     void supabase
       .from("rep_daily")
-      .select("day, for_day, talk_hours, calls, deals, points, made, override_made")
+      .select("*")
       .eq("rep_id", userId)
       .order("day", { ascending: false })
       .limit(20)
       .then(({ data }) =>
-        setRows(((data || []) as Daily[]).map((d) => ({ ...d, talk_hours: d.talk_hours === null ? null : Number(d.talk_hours), deals: d.deals === null ? null : Number(d.deals), points: Number(d.points) })))
+        setRows(((data || []) as Daily[]).filter((d) => d.status !== "absent").map((d) => ({ ...d, talk_hours: d.talk_hours === null ? null : Number(d.talk_hours), deals: d.deals === null ? null : Number(d.deals), points: d.points === null ? null : Number(d.points) })))
       );
   }, [supabase, userId]);
 
@@ -47,7 +47,7 @@ export default function RotationCard({ supabase, userId, es, strip }: { supabase
             return (
               <span
                 key={d.day}
-                title={`${fmtDay(d.day, true)}: ${d.points} pt -- ${fmtHours(d.talk_hours)}, ${d.calls ?? 0} calls, ${d.deals ?? 0} deals`}
+                title={`${fmtDay(d.day, true)}: ${d.points ?? "--"} pt -- ${fmtHours(d.talk_hours)}, ${d.calls ?? 0} calls, ${d.deals ?? 0} deals`}
                 className={`rot-cell ${ok ? "in" : "out"}`}
                 style={{ display: "inline-grid", placeItems: "center" }}
               >
@@ -80,7 +80,7 @@ export default function RotationCard({ supabase, userId, es, strip }: { supabase
             <b>{last.deals ?? 0}</b> {es ? "inscripciones" : last.deals === 1 ? "deal" : "deals"}
           </span>
           <span>
-            <b>{last.points}</b> {es ? "pts" : "pts"}
+            <b>{last.points ?? "--"}</b> {es ? "pts" : "pts"}
           </span>
         </div>
         <p style={{ margin: "8px 0 0", fontWeight: 650, color: made ? "var(--ok)" : "var(--text)" }}>

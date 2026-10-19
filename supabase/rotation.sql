@@ -17,7 +17,8 @@ create table if not exists public.rep_daily (
   talk_hours    numeric,
   calls         integer,
   deals         numeric,
-  points        numeric not null default 0,
+  points        numeric,                  -- null when the history import had no numbers
+  status        text not null default 'worked' check (status in ('worked','absent')),
   made          boolean not null default false,
   override_made boolean,                  -- a manager's call, when it differs from the numbers
   override_note text,
