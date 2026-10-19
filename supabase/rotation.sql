@@ -29,6 +29,12 @@ create table if not exists public.rep_daily (
   updated_at    timestamptz not null default now(),
   unique (org_id, salesman, day)
 );
+-- If an earlier version of this table already exists, bring it up to date.
+alter table public.rep_daily add column if not exists status text not null default 'worked';
+alter table public.rep_daily alter column points drop not null;
+alter table public.rep_daily drop constraint if exists rep_daily_status_check;
+alter table public.rep_daily add constraint rep_daily_status_check check (status in ('worked','absent'));
+
 create index if not exists rep_daily_rep_idx on public.rep_daily(org_id, rep_id, day desc);
 create index if not exists rep_daily_day_idx on public.rep_daily(org_id, day desc);
 
