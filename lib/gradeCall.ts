@@ -772,6 +772,30 @@ type Usage = {
   cache_read_input_tokens?: number;
 };
 
+/** Reads the grade JSON out of the reply: every text block joined, wrappers and small slips (stray control characters, trailing commas) tolerated. */
+function readGrade(data: { content?: { type: string; text?: string }[] }): Grade | null {
+  const text = (data.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("");
+  const a = text.indexOf("{");
+  const b = text.lastIndexOf("}");
+  const body = a >= 0 && b > a ? text.slice(a, b + 1) : text;
+  const tries = [
+    body,
+    // raw tabs/newlines inside strings
+    body.replace(/[\u0000-\u001f]+/g, (m) => (m.includes("\n") ? " " : " ")),
+    // trailing commas
+    body.replace(/[\u0000-\u001f]+/g, " ").replace(/,\s*([}\]])/g, "$1"),
+  ];
+  for (const t of tries) {
+    try {
+      const g = JSON.parse(t) as Grade;
+      if (g && typeof g === "object") return g;
+    } catch {
+      // try the next repair
+    }
+  }
+  return null;
+}
+
 async function grade(
   supabase: Supa,
   callId: string,
@@ -806,29 +830,35 @@ async function grade(
       throw new Error(`Grading failed (${res.status}). ${message}`);
     }
 
-    const data = (await res.json()) as {
-      content?: { type: string; text?: string }[];
-      stop_reason?: string;
-      usage?: Usage;
+    type Reply = { content?: { type: string; text?: string }[]; stop_reason?: string; usage?: Usage };
+    let data = (await res.json()) as Reply;
+    const check = (d: Reply) => {
+      if (d.stop_reason === "refusal") throw new Error("The grader declined to grade this call.");
+      if (d.stop_reason === "max_tokens") throw new Error("The grade was too long and got cut off. Try again.");
     };
+    check(data);
 
-    if (data.stop_reason === "refusal") {
-      throw new Error("The grader declined to grade this call.");
+    let result = readGrade(data);
+    if (!result && Date.now() - started < 150_000) {
+      // Long calls occasionally come back malformed; one fresh try nearly always fixes it.
+      log("grade", callId, started, "unreadable grade; asking once more");
+      const again = await askClaude(blocks, key, true);
+      if (again.ok) {
+        const first = data.usage;
+        data = (await again.json()) as Reply;
+        check(data);
+        result = readGrade(data);
+        // Count both attempts in the cost.
+        if (first && data.usage)
+          data.usage = {
+            input_tokens: (first.input_tokens ?? 0) + (data.usage.input_tokens ?? 0),
+            output_tokens: (first.output_tokens ?? 0) + (data.usage.output_tokens ?? 0),
+            cache_creation_input_tokens: (first.cache_creation_input_tokens ?? 0) + (data.usage.cache_creation_input_tokens ?? 0),
+            cache_read_input_tokens: (first.cache_read_input_tokens ?? 0) + (data.usage.cache_read_input_tokens ?? 0),
+          };
+      }
     }
-    if (data.stop_reason === "max_tokens") {
-      throw new Error("The grade was too long and got cut off. Try again.");
-    }
-
-    const text = data.content?.find((c) => c.type === "text")?.text || "";
-    let result: Grade;
-    try {
-      // Strict mode returns bare JSON; the plain fallback may wrap it.
-      const a = text.indexOf("{");
-      const b = text.lastIndexOf("}");
-      result = JSON.parse(a >= 0 && b > a ? text.slice(a, b + 1) : text) as Grade;
-    } catch {
-      throw new Error("The grader returned something unreadable. Try again.");
-    }
+    if (!result) throw new Error("The grader returned something unreadable twice. Try again in a few minutes.");
 
     result.sections ||= [];
     result.compliance ||= [];
