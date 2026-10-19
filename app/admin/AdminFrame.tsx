@@ -103,6 +103,12 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
 
   // Close the drawer on navigation and on Escape.
   useEffect(() => setOpen(false), [path]);
+  // Back in the manager side: the next visit to the rep home sends them here again.
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem("vn.repview");
+    } catch {}
+  }, []);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
@@ -169,7 +175,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
             <Icon name="key" />
             Change password
           </Link>
-          <Link href="/proedgesolutions" className="af-link">
+          <Link href="/proedgesolutions?view=rep" className="af-link">
             <Icon name="back" />
             Rep view
           </Link>

@@ -98,13 +98,22 @@ export default function HomeView() {
 
       // Signed in with a temporary password: pick your own first. Asked
       // separately so the page still works before passwords.sql has run.
+      // Managers and admins start on the manager home, unless they chose "Rep view".
+      const isManager = ["admin", "manager"].includes(profileRes.data?.role || "");
+      let repView = false;
+      try {
+        if (new URLSearchParams(window.location.search).get("view") === "rep") sessionStorage.setItem("vn.repview", "1");
+        repView = sessionStorage.getItem("vn.repview") === "1";
+      } catch {}
       void supabase
         .from("profiles")
         .select("must_change_password")
         .eq("id", user.id)
         .maybeSingle()
         .then(({ data }) => {
-          if (!cancelled && (data as { must_change_password?: boolean } | null)?.must_change_password) router.replace("/account?first=1");
+          if (cancelled) return;
+          if ((data as { must_change_password?: boolean } | null)?.must_change_password) router.replace("/account?first=1");
+          else if (isManager && !repView) router.replace("/admin/home");
         });
 
       /*
