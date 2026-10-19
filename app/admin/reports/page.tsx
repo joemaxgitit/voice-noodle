@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { readSheet } from "@/lib/xlsx";
+import { readAllSheets, readSheet } from "@/lib/xlsx";
+import { isRetentionWorkbook, parseRetention, type RetentionParsed } from "@/lib/retention";
+import RetentionUpload from "./RetentionUpload";
 import {
   displayName,
   exportDateFromFile,
@@ -66,6 +68,7 @@ export default function Reports() {
   const input = useRef<HTMLInputElement>(null);
 
   const [bulk, setBulk] = useState<File[] | null>(null);
+  const [ret, setRet] = useState<{ file: File; parsed: RetentionParsed } | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [openRows, setOpenRows] = useState<KpiRow[]>([]);
 
@@ -104,7 +107,13 @@ export default function Reports() {
     setError("");
     setStatus("");
     try {
-      const grid = readSheet(f.name, new Uint8Array(await f.arrayBuffer()));
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      // The Friday Retention Lookback has its own handling.
+      if (/\.xlsx$/i.test(f.name)) {
+        const sheets = readAllSheets(bytes);
+        if (isRetentionWorkbook(sheets)) return setRet({ file: f, parsed: parseRetention(sheets) });
+      }
+      const grid = readSheet(f.name, bytes);
       const p = parseReport(grid);
       if (!p.rows.length) throw new Error("No salesman rows found in this file.");
       const k = kindFromFile(f.name);
@@ -255,7 +264,21 @@ export default function Reports() {
       {error && <div className="error">{error}</div>}
       {status && <div className="status">{status}</div>}
 
-      {bulk ? (
+      {ret ? (
+        <RetentionUpload
+          supabase={supabase}
+          orgId={orgId}
+          me={me}
+          file={ret.file}
+          parsed={ret.parsed}
+          people={people}
+          onCancel={() => setRet(null)}
+          onDone={(msg) => {
+            setRet(null);
+            setStatus(msg);
+          }}
+        />
+      ) : bulk ? (
         <BulkUpload
           supabase={supabase}
           orgId={orgId}
@@ -299,7 +322,7 @@ export default function Reports() {
             }}
           />
           <b>Drop a sales report here, or tap to choose</b>
-          <span className="hint">Excel (.xlsx) or CSV, straight from the CRM. Back records? Pick several monthly files at once.</span>
+          <span className="hint">Excel (.xlsx) or CSV, straight from the CRM. Back records? Pick several monthly files at once. The Friday Retention Lookback goes here too.</span>
         </label>
       ) : (
         <section className="card" style={{ marginTop: 14 }}>

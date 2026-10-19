@@ -1,5 +1,6 @@
 "use client";
 
+import { pct, pts, reasonsText } from "@/lib/retention";
 import { useEffect, useMemo, useState } from "react";
 import { compareRep, fmtChange, fmtMonth, highlights, monthlyReports, type KpiRow } from "@/lib/kpi";
 import type { Commitment, CoachingSession, CoachingTopic, SessionDraft } from "@/lib/coaching";
@@ -258,6 +259,21 @@ export default function OneOnOne({ ctx }: { ctx: Ctx }) {
                 {c.rep_response === "disagree" ? " · sees it differently" : c.rep_response === "question" ? " · has a question" : ""}
               </li>
             ))}
+            {h.retention[0] && (
+              <li>
+                Retention ({fmtDay(h.retention[0].period_start)} – {fmtDay(h.retention[0].period_end)}): cancelled before 1st{" "}
+                <b>{pct(h.retention[0].before1_rate)}</b>
+                {h.retention[0].prior_rate !== null && h.retention[0].before1_rate !== null && (
+                  <span className={h.retention[0].before1_rate - h.retention[0].prior_rate > 0.02 ? "rx-down" : h.retention[0].before1_rate - h.retention[0].prior_rate < -0.02 ? "rx-up" : ""}>
+                    {" "}
+                    ({pts(h.retention[0].before1_rate, h.retention[0].prior_rate)})
+                  </span>
+                )}
+                {h.retention[0].pos_lost > 0 && (
+                  <span className="muted"> &middot; lost at the sale: {reasonsText(h.retention[0].pos_reasons)}</span>
+                )}
+              </li>
+            )}
             {since.kpi && (
               <li>
                 KPIs, {fmtMonth(since.kpi.month)}:{" "}

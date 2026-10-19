@@ -251,6 +251,17 @@ export async function buildReviewInput(opts: {
           .join("\n")
       : "(none)",
     "",
+    "RETENTION LOOKBACKS (Friday report; cancelled before the 1st payment traces back to the sale. Point-of-sale reasons are why this rep's clients cancelled in ways the sale could have prevented. Rates are a floor while first payments are pending; the change is directional):",
+    h.retention.length
+      ? h.retention
+          .slice(0, 6)
+          .map(
+            (r) =>
+              `${r.period_start} to ${r.period_end}: ${r.deals ?? "?"} deals, before-1st ${r.before1_rate === null ? "?" : Math.round(r.before1_rate * 100) + "%"}${r.prior_rate !== null && r.before1_rate !== null ? ` (prior ${Math.round(r.prior_rate * 100)}%)` : ""}, ${r.requests ?? "?"} cancel requests; point-of-sale reasons: ${Object.entries(r.pos_reasons).map(([k, n]) => `${k} x${n}`).join(", ") || "none"}`
+          )
+          .join("\n") + "\nIf the same point-of-sale reason shows up twice or more, name it as a coaching priority and suggest the matching practice (e.g. misunderstood the program -> the program explanation; would rather pay it themselves / won't go delinquent -> certainty and looping on the close; third party vetoed -> getting the spouse or partner on the call)."
+      : "(none)",
+    "",
     `EARLIER ONE-ON-ONES FROM THE OLD TRACKER (topic counts only, no dates; total ${h.earlier.reduce((s, x) => s + x.sessions, 0)}):`,
     h.earlier.length ? h.earlier.map((x) => `${x.topic} ${x.sessions}`).join(", ") : "(none)",
     "",

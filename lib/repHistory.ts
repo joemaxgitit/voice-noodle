@@ -107,6 +107,18 @@ export type CardLite = {
   signed_name: string | null;
 };
 
+export type RetentionLite = {
+  period_start: string;
+  period_end: string;
+  deals: number | null;
+  before1_rate: number | null;
+  prior_rate: number | null;
+  pending_share: number | null;
+  requests: number | null;
+  pos_lost: number;
+  pos_reasons: Record<string, number>;
+};
+
 export type DailyLite = { day: string; talk_hours: number | null; calls: number | null; deals: number | null; points: number | null; made: boolean; override_made: boolean | null; status?: string };
 
 export type RepHistory = {
@@ -115,6 +127,8 @@ export type RepHistory = {
   sessions: CoachingSession[];
   /** One-on-ones per topic from the old tracker (no dates). */
   earlier: { topic: string; sessions: number }[];
+  /** Friday retention lookbacks, newest first (sales side only). */
+  retention: RetentionLite[];
   calls: HistCall[];
   notes: RepNote[];
   files: RepFile[];
@@ -213,6 +227,7 @@ export async function loadRepHistory(
     cards: rows<CardLite>(cards, [], "cards"),
     sessions: rows<CoachingSession>(sessions, [], "sessions"),
     earlier: [],
+    retention: [],
     calls: rows<HistCall>(calls, errors, "calls"),
     notes: rows<RepNote>(notes, errors, "notes"),
     files: rows<RepFile>(files, errors, "files"),
@@ -231,6 +246,22 @@ export async function loadRepHistory(
   };
   // Separate, so a database without this table still loads the profile.
   const eh = await supabase.from("coaching_history").select("topic, sessions").eq("rep_id", repId);
+  const rr = await supabase
+    .from("retention_reps")
+    .select("deals, before1_rate, prior_rate, pending_share, requests, pos_lost, pos_reasons, report:retention_reports(period_start, period_end)")
+    .eq("rep_id", repId);
+  history.retention = ((rr.data || []) as unknown as (Omit<RetentionLite, "period_start" | "period_end"> & { report: { period_start: string; period_end: string } | null })[])
+    .filter((x) => x.report)
+    .map(({ report, ...x }) => ({
+      ...x,
+      period_start: report!.period_start,
+      period_end: report!.period_end,
+      deals: x.deals === null ? null : Number(x.deals),
+      before1_rate: x.before1_rate === null ? null : Number(x.before1_rate),
+      prior_rate: x.prior_rate === null ? null : Number(x.prior_rate),
+      pending_share: x.pending_share === null ? null : Number(x.pending_share),
+    }))
+    .sort((a, b) => b.period_end.localeCompare(a.period_end));
   history.earlier = ((eh.data || []) as { topic: string; sessions: number }[]).filter((x) => x.sessions > 0).sort((a, b) => b.sessions - a.sessions);
   return { history, errors };
 }

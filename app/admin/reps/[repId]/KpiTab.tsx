@@ -20,6 +20,7 @@ import {
 import type { RepHistory } from "@/lib/repHistory";
 import Link from "next/link";
 import { Sparkline } from "../charts";
+import { pct, pts, reasonsText } from "@/lib/retention";
 
 const NEXT: Record<Better, Better> = { up: "down", down: "none", none: "up" };
 const ARROW: Record<Better, string> = { up: "↑ higher is better", down: "↓ lower is better", none: "· no direction" };
@@ -122,14 +123,59 @@ export default function KpiTab({
     for (const p of hidden) await supabase.from("kpi_metric_prefs").upsert({ org_id: orgId, metric_key: p.metric_key, better: p.better, hidden: false });
   }
 
+  // Friday retention lookbacks: cancels before the 1st payment trace back to the sale.
+  const ret = history.retention.slice(0, 6);
+  const retentionCard = ret.length ? (
+    <section className="card" style={{ marginBottom: 14 }}>
+      <h3 className="rx-sec-title">Retention (Friday lookbacks)</h3>
+      <div className="rx-scroll">
+        <table className="rx-table">
+          <thead>
+            <tr>
+              <th>Window</th>
+              <th className="num">Deals</th>
+              <th className="num">Cancelled before 1st</th>
+              <th className="num">Requests</th>
+              <th>Lost at the sale</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ret.map((r) => {
+              const up = r.before1_rate !== null && r.prior_rate !== null ? r.before1_rate - r.prior_rate : 0;
+              return (
+                <tr key={r.period_end}>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {new Date(`${r.period_start}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })} –{" "}
+                    {new Date(`${r.period_end}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                  </td>
+                  <td className="num">{r.deals ?? "--"}</td>
+                  <td className="num">
+                    <b>{pct(r.before1_rate)}</b>{" "}
+                    {r.prior_rate !== null && <span className={up > 0.02 ? "rx-down" : up < -0.02 ? "rx-up" : "muted"}>({pts(r.before1_rate, r.prior_rate)})</span>}
+                  </td>
+                  <td className="num">{r.requests ?? "--"}</td>
+                  <td style={{ fontSize: 13 }}>{reasonsText(r.pos_reasons) || <span className="muted">none</span>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="hint" style={{ marginBottom: 0 }}>Lower is better. Rates are a floor while first payments are still pending; the change is against the prior period and is directional.</p>
+    </section>
+  ) : null;
+
   if (!months.length)
     return (
+      <div>
+      {retentionCard}
       <div className="card">
         <p style={{ marginTop: 0 }}>No sales reports for {repName} yet.</p>
         <p className="hint">
           Upload the CRM&rsquo;s reports on <Link href="/admin/reports">Sales reports</Link> -- one upload covers the whole team. Upload one a month
           (or more) and this page lines each month up against the last.
         </p>
+      </div>
       </div>
     );
 
@@ -143,6 +189,7 @@ export default function KpiTab({
 
   return (
     <div>
+      {retentionCard}
       <div className="rx-head rx-noprint" style={{ marginBottom: 12 }}>
         <label className="field" style={{ margin: 0 }}>
           <span className="label">Month</span>
