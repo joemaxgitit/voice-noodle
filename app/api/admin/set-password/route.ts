@@ -7,8 +7,9 @@ import { NextResponse } from "next/server";
   our Node functions, while the same calls from the edge work. Everything
   here is plain fetch.
 
-  Rules: admins can reset anyone in their org except themselves; managers
-  can reset reps only. The person is asked to choose their own password on
+  Rules: admins can reset anyone in their org except themselves (another
+  admin only by the super admin); managers can reset reps on their own
+  side only. The person is asked to choose their own password on
   their next sign-in. The service key never leaves the server.
 */
 
@@ -60,10 +61,21 @@ export async function POST(request: Request) {
   if (!caller || !caller.active || !["admin", "manager"].includes(caller.role))
     return NextResponse.json({ error: "Managers and admins only." }, { status: 403 });
 
-  const target = await profile(userId, `Bearer ${service}`);
+  // Read the person with the caller's own token: the database only shows a
+  // manager the reps on their own side (sales or service).
+  const target = await profile(userId, `Bearer ${token}`);
   if (!target || target.org_id !== caller.org_id) return NextResponse.json({ error: "That person isn't on your team." }, { status: 404 });
   if (caller.role !== "admin" && target.role !== "rep")
     return NextResponse.json({ error: "Managers can reset reps' passwords. Ask an admin for anyone else." }, { status: 403 });
+  if (target.role === "admin") {
+    // Only the super admin resets an admin's password.
+    const flag = async (id: string) => {
+      const r = await fetch(`${URL_}/rest/v1/profiles?id=eq.${id}&select=super_admin`, { headers: { apikey: ANON, Authorization: `Bearer ${service}` } });
+      const rows = r.ok ? ((await r.json()) as { super_admin?: boolean }[]) : [];
+      return !!rows[0]?.super_admin;
+    };
+    if (!(await flag(me))) return NextResponse.json({ error: "Only the super admin can reset an admin's password." }, { status: 403 });
+  }
 
   const res = await fetch(`${URL_}/auth/v1/admin/users/${userId}`, {
     method: "PUT",

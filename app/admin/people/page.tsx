@@ -12,13 +12,24 @@ type Person = {
   active: boolean;
   org_id: string | null;
   in_training?: boolean;
+  super_admin?: boolean;
 };
 
-const ROLES = [
+/*
+  What someone does, as one choice. A manager's side comes from their team:
+  Closers -> sales manager, Account Managers -> service manager. Each side
+  only sees its own reps (enforced in the database); admins see both.
+*/
+type Job = "rep" | "sales_manager" | "service_manager" | "admin";
+const JOBS: { value: Job; label: string }[] = [
   { value: "rep", label: "Rep" },
-  { value: "manager", label: "Manager" },
+  { value: "sales_manager", label: "Sales manager" },
+  { value: "service_manager", label: "Service manager" },
   { value: "admin", label: "Admin" },
 ];
+const jobOf = (p: Person): Job => (p.role === "admin" ? "admin" : p.role === "manager" ? (p.team === "ams" ? "service_manager" : "sales_manager") : "rep");
+const changesFor = (job: Job): Partial<Person> =>
+  job === "admin" ? { role: "admin" } : job === "sales_manager" ? { role: "manager", team: "closers" } : job === "service_manager" ? { role: "manager", team: "ams" } : { role: "rep" };
 
 // Team decides which script someone can reach. Enforced by row level
 // security, not just hidden in the interface.
@@ -39,6 +50,7 @@ export default function People() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [myRole, setMyRole] = useState("");
+  const [iAmSuper, setIAmSuper] = useState(false);
   const [pwFor, setPwFor] = useState<string | null>(null);
   const [tempPw, setTempPw] = useState("");
   const [pwDone, setPwDone] = useState<{ id: string; pw: string } | null>(null);
@@ -62,10 +74,13 @@ export default function People() {
     // Separate query: an older database without this column must not break the page.
     const { data: tr } = await supabase.from("profiles").select("id, in_training");
     const training = new Set(((tr || []) as { id: string; in_training: boolean }[]).filter((x) => x.in_training).map((x) => x.id));
-    const rows = ((data || []) as Person[]).map((p) => ({ ...p, in_training: training.has(p.id) }));
+    const { data: sa } = await supabase.from("profiles").select("id, super_admin");
+    const supers = new Set(((sa || []) as { id: string; super_admin: boolean }[]).filter((x) => x.super_admin).map((x) => x.id));
+    const rows = ((data || []) as Person[]).map((p) => ({ ...p, in_training: training.has(p.id), super_admin: supers.has(p.id) }));
     setPeople(rows);
     setOrgId(rows.find((p) => p.id === user?.id)?.org_id ?? null);
     setMyRole(rows.find((p) => p.id === user?.id)?.role ?? "");
+    setIAmSuper(!!rows.find((p) => p.id === user?.id)?.super_admin);
     setLoading(false);
   }, [supabase]);
 
@@ -78,9 +93,10 @@ export default function People() {
     setError("");
     setStatus("");
 
-    const { error } = await supabase.from("profiles").update(changes).eq("id", id);
+    const { data, error } = await supabase.from("profiles").update(changes).eq("id", id).select("id");
 
     if (error) setError(error.message);
+    else if (!data?.length) setError("You can't change that person's account.");
     else {
       setPeople((list) =>
         list.map((p) => (p.id === id ? { ...p, ...changes } : p))
@@ -146,7 +162,9 @@ export default function People() {
       <p className="muted">
         Create the account in Supabase first, then claim it here and set the
         name, team, and role. Team decides which script they can reach &mdash;
-        closers and account managers cannot see each other&rsquo;s.
+        closers and account managers cannot see each other&rsquo;s. Sales
+        managers only see closers and service managers only see account
+        managers; admins see everyone.{iAmSuper ? " Only you, as super admin, can make or remove admins." : ""}
       </p>
 
       {error && <div className="error">{error}</div>}
@@ -198,30 +216,37 @@ export default function People() {
                 </div>
               </div>
 
-              <select
-                value={p.team || ""}
-                onChange={(e) =>
-                  patch(p.id, { team: e.target.value || null })
-                }
-              >
-                {TEAMS.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+              {p.role === "rep" && (
+                <select
+                  value={p.team || ""}
+                  disabled={myRole !== "admin"}
+                  onChange={(e) =>
+                    patch(p.id, { team: e.target.value || null })
+                  }
+                >
+                  {TEAMS.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              )}
 
-              <select
-                value={p.role}
-                disabled={p.id === me}
-                onChange={(e) => patch(p.id, { role: e.target.value })}
-              >
-                {ROLES.map((r) => (
-                  <option key={r.value} value={r.value}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
+              {p.super_admin ? (
+                <span className="pill good" title="Admin who also decides who is an admin">Super admin</span>
+              ) : (
+                <select
+                  value={jobOf(p)}
+                  disabled={p.id === me || myRole !== "admin" || (p.role === "admin" && !iAmSuper)}
+                  onChange={(e) => patch(p.id, changesFor(e.target.value as Job))}
+                >
+                  {JOBS.map((r) => (
+                    <option key={r.value} value={r.value} disabled={r.value === "admin" && !iAmSuper && p.role !== "admin"}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+              )}
 
               {p.role === "rep" && (
                 <label className="muted" style={{ display: "inline-flex", gap: 6, alignItems: "center", whiteSpace: "nowrap" }} title="Reps in training aren't in Master Your Craft">
@@ -253,7 +278,7 @@ export default function People() {
                 Disabled &mdash; cannot sign in to any content.
               </div>
             )}
-            {p.id !== me && (myRole === "admin" || p.role === "rep") && (
+            {p.id !== me && (myRole === "admin" || p.role === "rep") && (!p.super_admin || iAmSuper) && (p.role !== "admin" || iAmSuper) && (
               <div style={{ marginTop: 8 }}>
                 {pwDone?.id === p.id ? (
                   <div className="status" style={{ margin: 0 }}>
