@@ -21,6 +21,7 @@ import {
   type Person,
 } from "@/lib/training";
 import { MaterialPicker, useHub } from "./shared";
+import IdeaBox, { IDEA_CATEGORY } from "../IdeaBox";
 
 type WeekForm = {
   topic_id: string | null;
@@ -46,7 +47,7 @@ const ATT_SHORT: Record<Attendance, string> = { present: "P", absent: "A", excus
  * week's topic to three groups; each rep belongs to one day.
  */
 export default function MasteryTab() {
-  const { supabase, orgId, me, reps, topics, managers, personById } = useHub();
+  const { supabase, orgId, me, reps, topics, managers, personById, reloadLibrary } = useHub();
   // Patrick, Kevin and Max teach; anyone else is typed in as a guest. Falls back to every manager if none match.
   const mycTeachers = managers.filter(isMycTeacher).length ? managers.filter(isMycTeacher) : managers;
   const [guestOn, setGuestOn] = useState(false);
@@ -267,6 +268,12 @@ export default function MasteryTab() {
       .sort((a, b) => (a.dates[0]?.week ?? "0").localeCompare(b.dates[0]?.week ?? "0"));
   }, [all, topics, historyDays]);
 
+  // Saved ideas that haven't been taught yet.
+  const ideas = useMemo(
+    () => topics.filter((t) => t.category === IDEA_CATEGORY && !t.archived && !all.some((w) => w.topic_id === t.id && w.status === "published")),
+    [topics, all],
+  );
+
   const lastTaught = useMemo(() => {
     if (!form) return null;
     const key = form.topic_id || form.title.trim().toLowerCase();
@@ -438,6 +445,46 @@ export default function MasteryTab() {
           ))}
         </div>
       )}
+
+      {/* ---------- ideas ---------- */}
+      <div className="rp-section" style={{ marginTop: 22 }}>
+        <h2 style={{ margin: "0 0 8px", fontSize: 17 }}>Ideas for future weeks</h2>
+        <div className="card" style={{ display: "grid", gap: 10 }}>
+          {ideas.length === 0 ? (
+            <p className="hint" style={{ margin: 0 }}>No ideas saved yet. Jot one down below, or use &ldquo;Log an idea&rdquo; on Home.</p>
+          ) : (
+            ideas.map((t) => (
+              <div key={t.id} className="rx-file">
+                <div>
+                  <b>{t.title}</b>
+                  {t.description && <div className="hint" style={{ margin: 0, whiteSpace: "pre-wrap" }}>{t.description}</div>}
+                </div>
+                <div style={{ whiteSpace: "nowrap" }}>
+                  <button
+                    className="tr-sm"
+                    onClick={() => {
+                      setForm({ ...form, topic_id: t.id, title: t.title });
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                  >
+                    Use this week
+                  </button>{" "}
+                  <button
+                    className="tr-sm"
+                    onClick={async () => {
+                      await supabase.from("training_topics").update({ archived: true }).eq("id", t.id);
+                      await reloadLibrary();
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+          <IdeaBox supabase={supabase} orgId={orgId} me={me} initial="myc" fixed onSaved={() => void reloadLibrary()} />
+        </div>
+      </div>
 
       {/* ---------- roster ---------- */}
       <div className="rp-section" style={{ marginTop: 22 }}>

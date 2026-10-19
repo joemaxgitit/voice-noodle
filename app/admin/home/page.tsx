@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { scoreBand } from "@/lib/calls";
-import { addDays, fmtDate, fmtRange, fmtWeek, MASTERY, MEETING, today, weekdayOf, workWeek, type MasteryWeek, type Meeting, type TrainingEvent } from "@/lib/training";
+import { addDays, fmtDate, fmtRange, fmtWeek, MASTERY, MEETING, mycTeacherName, today, weekdayOf, workWeek, type MasteryWeek, type Meeting, type TrainingEvent } from "@/lib/training";
+import IdeaBox from "../IdeaBox";
 import { loadSpend, type SpendSummary } from "@/lib/spend";
 import SpendMeters from "../spending/SpendMeters";
 import "../calls/calls.css";
@@ -39,6 +40,9 @@ export default function ManagerHome() {
   const [slipping, setSlipping] = useState<{ rep_id: string; headline: string | null; created_at: string }[]>([]);
   const [lastReport, setLastReport] = useState<{ title: string; period_end: string } | null>(null);
   const [spend, setSpend] = useState<SpendSummary | null>(null);
+  const [orgId, setOrgId] = useState("");
+  const [meId, setMeId] = useState("");
+  const [idea, setIdea] = useState(false);
   useEffect(() => {
     void loadSpend(supabase).then(({ summary }) => setSpend(summary));
   }, [supabase]);
@@ -52,6 +56,8 @@ export default function ManagerHome() {
       if (!session) return;
       const { data: me } = await supabase.from("profiles").select("org_id, full_name").eq("id", session.user.id).single();
       setName((me?.full_name || "").split(" ")[0]);
+      setOrgId(me?.org_id ?? "");
+      setMeId(session.user.id);
       const org = me?.org_id ?? "";
       const since = new Date(Date.now() - 60 * DAY).toISOString();
       const thu = addDays(week, 3);
@@ -138,7 +144,17 @@ export default function ManagerHome() {
         <Link className="btn" href="/admin/reps" style={{ textDecoration: "none" }}>
           Team drop box
         </Link>
+        <button className={idea ? "primary" : ""} onClick={() => setIdea(!idea)} aria-expanded={idea}>
+          Log an idea
+        </button>
       </div>
+
+      {idea && orgId && (
+        <section className="card" style={{ marginBottom: 16 }}>
+          <h3 className="rx-sec-title">An idea for later</h3>
+          <IdeaBox supabase={supabase} orgId={orgId} me={meId} />
+        </section>
+      )}
 
       {spend && (
         <Link href="/admin/spending" style={{ color: "inherit", textDecoration: "none", display: "block" }} aria-label="Spending details">
@@ -172,7 +188,7 @@ export default function ManagerHome() {
             const dow = weekdayOf(d);
             const evs = events.filter((e) => e.event_date === d);
             const myc = (MASTERY.days as readonly number[]).includes(dow);
-            const instructor = mastery ? nameOf(mastery.day_instructors?.[String(dow)] || mastery.instructor_id) : null;
+            const instructor = mastery ? mycTeacherName(mastery, dow, nameOf) || null : null;
             const meet = dow === 4;
             if (!evs.length && !myc && !meet) return null;
             return (
