@@ -159,7 +159,7 @@ export default function Reps() {
   }, [people, calls, kpi, notes, reviews, showAll, ret, look]);
 
   return (
-    <main className="shell rx-page">
+    <main className="shell rx-page" style={{ maxWidth: 1120 }}>
       <div className="eyebrow">Team</div>
       <h1>Reps</h1>
       <p className="muted" style={{ maxWidth: "66ch" }}>
@@ -169,25 +169,25 @@ export default function Reps() {
       {error && <div className="error">{error}</div>}
 
       <div className="rx-scroll" style={{ marginTop: 10 }}>
-        <table className="rx-table">
+        <table className="rx-table rx-fit">
           <thead>
             <tr>
               <th>Rep</th>
-              <th className="num">Straight Line, 30d</th>
-              <th className="num">Calls / practice, 30d</th>
-              <th className="num">{kpi ? `Deals, ${fmtMonth(monthOf(kpi.cur), false)}` : "Deals"}</th>
-              <th className="num">Closing ratio</th>
+              <th className="num" title="Straight Line score, last 30 days">SLP 30d</th>
+              <th className="num" title="Real calls / practice calls graded, last 30 days">Calls / practice</th>
+              <th className="num">{kpi ? `Deals ${fmtMonth(monthOf(kpi.cur), false)}` : "Deals"}</th>
+              <th className="num">Close %</th>
               <th className="num" title="Cancelled before the 1st payment, from the latest Friday retention lookback. Lower is better.">
-                {ret ? `Cancel before 1st, ${new Date(`${ret.end}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Cancel before 1st"}
+                {ret ? `Cancel < 1st, ${new Date(`${ret.end}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Cancel < 1st"}
               </th>
               <th
                 className="num"
                 title="Clients who cancelled before or after the 1st payment in the last 3 months, as a share of the rep's deals in the last 3 report months. Lower is better."
               >
-                Cancelled, 3 mo
+                Cancel 3 mo
               </th>
               <th className="num">Notes</th>
-              <th>Last review</th>
+              <th>Review</th>
             </tr>
           </thead>
           <tbody>

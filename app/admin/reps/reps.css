@@ -126,3 +126,8 @@ a.rx-ev:hover { background: var(--ink-3); }
 .rot-cell.ov { border-color: var(--live); }
 .rot-cell.ab { display: inline-grid; place-items: center; background: var(--ink-3); color: var(--muted); }
 .dc-table th.dc-name { text-align: left; font-size: 15px; text-transform: none; letter-spacing: 0; color: var(--text); white-space: nowrap; }
+/* Team table: fit every column without sideways scrolling */
+.rx-fit th { white-space: normal; line-height: 1.25; letter-spacing: 0.04em; vertical-align: bottom; }
+.rx-fit th, .rx-fit td { padding: 8px 6px; }
+.rx-fit td { white-space: nowrap; }
+.rx-fit td:first-child { white-space: normal; }
