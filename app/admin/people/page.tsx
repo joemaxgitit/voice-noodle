@@ -12,6 +12,7 @@ type Person = {
   active: boolean;
   org_id: string | null;
   in_training?: boolean;
+  on_vindico?: boolean;
   super_admin?: boolean;
 };
 
@@ -74,9 +75,11 @@ export default function People() {
     // Separate query: an older database without this column must not break the page.
     const { data: tr } = await supabase.from("profiles").select("id, in_training");
     const training = new Set(((tr || []) as { id: string; in_training: boolean }[]).filter((x) => x.in_training).map((x) => x.id));
+    const { data: vi } = await supabase.from("profiles").select("id, on_vindico");
+    const vindico = new Set(((vi || []) as { id: string; on_vindico: boolean }[]).filter((x) => x.on_vindico).map((x) => x.id));
     const { data: sa } = await supabase.from("profiles").select("id, super_admin");
     const supers = new Set(((sa || []) as { id: string; super_admin: boolean }[]).filter((x) => x.super_admin).map((x) => x.id));
-    const rows = ((data || []) as Person[]).map((p) => ({ ...p, in_training: training.has(p.id), super_admin: supers.has(p.id) }));
+    const rows = ((data || []) as Person[]).map((p) => ({ ...p, in_training: training.has(p.id), on_vindico: vindico.has(p.id), super_admin: supers.has(p.id) }));
     setPeople(rows);
     setOrgId(rows.find((p) => p.id === user?.id)?.org_id ?? null);
     setMyRole(rows.find((p) => p.id === user?.id)?.role ?? "");
@@ -263,6 +266,13 @@ export default function People() {
                     style={{ width: "auto" }}
                   />
                   In training
+                </label>
+              )}
+
+              {p.role === "rep" && (
+                <label className="muted" style={{ display: "inline-flex", gap: 6, alignItems: "center", whiteSpace: "nowrap" }} title="On the Vindico auto dialer: makes rotation automatically">
+                  <input type="checkbox" checked={!!p.on_vindico} disabled={busy === p.id} onChange={(e) => void patch(p.id, { on_vindico: e.target.checked })} style={{ width: "auto" }} />
+                  On Vindico
                 </label>
               )}
 

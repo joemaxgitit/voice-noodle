@@ -9,7 +9,8 @@ import { fmtDay, fmtHours, isoOf, nextWorkDay, readDay, readTracker, RULES, scor
 import "../calls/calls.css";
 import "../reps/reps.css";
 
-type Person = { id: string; full_name: string | null; role: string; active: boolean; kpi_name: string | null };
+type Person = { id: string; full_name: string | null; role: string; active: boolean; kpi_name: string | null; on_vindico?: boolean };
+const VINDICO = "On Vindico";
 type Daily = {
   id: string;
   rep_id: string | null;
@@ -102,7 +103,10 @@ export default function Rotation() {
       allDays(),
     ]);
     if (d.error) setError(/rep_daily|does not exist/i.test(d.error.message) ? `${d.error.message} -- run supabase/rotation.sql first.` : d.error.message);
-    setPeople((p.data || []) as Person[]);
+    // Reps on the Vindico auto dialer make rotation automatically (own query, so a missing column never breaks the page).
+    const v = await supabase.from("profiles").select("id, on_vindico").eq("on_vindico", true);
+    const onV = new Set(((v.data || []) as { id: string }[]).map((x) => x.id));
+    setPeople(((p.data || []) as Person[]).map((x) => ({ ...x, on_vindico: onV.has(x.id) })));
     setDays(((d.data || []) as Daily[]).map((x) => ({ ...x, talk_hours: x.talk_hours === null ? null : Number(x.talk_hours), deals: x.deals === null ? null : Number(x.deals), points: x.points === null ? null : Number(x.points) })));
   }, [supabase]);
 
@@ -114,7 +118,16 @@ export default function Rotation() {
     const r = readDay(g, people, pick);
     setHeader(r.header);
     setCols(r.cols);
-    setRows(r.rows);
+    // Vindico reps hit rotation automatically while they're on the project, even if they're missing from the file.
+    const vin = people.filter((x) => x.on_vindico && x.active);
+    const onVin = (id: string | null) => vin.some((x) => x.id === id);
+    const rows = r.rows.map((x) => (onVin(x.rep_id) ? { ...x, scored: { ...x.scored, made: true, hint: VINDICO } } : x));
+    for (const x of vin)
+      if (!rows.some((y) => y.rep_id === x.id)) {
+        const numbers = { talk_hours: null, calls: null, deals: null };
+        rows.push({ salesman: x.full_name || "Unnamed", rep_id: x.id, numbers, scored: { ...numbers, points: 0, made: true, parts: [], hint: VINDICO } });
+      }
+    setRows(rows);
   }
 
   async function pick(f: File) {
@@ -161,6 +174,7 @@ export default function Rotation() {
       points: r.scored.points,
       made: r.scored.made,
       status: "worked",
+      override_note: r.scored.hint === VINDICO ? VINDICO : null,
       source: "upload",
       updated_by: me,
       updated_at: new Date().toISOString(),
@@ -419,7 +433,10 @@ export default function Rotation() {
                     </td>
                     <td>
                       {r.scored.made ? (
-                        <span className="pill good">Made it</span>
+                        <>
+                          <span className="pill good">Made it</span>
+                          {r.scored.hint === VINDICO && <small className="muted"> {VINDICO}</small>}
+                        </>
                       ) : (
                         <>
                           <span className="pill poor">Missed</span> <small className="muted">{r.scored.hint}</small>
