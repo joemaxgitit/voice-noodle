@@ -33,7 +33,6 @@ export default function RetentionUpload({
   const [match, setMatch] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [ideas, setIdeas] = useState(true);
   const pick = (s: string) => match[nameKey(s)] ?? matchRep(s, people) ?? SKIP;
   // Only people with sales this window or a point-of-sale loss matter here.
   const reps = parsed.reps.filter((r) => (r.deals ?? 0) > 0 || r.pos_lost > 0);
@@ -118,28 +117,9 @@ export default function RetentionUpload({
       const m = match[nameKey(r.salesman)];
       if (m && m !== SKIP && !matchRep(r.salesman, people.filter((p) => p.id === m))) await supabase.from("profiles").update({ kpi_name: displayName(r.salesman) }).eq("id", m);
     }
-    // The team's biggest sales-side reasons, as Thursday meeting ideas.
-    let added = 0;
-    if (ideas) {
-      for (const [reason, n] of parsed.team.top_reasons.slice(0, 3)) {
-        if (n < 2) continue;
-        // Don't pile up the same idea week after week.
-        const { count } = await supabase.from("meeting_items").select("id", { count: "exact", head: true }).is("meeting_id", null).eq("title", `Retention: "${reason}"`);
-        if (count) continue;
-        const { error } = await supabase.from("meeting_items").insert({
-          org_id: orgId,
-          meeting_id: null,
-          title: `Retention: "${reason}"`,
-          notes: `${n} clients cancelled for this in ${period(parsed.period_start, parsed.period_end)} -- a reason that traces back to the sale.`,
-          minutes: 3,
-          updated_by: me,
-        });
-        if (!error) added++;
-      }
-    }
     setBusy(false);
     onDone(
-      `Saved the retention lookback for ${period(parsed.period_start, parsed.period_end)} -- ${rows.filter((r) => r.rep_id).length} reps updated${added ? `, ${added} idea${added === 1 ? "" : "s"} added to the Thursday backlog` : ""}.`
+      `Saved the retention lookback for ${period(parsed.period_start, parsed.period_end)} -- ${rows.filter((r) => r.rep_id).length} reps updated.`
     );
   }
 
@@ -208,9 +188,6 @@ export default function RetentionUpload({
           </tbody>
         </table>
       </div>
-      <label className="hint" style={{ display: "inline-flex", gap: 6, alignItems: "center", marginTop: 10 }}>
-        <input type="checkbox" checked={ideas} onChange={(e) => setIdeas(e.target.checked)} style={{ width: "auto" }} /> Add the team&rsquo;s top sales-side reasons to the Thursday meeting ideas
-      </label>
     </section>
   );
 }
