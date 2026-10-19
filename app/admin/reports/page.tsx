@@ -18,6 +18,7 @@ import {
   type ParsedReport,
 } from "@/lib/kpi";
 import { addDays, fmtDate, mondayOf, today } from "@/lib/training";
+import BulkUpload from "./BulkUpload";
 import "../calls/calls.css";
 import "../reps/reps.css";
 
@@ -64,6 +65,7 @@ export default function Reports() {
   const [over, setOver] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
+  const [bulk, setBulk] = useState<File[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [openRows, setOpenRows] = useState<KpiRow[]>([]);
 
@@ -253,7 +255,22 @@ export default function Reports() {
       {error && <div className="error">{error}</div>}
       {status && <div className="status">{status}</div>}
 
-      {!parsed ? (
+      {bulk ? (
+        <BulkUpload
+          supabase={supabase}
+          orgId={orgId}
+          me={me}
+          files={bulk}
+          people={people}
+          existing={reports}
+          onCancel={() => setBulk(null)}
+          onDone={(msg) => {
+            setBulk(null);
+            setStatus(msg);
+            void load();
+          }}
+        />
+      ) : !parsed ? (
         <label
           className={`rx-drop${over ? " over" : ""}`}
           onDragOver={(e) => {
@@ -264,22 +281,25 @@ export default function Reports() {
           onDrop={(e) => {
             e.preventDefault();
             setOver(false);
-            const f = e.dataTransfer.files[0];
-            if (f) void pick(f);
+            const fs = [...e.dataTransfer.files];
+            if (fs.length > 1) setBulk(fs);
+            else if (fs[0]) void pick(fs[0]);
           }}
         >
           <input
             ref={input}
             type="file"
+            multiple
             accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
             onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void pick(f);
+              const fs = [...(e.target.files || [])];
+              if (fs.length > 1) setBulk(fs);
+              else if (fs[0]) void pick(fs[0]);
               e.target.value = "";
             }}
           />
           <b>Drop a sales report here, or tap to choose</b>
-          <span className="hint">Excel (.xlsx) or CSV, straight from the CRM</span>
+          <span className="hint">Excel (.xlsx) or CSV, straight from the CRM. Back records? Pick several monthly files at once.</span>
         </label>
       ) : (
         <section className="card" style={{ marginTop: 14 }}>
