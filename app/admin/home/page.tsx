@@ -44,6 +44,7 @@ export default function ManagerHome() {
   const [meId, setMeId] = useState("");
   const [idea, setIdea] = useState(false);
   const [service, setService] = useState(false);
+  const [superAdmin, setSuperAdmin] = useState(false);
   useEffect(() => {
     void loadSpend(supabase).then(({ summary }) => setSpend(summary));
   }, [supabase]);
@@ -57,6 +58,9 @@ export default function ManagerHome() {
       if (!session) return;
       const { data: me } = await supabase.from("profiles").select("org_id, full_name, role, team").eq("id", session.user.id).single();
       setService(me?.role === "manager" && me?.team === "ams");
+      // The Deal Clip is the super admin's alone.
+      const { data: sa } = await supabase.from("profiles").select("super_admin").eq("id", session.user.id).maybeSingle();
+      setSuperAdmin(!!(sa as { super_admin?: boolean } | null)?.super_admin);
       setName((me?.full_name || "").split(" ")[0]);
       setOrgId(me?.org_id ?? "");
       setMeId(session.user.id);
@@ -136,9 +140,11 @@ export default function ManagerHome() {
             <Link className="btn primary" href="/admin/rotation" style={{ textDecoration: "none" }}>
               Nightly close: rotation
             </Link>
-            <Link className="btn" href="/admin/dealclip" style={{ textDecoration: "none" }}>
-              Morning: Deal Clip
-            </Link>
+            {superAdmin && (
+              <Link className="btn" href="/admin/dealclip" style={{ textDecoration: "none" }}>
+                Morning: Deal Clip
+              </Link>
+            )}
           </>
         )}
         <Link className="btn" href="/admin/calls" style={{ textDecoration: "none" }}>

@@ -12,7 +12,7 @@ import "./admin-frame.css";
   unchanged and keeps its own data, buttons and behaviour.
 */
 
-type Item = { href: string; label: string; icon: keyof typeof ICONS; match: (p: string) => boolean; salesOnly?: boolean };
+type Item = { href: string; label: string; icon: keyof typeof ICONS; match: (p: string) => boolean; salesOnly?: boolean; superOnly?: boolean };
 
 const GROUPS: { title: string; items: Item[] }[] = [
   {
@@ -24,7 +24,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
     items: [
       { href: "/admin/reps", label: "Reps", icon: "people", match: (p) => p.startsWith("/admin/reps") },
       { href: "/admin/rotation", label: "Rotation", icon: "rotate", match: (p) => p.startsWith("/admin/rotation"), salesOnly: true },
-      { href: "/admin/dealclip", label: "Deal Clip", icon: "chart", match: (p) => p.startsWith("/admin/dealclip"), salesOnly: true },
+      { href: "/admin/dealclip", label: "Deal Clip", icon: "chart", match: (p) => p.startsWith("/admin/dealclip"), salesOnly: true, superOnly: true },
       // Coaching trends (/admin/coaching) is hidden for now; the page still works by its address.
       //       { href: "/admin/coaching", label: "Coaching trends", icon: "chart", match: (p) => p.startsWith("/admin/coaching") },
       { href: "/admin/reports", label: "Sales reports", icon: "table", match: (p) => p.startsWith("/admin/reports") },
@@ -103,7 +103,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
   const path = usePathname() || "/admin";
   const [open, setOpen] = useState(false);
   // Who's signed in: service managers don't have rotation or the Deal Clip.
-  const [who, setWho] = useState<{ label: string; service: boolean }>({ label: "Manager", service: false });
+  const [who, setWho] = useState<{ label: string; service: boolean; superAdmin: boolean }>({ label: "Manager", service: false, superAdmin: false });
   useEffect(() => {
     const supabase = createClient();
     void (async () => {
@@ -121,7 +121,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
           : service
             ? "Service manager"
             : "Sales manager";
-      setWho({ label, service });
+      setWho({ label, service, superAdmin: !!(sa as { super_admin?: boolean } | null)?.super_admin });
     })();
   }, []);
 
@@ -170,7 +170,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
           {GROUPS.map((g) => (
             <div className="af-group" key={g.title || "top"}>
               {g.title && <div className="af-group-title">{g.title}</div>}
-              {g.items.filter((i) => !(i.salesOnly && who.service)).map((i) => {
+              {g.items.filter((i) => !(i.salesOnly && who.service) && !(i.superOnly && !who.superAdmin)).map((i) => {
                 const active = i.match(path);
                 return (
                   <Link

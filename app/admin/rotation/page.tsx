@@ -85,29 +85,39 @@ export default function Rotation() {
     setMe(session.user.id);
     const { data: prof } = await supabase.from("profiles").select("org_id").eq("id", session.user.id).single();
     setOrgId(prof?.org_id ?? "");
-    const since = new Date();
-    since.setDate(since.getDate() - 380);
-    // Supabase hands back at most 1,000 rows at a time; a year of rotation is a few thousand.
-    const allDays = async () => {
-      const out: Daily[] = [];
-      for (let from = 0; from < 20000; from += 1000) {
-        const r = await supabase.from("rep_daily").select("*").gte("day", isoOf(since)).order("day", { ascending: false }).order("id").range(from, from + 999);
-        if (r.error) return { data: out, error: r.error };
-        out.push(...((r.data || []) as Daily[]));
-        if ((r.data || []).length < 1000) break;
-      }
-      return { data: out, error: null };
+    const clean = (rows: Daily[]) =>
+      rows.map((x) => ({ ...x, talk_hours: x.talk_hours === null ? null : Number(x.talk_hours), deals: x.deals === null ? null : Number(x.deals), points: x.points === null ? null : Number(x.points) }));
+    const daysAgo = (n: number) => {
+      const d = new Date();
+      d.setDate(d.getDate() - n);
+      return isoOf(d);
     };
-    const [p, d] = await Promise.all([
+    // Supabase hands back at most 1,000 rows at a time. Count first, then fetch every page at once.
+    const fetchSince = async (from: string) => {
+      const { count, error } = await supabase.from("rep_daily").select("id", { count: "exact", head: true }).gte("day", from);
+      if (error) return { data: [] as Daily[], error };
+      const pages = Math.max(1, Math.ceil((count ?? 0) / 1000));
+      const res = await Promise.all(
+        Array.from({ length: pages }, (_, i) => supabase.from("rep_daily").select("*").gte("day", from).order("day", { ascending: false }).order("id").range(i * 1000, i * 1000 + 999))
+      );
+      const bad = res.find((r) => r.error);
+      return { data: res.flatMap((r) => (r.data || []) as Daily[]), error: bad?.error ?? null };
+    };
+
+    // People and the last couple of months first, so the page shows right away; the full year follows.
+    const [p, v, recent] = await Promise.all([
       supabase.from("profiles").select("id, full_name, role, active, kpi_name").eq("org_id", prof?.org_id ?? "").order("full_name"),
-      allDays(),
+      // Reps on the Vindico auto dialer make rotation automatically (own query, so a missing column never breaks the page).
+      supabase.from("profiles").select("id, on_vindico").eq("on_vindico", true),
+      fetchSince(daysAgo(60)),
     ]);
-    if (d.error) setError(/rep_daily|does not exist/i.test(d.error.message) ? `${d.error.message} -- run supabase/rotation.sql first.` : d.error.message);
-    // Reps on the Vindico auto dialer make rotation automatically (own query, so a missing column never breaks the page).
-    const v = await supabase.from("profiles").select("id, on_vindico").eq("on_vindico", true);
+    if (recent.error) setError(/rep_daily|does not exist/i.test(recent.error.message) ? `${recent.error.message} -- run supabase/rotation.sql first.` : recent.error.message);
     const onV = new Set(((v.data || []) as { id: string }[]).map((x) => x.id));
     setPeople(((p.data || []) as Person[]).map((x) => ({ ...x, on_vindico: onV.has(x.id) })));
-    setDays(((d.data || []) as Daily[]).map((x) => ({ ...x, talk_hours: x.talk_hours === null ? null : Number(x.talk_hours), deals: x.deals === null ? null : Number(x.deals), points: x.points === null ? null : Number(x.points) })));
+    setDays(clean(recent.data));
+
+    const full = await fetchSince(daysAgo(380));
+    if (!full.error) setDays(clean(full.data));
   }, [supabase]);
 
   useEffect(() => {

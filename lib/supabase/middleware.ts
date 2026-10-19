@@ -101,6 +101,17 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
+    // The Deal Clip is the super admin's alone.
+    if (path.startsWith("/admin/dealclip")) {
+      const { data: sa } = await supabase.from("profiles").select("super_admin").eq("id", user.id).maybeSingle();
+      if (!(sa as { super_admin?: boolean } | null)?.super_admin) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/admin/home";
+        url.search = "";
+        return NextResponse.redirect(url);
+      }
+    }
+
     // Rotation and the Deal Clip are sales-side only.
     if (profile.role === "manager" && profile.team === "ams" && (path.startsWith("/admin/rotation") || path.startsWith("/admin/dealclip"))) {
       const url = request.nextUrl.clone();
