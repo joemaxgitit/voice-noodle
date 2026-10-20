@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
+import { kick } from "@/lib/chain";
 import { requireAdmin, thinkingFor } from "@/lib/callsServer";
 import { gradeCostUsd, type Grade } from "@/lib/calls";
 import { digest, type InsightCall } from "@/lib/insights";
@@ -91,8 +92,21 @@ export async function POST(request: Request) {
   const { supabase, orgId, userId } = ctx;
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set on the server." }, { status: 500 });
-  const repId = String(((await request.json().catch(() => ({}))) as { repId?: string }).repId || "");
+  const input = (await request.json().catch(() => ({}))) as { repId?: string; auto?: boolean };
+  const repId = String(input.repId || "");
   if (!repId) return NextResponse.json({ error: "No rep." }, { status: 400 });
+  // Started by the app itself (a call's status changed, or a call with a status was graded): run behind the response.
+  if (input.auto) {
+    after(() => findStyle(request, supabase, orgId, userId, key, repId, true).then(() => undefined));
+    return NextResponse.json({ ok: true }, { status: 202 });
+  }
+  const r = await findStyle(request, supabase, orgId, userId, key, repId, false);
+  return NextResponse.json(r.body, { status: r.status });
+}
+
+type Db = Awaited<ReturnType<typeof requireAdmin>> extends infer T ? (T extends { supabase: infer S } ? S : never) : never;
+
+async function findStyle(request: Request, supabase: Db, orgId: string, userId: string, key: string, repId: string, auto: boolean): Promise<{ status: number; body: Record<string, unknown> }> {
 
   const { data, error } = await supabase
     .from("calls")
@@ -103,12 +117,18 @@ export async function POST(request: Request) {
     .not("grade", "is", null)
     .order("created_at", { ascending: false })
     .limit(60);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return { status: 500, body: { error: error.message } };
   const rows = (data || []) as (InsightCall & { retention: string; call_date: string | null; created_at: string })[];
   const proven = rows.filter((r) => r.retention !== "cancelled");
   const cancels = rows.filter((r) => r.retention === "cancelled");
   if (proven.length < FINGERPRINT_MIN.proven || cancels.length < FINGERPRINT_MIN.cancelled)
-    return NextResponse.json({ error: `Not enough yet: ${proven.length} proven sale${proven.length === 1 ? "" : "s"} and ${cancels.length} cancel${cancels.length === 1 ? "" : "s"} for this rep. It needs at least ${FINGERPRINT_MIN.proven} and ${FINGERPRINT_MIN.cancelled}.` }, { status: 400 });
+    return { status: 400, body: { error: `Not enough yet: ${proven.length} proven sale${proven.length === 1 ? "" : "s"} and ${cancels.length} cancel${cancels.length === 1 ? "" : "s"} for this rep. It needs at least ${FINGERPRINT_MIN.proven} and ${FINGERPRINT_MIN.cancelled}.` } };
+
+  if (auto) {
+    const { data: last } = await supabase.from("rep_fingerprints").select("inputs").eq("rep_id", repId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const li = (last?.inputs as { proven?: number; cancelled?: number } | null) ?? null;
+    if (li && li.proven === proven.length && li.cancelled === cancels.length) return { status: 200, body: { skipped: "nothing new" } };
+  }
 
   const block = (r: (typeof rows)[number]) => {
     const g = r.grade as Grade;
@@ -172,14 +192,14 @@ export async function POST(request: Request) {
     }),
     signal: AbortSignal.timeout(280_000),
   });
-  if (!res.ok) return NextResponse.json({ error: `Couldn't read this rep's style (${res.status}). ${(await res.text().catch(() => "")).slice(0, 200)}` }, { status: 500 });
+  if (!res.ok) return { status: 500, body: { error: `Couldn't read this rep's style (${res.status}). ${(await res.text().catch(() => "")).slice(0, 200)}` } };
   const out = (await res.json()) as { content?: { type: string; text?: string }[]; usage?: Record<string, number> };
   const raw = (out.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("");
   let body: Fingerprint;
   try {
     body = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as Fingerprint;
   } catch {
-    return NextResponse.json({ error: "The result came back unreadable. Try again." }, { status: 500 });
+    return { status: 500, body: { error: "The result came back unreadable. Try again." } };
   }
   const usd = gradeCostUsd(MODEL, out.usage ?? {});
   const { error: insErr } = await supabase.from("rep_fingerprints").insert({
@@ -191,7 +211,7 @@ export async function POST(request: Request) {
     model: MODEL,
     usd,
   });
-  if (insErr) return NextResponse.json({ error: /rep_fingerprints|does not exist/i.test(insErr.message) ? "Run supabase/rep-fingerprint.sql first." : insErr.message }, { status: 500 });
+  if (insErr) return { status: 500, body: { error: /rep_fingerprints|does not exist/i.test(insErr.message) ? "Run supabase/rep-fingerprint.sql first." : insErr.message } };
 
   // Experiments: apply the checks, then start the suggested ones (the app suggests; managers can drop or keep any).
   const now = new Date().toISOString();
@@ -214,5 +234,8 @@ export async function POST(request: Request) {
       await supabase.from("rep_experiments").insert({ org_id: orgId, rep_id: repId, pattern: t.pattern, how_to_try: t.how_to_try, why_fits: t.why_fits });
     }
   }
-  return NextResponse.json({ ok: true, usd });
+  // With 3+ reps' styles on record, keep the team patterns current too.
+  const { data: fps } = await supabase.from("rep_fingerprints").select("rep_id");
+  if (new Set((fps || []).map((f) => f.rep_id)).size >= 3) await kick(request, "/api/team/patterns", { background: true });
+  return { status: 200, body: { ok: true, usd } };
 }

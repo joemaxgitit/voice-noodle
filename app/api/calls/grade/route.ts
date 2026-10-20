@@ -1,6 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { requireAdmin, log } from "@/lib/callsServer";
 import { prepareGrade } from "@/lib/gradeCall";
+import { afterGrade } from "@/lib/chain";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -36,7 +37,11 @@ export async function POST(request: Request) {
   if (!prep.ok) return NextResponse.json({ error: prep.error }, { status: prep.status });
   if (prep.already) return NextResponse.json({ ok: true, already: true }, { status: 202 });
 
-  after(prep.run);
+  // Then learn from it, keep its client journey current and refresh the practice voices -- by itself.
+  after(async () => {
+    await prep.run();
+    await afterGrade(request, supabase, callId);
+  });
   log("grade", callId, started, `accepted (${prep.summary})`);
   return NextResponse.json({ ok: true }, { status: 202 });
 }

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { requireAdmin } from "@/lib/callsServer";
 import { learnFromCall } from "@/lib/learnServer";
 
@@ -15,8 +15,13 @@ export async function POST(request: Request) {
   if (ctx instanceof NextResponse) return ctx;
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set on the server." }, { status: 500 });
-  const callId = String(((await request.json().catch(() => ({}))) as { callId?: string }).callId || "");
+  const body = (await request.json().catch(() => ({}))) as { callId?: string; background?: boolean };
+  const callId = String(body.callId || "");
   if (!callId) return NextResponse.json({ error: "No call id." }, { status: 400 });
+  if (body.background) {
+    after(() => learnFromCall(ctx.supabase, ctx.orgId, callId, key).then(() => undefined));
+    return NextResponse.json({ ok: true }, { status: 202 });
+  }
   const r = await learnFromCall(ctx.supabase, ctx.orgId, callId, key);
   return NextResponse.json(r, { status: r.ok ? 200 : 500 });
 }

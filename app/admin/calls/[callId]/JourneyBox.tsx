@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { clock, scoreBand } from "@/lib/calls";
+import { startJob } from "@/lib/callsClient";
 import type { JourneyRead } from "@/app/api/journeys/read/route";
 import { clientKey, journeyStatus, numbered, type JourneyCall } from "@/lib/journey";
 
@@ -11,7 +12,7 @@ import { clientKey, journeyStatus, numbered, type JourneyCall } from "@/lib/jour
  * This call in the client's journey: its call number, whether another rep
  * took it over, and every other call with the same client ID.
  */
-export default function JourneyBox({ supabase, callId, clientLabel, source }: { supabase: SupabaseClient; callId: string; clientLabel: string | null; source: string | null }) {
+export default function JourneyBox({ supabase, callId, clientLabel, source, onChanged }: { supabase: SupabaseClient; callId: string; clientLabel: string | null; source: string | null; onChanged?: () => void }) {
   const [calls, setCalls] = useState<(JourneyCall & { rep: string; duration_secs?: number | null })[]>([]);
   const [mine, setMine] = useState<{ call_number: number | null; handoff: string | null } | null>(null);
   const [error, setError] = useState("");
@@ -47,9 +48,12 @@ export default function JourneyBox({ supabase, callId, clientLabel, source }: { 
     setError("");
     const { error } = await supabase.from("calls").update(patch).eq("id", callId);
     if (error) return setError(error.message);
-    setSaved("Saved. Press Re-grade so the grade knows.");
-    setTimeout(() => setSaved(""), 4000);
+    // Re-grade so the grade knows where this call sits in the journey.
+    const err = await startJob(supabase, "grade", callId);
+    setSaved(err ? `Saved, but the re-grade didn't start: ${err}` : "Saved. Re-grading so the grade knows…");
+    setTimeout(() => setSaved(""), 5000);
     await load();
+    onChanged?.();
   }
 
   if (source === "roleplay") return null;

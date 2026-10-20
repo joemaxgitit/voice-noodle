@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { requireAdmin, thinkingFor } from "@/lib/callsServer";
 import { gradeCostUsd } from "@/lib/calls";
 import { TEAM_MIN_REPS, type FingerprintRow, type TeamPattern } from "@/lib/fingerprint";
@@ -36,13 +36,25 @@ export async function POST(request: Request) {
   const { supabase, orgId, userId } = ctx;
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set on the server." }, { status: 500 });
+  const input = (await request.json().catch(() => ({}))) as { background?: boolean };
+  if (input.background) {
+    after(() => findPatterns(supabase, orgId, userId, key).then(() => undefined));
+    return NextResponse.json({ ok: true }, { status: 202 });
+  }
+  const r = await findPatterns(supabase, orgId, userId, key);
+  return NextResponse.json(r.body, { status: r.status });
+}
+
+type Db = Awaited<ReturnType<typeof requireAdmin>> extends infer T ? (T extends { supabase: infer S } ? S : never) : never;
+
+async function findPatterns(supabase: Db, orgId: string, userId: string, key: string): Promise<{ status: number; body: Record<string, unknown> }> {
 
   const { data, error } = await supabase.from("rep_fingerprints").select("id, rep_id, created_at, inputs, body, usd").order("created_at", { ascending: false }).limit(400);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return { status: 500, body: { error: error.message } };
   const latest = new Map<string, FingerprintRow>();
   for (const f of (data || []) as FingerprintRow[]) if (!latest.has(f.rep_id)) latest.set(f.rep_id, f);
   if (latest.size < TEAM_MIN_REPS)
-    return NextResponse.json({ error: `Team patterns need at least ${TEAM_MIN_REPS} reps with a "Style that works" -- there ${latest.size === 1 ? "is" : "are"} ${latest.size} so far.` }, { status: 400 });
+    return { status: 400, body: { error: `Team patterns need at least ${TEAM_MIN_REPS} reps with a "Style that works" -- there ${latest.size === 1 ? "is" : "are"} ${latest.size} so far.` } };
 
   const text = [...latest.values()]
     .map((f) => `<rep id="${f.rep_id}" proven="${f.inputs.proven ?? "?"}" cancelled="${f.inputs.cancelled ?? "?"}">\n${f.body.markers.map((m) => `- ${m.marker}: ${m.how_it_sounds} (in ${m.in_proven} proven, ${m.in_cancels} cancels)`).join("\n")}\n</rep>`)
@@ -71,17 +83,17 @@ export async function POST(request: Request) {
     }),
     signal: AbortSignal.timeout(280_000),
   });
-  if (!res.ok) return NextResponse.json({ error: `Couldn't find team patterns (${res.status}). ${(await res.text().catch(() => "")).slice(0, 200)}` }, { status: 500 });
+  if (!res.ok) return { status: 500, body: { error: `Couldn't find team patterns (${res.status}). ${(await res.text().catch(() => "")).slice(0, 200)}` } };
   const out = (await res.json()) as { content?: { type: string; text?: string }[]; usage?: Record<string, number> };
   const raw = (out.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("");
   let patterns: TeamPattern[] = [];
   try {
     patterns = (JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as { patterns: TeamPattern[] }).patterns.filter((p) => new Set(p.reps.filter((r) => latest.has(r))).size >= TEAM_MIN_REPS);
   } catch {
-    return NextResponse.json({ error: "The result came back unreadable. Try again." }, { status: 500 });
+    return { status: 500, body: { error: "The result came back unreadable. Try again." } };
   }
   const usd = gradeCostUsd(MODEL, out.usage ?? {});
   const { error: insErr } = await supabase.from("team_patterns").insert({ org_id: orgId, created_by: userId, body: { patterns, reps: latest.size }, usd });
-  if (insErr) return NextResponse.json({ error: /team_patterns|does not exist/i.test(insErr.message) ? "Run supabase/team-patterns.sql first." : insErr.message }, { status: 500 });
-  return NextResponse.json({ ok: true, found: patterns.length, usd });
+  if (insErr) return { status: 500, body: { error: /team_patterns|does not exist/i.test(insErr.message) ? "Run supabase/team-patterns.sql first." : insErr.message } };
+  return { status: 200, body: { ok: true, found: patterns.length, usd } };
 }

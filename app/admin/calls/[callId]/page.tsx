@@ -628,7 +628,18 @@ export default function CallDetail() {
     }
     setCall({ ...call, ...next });
     const { error } = await supabase.from("calls").update(next).eq("id", call.id);
-    if (error) setError(error.message);
+    if (error) return setError(error.message);
+    // A new proven sale or cancel: the rep's "Style that works" refreshes by itself when there's enough to go on.
+    if (patch.retention !== undefined && call.rep_id && call.source !== "roleplay") {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      void fetch("/api/reps/fingerprint", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ repId: call.rep_id, auto: true }),
+      }).catch(() => null);
+    }
   }
 
   async function setOutcome(value: string) {
@@ -1667,7 +1678,7 @@ export default function CallDetail() {
       )}
 
       <div className="no-print">
-      <JourneyBox supabase={supabase} callId={call.id} clientLabel={call.client_label} source={call.source} />
+      <JourneyBox supabase={supabase} callId={call.id} clientLabel={call.client_label} source={call.source} onChanged={() => void load()} />
 
       <h2>Settings</h2>
       {call.audio_path && call.audio_redact_state === "done" && call.audio_redact_note && (

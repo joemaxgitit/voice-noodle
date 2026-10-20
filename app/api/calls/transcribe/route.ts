@@ -1,4 +1,5 @@
 import { NextResponse, after } from "next/server";
+import { afterTranscribe } from "@/lib/chain";
 import { buildTranscript, isStuck, transcribeCostUsd, type CallStatus, type ScribeWord } from "@/lib/calls";
 import { requireAdmin, failCall, log, type Supa } from "@/lib/callsServer";
 
@@ -129,9 +130,11 @@ export async function POST(request: Request) {
 
   const audioSecs = Number(call.duration_secs) || null;
 
-  after(() =>
-    transcribe(supabase, callId, signed.signedUrl, key, repName || null, audioSecs, started)
-  );
+  // Then straight on to grading (and translating a Spanish call) -- no page needs to be open.
+  after(async () => {
+    await transcribe(supabase, callId, signed.signedUrl, key, repName || null, audioSecs, started);
+    await afterTranscribe(request, supabase, callId);
+  });
 
   log("transcribe", callId, started, "accepted");
   return NextResponse.json({ ok: true }, { status: 202 });

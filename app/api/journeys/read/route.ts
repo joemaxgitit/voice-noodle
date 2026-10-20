@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { requireAdmin, thinkingFor } from "@/lib/callsServer";
 import { gradeCostUsd, type Grade } from "@/lib/calls";
 import { clientKey, numbered, type JourneyCall } from "@/lib/journey";
@@ -36,21 +36,31 @@ export async function POST(request: Request) {
   const { supabase, orgId } = ctx;
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set on the server." }, { status: 500 });
-  const label = String(((await request.json().catch(() => ({}))) as { clientLabel?: string }).clientLabel || "").trim();
+  const body = (await request.json().catch(() => ({}))) as { clientLabel?: string; background?: boolean };
+  const label = String(body.clientLabel || "").trim();
   if (!label) return NextResponse.json({ error: "No client ID." }, { status: 400 });
+  if (body.background) {
+    after(() => readJourney(supabase, orgId, key, label).then(() => undefined));
+    return NextResponse.json({ ok: true }, { status: 202 });
+  }
+  const r = await readJourney(supabase, orgId, key, label);
+  return NextResponse.json(r.body, { status: r.status });
+}
+
+async function readJourney(supabase: Awaited<ReturnType<typeof requireAdmin>> extends infer T ? (T extends { supabase: infer S } ? S : never) : never, orgId: string, key: string, label: string): Promise<{ status: number; body: Record<string, unknown> }> {
 
   const { data, error } = await supabase
     .from("calls")
     .select("id, client_label, call_date, created_at, rep_id, rep_name, status, outcome, outcome_manual, retention, score, slp_score, grade, scripts(title), profiles:rep_id(full_name)")
     .ilike("client_label", label)
     .neq("source", "roleplay");
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return { status: 500, body: { error: error.message } };
   const nums = await supabase.from("calls").select("id, call_number, handoff").ilike("client_label", label);
   const num = new Map(((nums.data || []) as { id: string; call_number: number | null; handoff: string | null }[]).map((x) => [x.id, x]));
   type Row = JourneyCall & { grade: Grade | null; rep_name: string | null; scripts: { title: string } | null; profiles: { full_name: string | null } | null };
   const rows = ((data || []) as unknown as Row[]).map((r) => ({ ...r, call_number: num.get(r.id)?.call_number ?? null, handoff: num.get(r.id)?.handoff ?? null, script_title: r.scripts?.title ?? null }));
   const graded = numbered(rows).filter((r) => r.status === "graded" && r.grade);
-  if (graded.length < 2) return NextResponse.json({ skipped: "fewer than two graded calls" });
+  if (graded.length < 2) return { status: 200, body: { skipped: "fewer than two graded calls" } };
 
   const text = graded
     .map((c) => {
@@ -93,19 +103,19 @@ export async function POST(request: Request) {
     }),
     signal: AbortSignal.timeout(280_000),
   });
-  if (!res.ok) return NextResponse.json({ error: `Journey read failed (${res.status}). ${(await res.text().catch(() => "")).slice(0, 200)}` }, { status: 500 });
+  if (!res.ok) return { status: 500, body: { error: `Journey read failed (${res.status}). ${(await res.text().catch(() => "")).slice(0, 200)}` } };
   const out = (await res.json()) as { content?: { type: string; text?: string }[]; usage?: Record<string, number> };
   const raw = (out.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("");
   let read: JourneyRead;
   try {
     read = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as JourneyRead;
   } catch {
-    return NextResponse.json({ error: "The journey read came back unreadable." }, { status: 500 });
+    return { status: 500, body: { error: "The journey read came back unreadable." } };
   }
   const usd = gradeCostUsd(MODEL, out.usage ?? {});
   const { error: upErr } = await supabase
     .from("client_journeys")
     .upsert({ org_id: orgId, client_key: clientKey(label), read, calls_read: graded.length, model: MODEL, usd, updated_at: new Date().toISOString() }, { onConflict: "org_id,client_key" });
-  if (upErr) return NextResponse.json({ error: /client_journeys|does not exist/i.test(upErr.message) ? "Run supabase/follow-ups.sql first." : upErr.message }, { status: 500 });
-  return NextResponse.json({ ok: true, usd });
+  if (upErr) return { status: 500, body: { error: /client_journeys|does not exist/i.test(upErr.message) ? "Run supabase/follow-ups.sql first." : upErr.message } };
+  return { status: 200, body: { ok: true, usd } };
 }

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { requireAdmin } from "@/lib/callsServer";
 import { upsertAgent, xiKey } from "@/lib/roleplayServer";
 import { agentHash, agentSpecs, type Persona, type PersonaSecret } from "@/lib/roleplay";
@@ -24,7 +24,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "ELEVENLABS_API_KEY is not set on the server." }, { status: 500 });
   }
 
-  const body = (await request.json().catch(() => ({}))) as { personaId?: string; force?: boolean };
+  const body = (await request.json().catch(() => ({}))) as { personaId?: string; force?: boolean; background?: boolean };
+  if (body.background) {
+    // Started by the server pipeline: do it behind the response.
+    after(async () => {
+      await syncAll(supabase, orgId, { personaId: body.personaId, force: body.force });
+    });
+    return NextResponse.json({ ok: true }, { status: 202 });
+  }
+  const r: { error?: string; results: unknown[] } = await syncAll(supabase, orgId, { personaId: body.personaId, force: body.force });
+  return NextResponse.json(r, { status: r.error ? 500 : 200 });
+}
+
+async function syncAll(supabase: Awaited<ReturnType<typeof requireAdmin>> extends infer T ? (T extends { supabase: infer S } ? S : never) : never, orgId: string, body: { personaId?: string; force?: boolean }) {
 
   const { data: org } = await supabase
     .from("orgs")
@@ -43,7 +55,7 @@ export async function POST(request: Request) {
   const { data: ins } = await supabase.from("client_insights").select("id, lang, kind, profile, objections, moments, ending, created_at, calls(retention)").order("created_at", { ascending: false }).limit(400);
   const pool = (ins || []) as unknown as ClientInsight[];
   const real = pool.length ? { en: realVoice(pool, "en"), es: realVoice(pool, "es") } : null;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return { error: error.message, results: [] };
 
   const secretOf = new Map((secrets || []).map((s) => [s.persona_id as string, s as unknown as PersonaSecret]));
   const results: { id: string; name: string; ok: boolean; skipped?: boolean; error?: string }[] = [];
@@ -78,5 +90,5 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ results });
+  return { results };
 }
