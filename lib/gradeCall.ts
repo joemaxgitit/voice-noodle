@@ -131,11 +131,11 @@ export async function prepareGrade(
   */
   const transcript = call.transcript as Transcript;
   const lang = langOf(transcript.language);
-  const pickLang = (ms: ModuleRow[]) => {
-    const same = ms.filter((m) => (m.language || "en") === lang);
+  const pickLangFor = (ms: ModuleRow[], lg: "en" | "es") => {
+    const same = ms.filter((m) => (m.language || "en") === lg);
     return same.length > 0 ? same : ms;
   };
-  let useModules = pickLang(modules as unknown as ModuleRow[]);
+  const pickLang = (ms: ModuleRow[]) => pickLangFor(ms, lang);
 
   /*
     A script that hands off to another one -- the Renew script opens the call
@@ -146,8 +146,10 @@ export async function prepareGrade(
   const notes: string[] = [];
   if (script?.grading_note) notes.push(script.grading_note.trim());
 
+  let contModules: ModuleRow[] = [];
+  let contTitle = "";
   if (script?.continues_into) {
-    const [{ data: cont }, { data: contModules }] = await Promise.all([
+    const [{ data: cont }, { data: cm }] = await Promise.all([
       supabase.from("scripts").select("title").eq("id", script.continues_into).single(),
       supabase
         .from("modules")
@@ -156,11 +158,16 @@ export async function prepareGrade(
         .eq("active", true)
         .order("sort_order"),
     ]);
-    const next = pickLang((contModules || []) as unknown as ModuleRow[]);
+    contModules = (cm || []) as unknown as ModuleRow[];
+    contTitle = cont?.title ?? "";
+  }
+  const assemble = (lg: "en" | "es") => {
+    const own = pickLangFor(modules as unknown as ModuleRow[], lg);
+    if (!script?.continues_into) return own;
+    const next = pickLangFor(contModules, lg);
     const from = script.continues_from;
     const startModule = from ? next.find((m) => m.segments?.some((g) => g.segment_code === from)) : null;
     const startSeg = startModule?.segments.find((g) => g.segment_code === from);
-
     const carried = next
       .filter((m) => m.kind === "loop" || !startModule || m.sort_order >= startModule.sort_order)
       .map((m) =>
@@ -169,13 +176,33 @@ export async function prepareGrade(
           : m
       );
     // This script's own loops (if any) stay; the other script's are added.
-    useModules = [...useModules, ...carried];
+    return [...own, ...carried];
+  };
+  const useModules = assemble(lang);
+  if (script?.continues_into) {
     notes.push(
-      `After the sections above, the call continues on "${cont?.title ?? "the next script"}"` +
-        (from ? ` from ${from}` : "") +
+      `After the sections above, the call continues on "${contTitle || "the next script"}"` +
+        (script.continues_from ? ` from ${script.continues_from}` : "") +
         ". Those sections are included above, in order, and are graded the same way."
     );
   }
+
+  /*
+    How the grade names things, so managers read it against the script:
+    every section is named by its title in the English script (a Spanish
+    call is graded on the Spanish script, then its section names are mapped
+    to their English counterparts, which sit in the same order).
+    A script that picks up after the loan (Renew) has no SuperMoney, so
+    those two roadmap stages are left out entirely.
+  */
+  const titles = useModules.map((m) => m.title);
+  const english = lang === "es" ? assemble("en").map((m) => m.title) : titles;
+  const naming: Naming = {
+    titles,
+    english: english.length === titles.length ? english : titles,
+    skip: script?.continues_into ? ["Hope spike", "Hopeless"] : [],
+    lang,
+  };
 
   const { error: claimErr } = await supabase
     .from("calls")
@@ -224,7 +251,8 @@ export async function prepareGrade(
     voice,
     notes.join("\n"),
     guidance,
-    practice
+    practice,
+    naming.skip
   );
 
   const previous: GradeVersion | null =
@@ -241,6 +269,7 @@ export async function prepareGrade(
     summary: `${lang}, ${useModules.length} modules${isPractice ? ", practice" : ""}`,
     run: () =>
       grade(supabase, callId, blocks, key, started, {
+        naming,
         previous,
         history: (call.grade_history as GradeVersion[] | null) || [],
         cost: (call.cost as CallCost | null) || {},
@@ -419,9 +448,11 @@ function buildPrompt(
   voice: VoiceTimeline | null,
   scriptNote: string,
   guidance: string,
-  practice = ""
+  practice = "",
+  skip: string[] = []
 ) {
   const s = scriptText(modules);
+  const roadmap = ROADMAP.filter((r) => !skip.includes(r.stage));
 
   const stable = `You are reviewing a recorded phone call for a sales manager who coaches reps on a script. Grade how well the rep followed the script, and flag anything a compliance reviewer should hear.
 
@@ -434,8 +465,8 @@ ${s.text}
 How the script is annotated: <AC>, <I CARE>, <PT>, <RM>, <S>, <CALM>, <PREACHER> are Straight Line tonality markers (Absolute Certainty, I Care, Presupposing Tone, Reasonable Man, Scarcity, Calm, The Preacher) placed on the phrase they apply to. "client should feel" is the emotion that line is built to create. "coaching" is the manager's own note on why the line is there.
 
 The script is built on Jordan Belfort's Straight Line Persuasion. Its backbone is this emotional roadmap -- the sequence of feelings the call is designed to take the client through, in order:
-${ROADMAP.map((r, i) => `${i + 1}. ${r.stage} -- ${r.feel}`).join("\n")}
-The script sections deliver these stages, but not one-to-one: "Hopeless", for example, happens inside the SuperMoney section when the loan is not available. The three objection loops each rebuild one of Belfort's Three Tens: Loop 1 the product, Loop 2 trust in the rep, Loop 3 the company.
+${roadmap.map((r, i) => `${i + 1}. ${r.stage} -- ${r.feel}`).join("\n")}
+The script sections deliver these stages, but not one-to-one${skip.length ? "" : ': "Hopeless", for example, happens inside the SuperMoney section when the loan is not available'}. The three objection loops each rebuild one of Belfort's Three Tens: Loop 1 the product, Loop 2 trust in the rep, Loop 3 the company.
 
 The transcript will follow. Each line is [seconds from start] speaker_id: words.
 Speaker ids come from automatic diarization and can be imperfect -- work out who is who from what is said.
@@ -468,7 +499,7 @@ List at most 15 flags. If there are more, keep the most serious, and prefer clai
 emotional_arc: this is the backbone of the grade. Exactly one entry per roadmap stage, in roadmap order, using the stage names exactly as written. Find each stage wherever it actually happened on the call. intended: the roadmap feeling for that stage, sharpened with the script's "client should feel" lines where they apply. observed: what the client actually showed, in a few words, judged only from what the client said. landed: "yes" if the client's own words show they reached the feeling, "partial", "no", or "not_reached" if the call never got there.
 A stage only lands if the client genuinely understood. Agreement given while confused ("okay", "I guess") is not a landed pitch, close or contract stage -- mark it "partial" or "no" and say why in observed. If the loan was approved, "Hopeless" did not happen: mark it "not_reached".
 evidence: a short quote of the CLIENT (20 words or fewer) or "", and its time (-1 if none).
-section: the name of the script section where this stage actually happened, written exactly as that section is titled in the script above (for a Spanish call, the title followed by its English name in parentheses); "" if the stage was not reached.
+section: the script section where this stage actually happened -- or, if it was not reached, the section where it belongs -- copied exactly as that section is titled in the script above.
 
 slp: exactly these eight skills, in this order, each scored 1-10 (1-3 weak, 4-6 developing, 7-8 solid, 9-10 textbook), or 0 if the call never gave the rep a chance to show it:
 - "Control and the straight line": the rep leads the conversation, brings tangents back, and moves the call forward on purpose.
@@ -540,7 +571,7 @@ Return only the JSON object described by the schema.`;
   const spanish =
     lang === "es"
       ? `
-This call is in Spanish and is graded against the Spanish script above. Read the original Spanish carefully -- judge what was actually said, not a paraphrase. Write ALL of your output in English, for an English-speaking manager: translate every quote and piece of evidence into faithful English. Name each script section by its title as listed, followed by its English name in parentheses, for example "La dificultad (Hardship)".
+This call is in Spanish and is graded against the Spanish script above. Read the original Spanish carefully -- judge what was actually said, not a paraphrase. Write ALL of your output in English, for an English-speaking manager: translate every quote and piece of evidence into faithful English -- never leave a quote in Spanish. Name each script section by its title exactly as listed (the names are mapped to the English script afterwards).
 `
       : "";
 
@@ -852,6 +883,101 @@ function askClaude(blocks: { type: string; text: string }[], key: string, strict
 
 /** Maps the schema's plain values back to the app's: -1 and 0 mean "none",
  *  and anything outside the allowed set falls back to a safe value. */
+/** How the grade names script sections and which roadmap stages a script leaves out. */
+export type Naming = { titles: string[]; english: string[]; skip: string[]; lang: "en" | "es" };
+
+const normTitle = (x: string) =>
+  x
+    .toLowerCase()
+    .replace(/\(.*?\)/g, "")
+    .replace(/[^a-z0-9áéíóúñü]+/g, " ")
+    .trim();
+
+/**
+ * Names every section the way the English script does: snaps the grader's
+ * name to the closest real section title (it sometimes adds or drops a word),
+ * then swaps a Spanish title for its English counterpart. Drops roadmap
+ * stages this script doesn't have.
+ */
+export function nameSections(g: Grade, n: Naming) {
+  const find = (name: string): string => {
+    const raw = (name || "").trim();
+    if (!raw) return raw;
+    const obj = raw.match(/^(objection|objeción)\s*:\s*/i);
+    const body = obj ? raw.slice(obj[0].length) : raw;
+    const a = normTitle(body);
+    let i = n.titles.findIndex((t) => normTitle(t) === a);
+    if (i < 0) i = n.titles.findIndex((t) => { const b = normTitle(t); return !!a && !!b && (a.startsWith(b) || b.startsWith(a)); });
+    if (i < 0) i = n.english.findIndex((t) => normTitle(t) === a);
+    const out = i >= 0 ? n.english[i] : body;
+    return obj ? `Objection: ${out}` : out;
+  };
+  for (const s of g.sections ?? []) s.section = find(s.section);
+  if (g.emotional_arc) {
+    g.emotional_arc = g.emotional_arc.filter((a) => !n.skip.some((k) => k.toLowerCase() === String(a.stage).toLowerCase()));
+    for (const a of g.emotional_arc) if (a.section) a.section = find(a.section);
+  }
+}
+
+const SPANISH = /[¿¡ñ]|\b(qué|cómo|porque|usted|tengo|está|estoy|puedo|quiero|tarjetas|deuda|pagar|ahorita|bueno|gracias|también|entonces|necesito|dinero)\b/i;
+const NAME_KEYS = new Set(["section", "stage", "status", "landed", "outcome", "close_quality", "model", "graded_at", "role", "speaker", "severity", "direction", "kind", "skill"]);
+
+/**
+ * The grader is told to write in English, but quotes from a Spanish call
+ * sometimes come back in Spanish. Translate whatever is left, in one cheap
+ * pass, so a manager never has to read Spanish.
+ */
+export async function englishQuotes(g: Grade, key: string) {
+  const spots: { obj: Record<string, unknown> | unknown[]; k: string | number }[] = [];
+  const walk = (x: unknown, depth = 0) => {
+    if (!x || typeof x !== "object" || depth > 6) return;
+    const entries: [string | number, unknown][] = Array.isArray(x) ? x.map((v, i) => [i, v]) : Object.entries(x as Record<string, unknown>);
+    for (const [k, v] of entries) {
+      if (typeof v === "string") {
+        if (typeof k === "string" && NAME_KEYS.has(k)) continue;
+        if (v.length > 2 && SPANISH.test(v)) spots.push({ obj: x as Record<string, unknown>, k });
+      } else walk(v, depth + 1);
+    }
+  };
+  walk(g);
+  if (!spots.length) return;
+  const items = spots.map((s) => String((s.obj as Record<string | number, unknown>)[s.k]));
+  const model = process.env.LEARN_MODEL || "claude-haiku-5-5";
+  try {
+    const res = await fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {
+      method: "POST",
+      headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({
+        model,
+        max_tokens: 8000,
+        output_config: {
+          format: {
+            type: "json_schema",
+            schema: { type: "object", additionalProperties: false, required: ["items"], properties: { items: { type: "array", items: { type: "string" } } } },
+          },
+        },
+        messages: [
+          {
+            role: "user",
+            content: `These are notes about a recorded sales call. Some contain Spanish. Return the same list, same order and same length, with every Spanish word or quote translated into faithful, natural English. Keep anything already in English exactly as it is, and keep quote marks around quotes. Return the JSON only.\n\n${JSON.stringify(items)}`,
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(45_000),
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as { content?: { type: string; text?: string }[] };
+    const text = (data.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("");
+    const out = (JSON.parse(jsonrepair(text)) as { items?: unknown[] }).items;
+    if (!Array.isArray(out) || out.length !== items.length) return;
+    spots.forEach((s, i) => {
+      if (typeof out[i] === "string" && out[i]) (s.obj as Record<string | number, unknown>)[s.k] = out[i];
+    });
+  } catch {
+    // Leave the grade as it is rather than fail it over a translation.
+  }
+}
+
 function clean(g: Grade) {
   const t = (n: unknown) => (typeof n === "number" && n >= 0 ? n : null);
   const one = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T =>
@@ -994,7 +1120,7 @@ async function grade(
   blocks: { type: string; text: string }[],
   key: string,
   started: number,
-  prior: { previous: GradeVersion | null; history: GradeVersion[]; cost: CallCost }
+  prior: { naming: Naming; previous: GradeVersion | null; history: GradeVersion[]; cost: CallCost }
 ) {
   try {
     let res = await askClaude(blocks, key, true);
@@ -1079,6 +1205,8 @@ async function grade(
     if (result.close_quality) result.close_quality = low(result.close_quality);
     for (const t of result.turning_points) t.direction = low(t.direction);
     clean(result);
+    nameSections(result, prior.naming);
+    if (prior.naming.lang === "es") await englishQuotes(result, key);
     result.slp ||= [];
     for (const a of result.emotional_arc) a.landed = low(a.landed);
     // Scores outside 1-10 would skew the average; clamp them.

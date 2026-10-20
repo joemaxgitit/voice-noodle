@@ -59,9 +59,20 @@ export function nextMove(modules: MoveModule[], calls: MoveCall[], attempts: Mov
   const hs = recent.filter((c) => c.followup_kind !== "followup" && typeof c.hardship_at === "number" && c.hardship_at > 0).map((c) => c.hardship_at as number);
   const shortHardship = hs.length >= 2 && hs.reduce((a, b) => a + b, 0) / hs.length < 5 * 60;
 
+  // Grades name sections by their English title; a Spanish section's English twin sits at the same place in the same script.
+  const twin = new Map<string, string>();
+  if (lang === "es") {
+    const seq = (lg: string, sid: string) => modules.filter((m) => m.script_id === sid && (m.language || "en") === lg && m.kind !== "loop").sort((a, b) => a.sort_order - b.sort_order);
+    for (const sid of new Set(mods.map((m) => m.script_id))) {
+      const es = seq("es", sid);
+      const en = seq("en", sid);
+      if (es.length === en.length) es.forEach((m, i) => twin.set(m.id, en[i].title));
+    }
+  }
   const reads: SectionRead[] = mods.map((m) => {
     const pts: number[] = [];
-    for (const c of recent) for (const s of c.sections ?? []) if (s.status in POINTS && matches(s.section, m.title)) pts.push(POINTS[s.status]);
+    const alt = twin.get(m.id);
+    for (const c of recent) for (const s of c.sections ?? []) if (s.status in POINTS && (matches(s.section, m.title) || (!!alt && matches(s.section, alt)))) pts.push(POINTS[s.status]);
     const drills = recentAttempts.filter((a) => segToMod.get(a.segment_id)?.id === m.id && a.scores);
     const drillScores = drills.map((a) => ((a.scores!.pace ?? 0) + (a.scores!.clarity ?? 0)) / 2);
     const call = pts.length ? Math.round((100 * pts.reduce((a, b) => a + b, 0)) / pts.length) : null;
