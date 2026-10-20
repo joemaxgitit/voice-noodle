@@ -829,26 +829,50 @@ type Usage = {
 
 /** Reads the grade JSON out of the reply: every text block joined, wrappers and small slips (stray control characters, trailing commas) tolerated. */
 function readGrade(data: { content?: { type: string; text?: string }[] }): Grade | null {
-  const text = (data.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("");
+  const text = (data.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("").trim();
+  const real = (x: unknown): x is Grade => !!x && typeof x === "object" && !Array.isArray(x) && Array.isArray((x as Grade).sections) && (x as Grade).sections.length > 0;
+  // The grade can come back as-is, wrapped one level down ({"grade": {...}}), inside an array,
+  // or even as a JSON string of itself ("[{\"speaker_roles\": ...}]"). Unwrap until a real grade turns up.
+  const find = (x: unknown, depth = 0): Grade | null => {
+    if (depth > 4 || x == null) return null;
+    if (typeof x === "string") {
+      try {
+        return find(JSON.parse(x), depth + 1);
+      } catch {
+        return null;
+      }
+    }
+    if (real(x)) return x;
+    if (Array.isArray(x)) {
+      for (const v of x) {
+        const g = find(v, depth + 1);
+        if (g) return g;
+      }
+      return null;
+    }
+    if (typeof x === "object") {
+      for (const v of Object.values(x as Record<string, unknown>)) {
+        const g = find(v, depth + 1);
+        if (g) return g;
+      }
+    }
+    return null;
+  };
   const a = text.indexOf("{");
   const b = text.lastIndexOf("}");
   const body = a >= 0 && b > a ? text.slice(a, b + 1) : text;
   const tries = [
+    text,
     body,
     // raw tabs/newlines inside strings
-    body.replace(/[\u0000-\u001f]+/g, (m) => (m.includes("\n") ? " " : " ")),
+    body.replace(/[\u0000-\u001f]+/g, " "),
     // trailing commas
     body.replace(/[\u0000-\u001f]+/g, " ").replace(/,\s*([}\]])/g, "$1"),
   ];
   for (const t of tries) {
     try {
-      const g = JSON.parse(t) as Record<string, unknown>;
-      if (!g || typeof g !== "object") continue;
-      // A real grade has sections and a summary; sometimes it comes wrapped one level down ({"grade": {...}}).
-      const real = (x: unknown): x is Grade => !!x && typeof x === "object" && Array.isArray((x as Grade).sections) && (x as Grade).sections.length > 0;
-      if (real(g)) return g;
-      const inner = Object.values(g).find(real);
-      if (inner) return inner;
+      const g = find(JSON.parse(t));
+      if (g) return g;
     } catch {
       // try the next repair
     }
