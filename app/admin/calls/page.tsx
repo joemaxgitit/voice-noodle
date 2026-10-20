@@ -127,7 +127,14 @@ export default function Calls() {
   function pickFile(f: File | null) {
     setFile(f);
     setVinNote("");
-    if (!f || !/^recording-[0-9a-f]{8}-[0-9a-f]{4}-/i.test(f.name)) return;
+    if (!f) return;
+    // Convoso names carry the call date: ..._MMDDYYYY_HHMMSS.mp3
+    const cd = f.name.match(/_(\d{2})(\d{2})(\d{4})_\d{6}\.\w+$/);
+    if (cd) {
+      const [, mm, dd, yyyy] = cd;
+      if (+mm >= 1 && +mm <= 12 && +dd >= 1 && +dd <= 31) setCallDate(`${yyyy}-${mm}-${dd}`);
+    }
+    if (!/^recording-[0-9a-f]{8}-[0-9a-f]{4}-/i.test(f.name)) return;
     const renew = scripts.find((x) => /renew/i.test(x.title));
     if (!renew) return;
     setScriptId(renew.id);
