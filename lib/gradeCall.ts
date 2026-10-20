@@ -196,10 +196,21 @@ export async function prepareGrade(
     those two roadmap stages are left out entirely.
   */
   const titles = useModules.map((m) => m.title);
-  const english = lang === "es" ? assemble("en").map((m) => m.title) : titles;
+  // Each Spanish section's English twin: same script, same place (sort order), else same position among its kind.
+  const twinOf = (m: ModuleRow): string => {
+    if ((m.language || "en") === "en") return m.title;
+    const pool = (modules as unknown as ModuleRow[]).includes(m) ? (modules as unknown as ModuleRow[]) : contModules;
+    const en = pool.filter((x) => (x.language || "en") === "en" && (x.kind === "loop") === (m.kind === "loop")).sort((a, b) => a.sort_order - b.sort_order);
+    const es = pool.filter((x) => x.language === "es" && (x.kind === "loop") === (m.kind === "loop")).sort((a, b) => a.sort_order - b.sort_order);
+    const same = en.find((x) => x.sort_order === m.sort_order);
+    if (same && en.length === es.length) return same.title;
+    const i = es.findIndex((x) => x.title === m.title);
+    return en.length === es.length && i >= 0 ? en[i].title : same?.title ?? m.title;
+  };
+  const english = useModules.map((m) => twinOf(m.segments && contModules.some((c) => c.title === m.title && c.language === m.language) ? contModules.find((c) => c.title === m.title && c.language === m.language)! : m));
   const naming: Naming = {
     titles,
-    english: english.length === titles.length ? english : titles,
+    english,
     skip: script?.continues_into ? ["Hope spike", "Hopeless"] : [],
     lang,
   };
