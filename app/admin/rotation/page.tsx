@@ -11,6 +11,7 @@ import "../reps/reps.css";
 
 type Person = { id: string; full_name: string | null; role: string; active: boolean; kpi_name: string | null; on_vindico?: boolean };
 const VINDICO = "On Vindico";
+const ABSENT = "Absent -- no talk time, calls or deals";
 type Daily = {
   id: string;
   rep_id: string | null;
@@ -131,7 +132,15 @@ export default function Rotation() {
     // Vindico reps hit rotation automatically while they're on the project, even if they're missing from the file.
     const vin = people.filter((x) => x.on_vindico && x.active);
     const onVin = (id: string | null) => vin.some((x) => x.id === id);
-    const rows = r.rows.map((x) => (onVin(x.rep_id) ? { ...x, scored: { ...x.scored, made: true, hint: VINDICO } } : x));
+    const nothing = (n: { talk_hours: number | null; calls: number | null; deals: number | null }) => !n.talk_hours && !n.calls && !n.deals;
+    const rows = r.rows.map((x) =>
+      onVin(x.rep_id)
+        ? { ...x, scored: { ...x.scored, made: true, hint: VINDICO } }
+        : // Nothing at all that day: they weren't in, so it's an absence, not a miss.
+          nothing(x.numbers)
+          ? { ...x, scored: { ...x.scored, made: false, hint: ABSENT } }
+          : x
+    );
     for (const x of vin)
       if (!rows.some((y) => y.rep_id === x.id)) {
         const numbers = { talk_hours: null, calls: null, deals: null };
@@ -139,6 +148,16 @@ export default function Rotation() {
       }
     setRows(rows);
   }
+
+  // A file dropped before the team list finished loading gets matched again once it arrives.
+  const matchedWith = useRef(0);
+  useEffect(() => {
+    if (grid && people.length && matchedWith.current !== people.length) {
+      matchedWith.current = people.length;
+      parse(grid, cols ?? undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [people, grid]);
 
   async function pick(f: File) {
     setError("");
@@ -183,7 +202,7 @@ export default function Rotation() {
       deals: r.numbers.deals,
       points: r.scored.points,
       made: r.scored.made,
-      status: "worked",
+      status: r.scored.hint === ABSENT ? "absent" : "worked",
       override_note: r.scored.hint === VINDICO ? VINDICO : null,
       source: "upload",
       updated_by: me,
@@ -447,6 +466,8 @@ export default function Rotation() {
                           <span className="pill good">Made it</span>
                           {r.scored.hint === VINDICO && <small className="muted"> {VINDICO}</small>}
                         </>
+                      ) : r.scored.hint === ABSENT ? (
+                        <span className="pill">Absent</span>
                       ) : (
                         <>
                           <span className="pill poor">Missed</span> <small className="muted">{r.scored.hint}</small>
