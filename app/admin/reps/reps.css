@@ -131,3 +131,11 @@ a.rx-ev:hover { background: var(--ink-3); }
 .rx-fit th, .rx-fit td { padding: 8px 6px; }
 .rx-fit td { white-space: nowrap; }
 .rx-fit td:first-child { white-space: normal; }
+
+/* Reps table: sortable headers, scores aligned with the movement just to the right. */
+.rx-table th.rx-sort { cursor: pointer; user-select: none; }
+.rx-table th.rx-sort:hover { color: var(--text, inherit); }
+.rx-table .rx-slp { padding-right: 46px; }
+.rx-score { position: relative; display: inline-block; }
+.rx-delta { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 6px; white-space: nowrap; font-size: 12px; }
+@media (max-width: 700px) { .rx-table .rx-hide-sm { display: none; } }

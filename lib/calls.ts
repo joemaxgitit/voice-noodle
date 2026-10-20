@@ -162,8 +162,8 @@ export type Spotlights = {
     repeat_stall: boolean;
     read: string;
   };
-  hardship: { moved_on_at: number; vulnerable_secs: number; deepest: string; best_question: string; cut_short: string; cut_short_time: number; read: string };
-  turndown: {
+  hardship?: { moved_on_at: number; vulnerable_secs: number; deepest: string; best_question: string; cut_short: string; cut_short_time: number; read: string };
+  turndown?: {
     happened: boolean;
     at: number;
     client_reaction: string;

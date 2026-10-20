@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { scoreBand, callAt } from "@/lib/calls";
+import { scoreBand, callAt, hardshipBand } from "@/lib/calls";
 import { fmtKpi, headlineValue, monthlyReports, monthOf, fmtMonth, type KpiReport, type KpiRow } from "@/lib/kpi";
 import DropBox from "./DropBox";
 import { useMode } from "@/lib/superMode";
@@ -12,7 +12,22 @@ import "../training/training.css";
 import "./reps.css";
 
 type Person = { id: string; full_name: string | null; role: string; team: string | null; active: boolean };
-type CallLite = { rep_id: string; created_at: string; call_date: string | null; source: string; slp_score: number | null; status: string };
+type CallLite = {
+  rep_id: string;
+  created_at: string;
+  call_date: string | null;
+  source: string;
+  slp_score: number | null;
+  status: string;
+  script_id: string | null;
+  tens: { product?: number | null; rep?: number | null; company?: number | null } | null;
+  hs: number | null;
+  fu: string | null;
+};
+type SortKey = "name" | "slp" | "product" | "rep" | "company" | "hardship" | "calls" | "review";
+const clock = (secs: number) => `${Math.floor(secs / 60)}:${String(Math.round(secs % 60)).padStart(2, "0")}`;
+const avg1 = (xs: number[]) => (xs.length ? Math.round((xs.reduce((s, x) => s + x, 0) / xs.length) * 10) / 10 : null);
+const tenBand = (x: number) => (x >= 7 ? "good" : x >= 5 ? "fair" : "poor");
 type ReviewLite = { rep_id: string; status: string; created_at: string; trajectory: string | null; core_trajectory?: string | null };
 
 const DAY = 86400000;
@@ -32,6 +47,9 @@ export default function Reps() {
   const [notes, setNotes] = useState<Map<string, number>>(new Map());
   const [reviews, setReviews] = useState<ReviewLite[]>([]);
   const [showAll, setShowAll] = useState(false);
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "name", dir: 1 });
+  // Scripts that pick up after the loan (Renew): no hardship target, so they're left out of the hardship column.
+  const [renewScripts, setRenewScripts] = useState<Set<string>>(new Set());
   // Every lost client on record (once each), for the 3-month look back.
   const [cancels, setCancels] = useState<{ rep_id: string; requested: string; stage: string }[]>([]);
   // Latest Friday retention lookback, per rep.
@@ -50,7 +68,12 @@ export default function Reps() {
     const since = new Date(Date.now() - 60 * DAY).toISOString();
     const [p, c, r, k, n, v] = await Promise.all([
       supabase.from("profiles").select("id, full_name, role, team, active").eq("org_id", org).order("full_name"),
-      supabase.from("calls").select("rep_id, created_at, call_date, source, slp_score, status").gte("created_at", since).not("rep_id", "is", null),
+      // By when the call happened (call date), falling back to upload date when no call date was given.
+      supabase
+        .from("calls")
+        .select("rep_id, created_at, call_date, source, slp_score, status, script_id, tens:grade->three_tens, hs:grade->spotlights->hardship->moved_on_at, fu:grade->spotlights->followup->>kind")
+        .or(`call_date.gte.${since.slice(0, 10)},and(call_date.is.null,created_at.gte.${since})`)
+        .not("rep_id", "is", null),
       supabase.from("kpi_reports").select("*"),
       supabase.from("kpi_rows").select("id, report_id, rep_id, salesman, data"),
       supabase.from("rep_notes").select("rep_id"),
@@ -59,7 +82,9 @@ export default function Reps() {
     const err = p.error || c.error || r.error || n.error;
     if (err) setError(/kpi_|rep_notes|rep_reviews|does not exist/i.test(err.message) ? `${err.message} -- run supabase/rep-profile.sql in the Supabase SQL Editor first.` : err.message);
     setPeople((p.data || []) as Person[]);
-    setCalls((c.data || []) as CallLite[]);
+    setCalls((c.data || []) as unknown as CallLite[]);
+    const sc = await supabase.from("scripts").select("id, continues_into");
+    setRenewScripts(new Set(((sc.data || []) as { id: string; continues_into: string | null }[]).filter((x) => x.continues_into).map((x) => x.id)));
     setReports((r.data || []) as KpiReport[]);
     setKpiRows((k.data || []) as KpiRow[]);
     const counts = new Map<string, number>();
@@ -129,9 +154,17 @@ export default function Reps() {
         const mine = calls.filter((c) => c.rep_id === p.id && c.status === "graded");
         const at = (c: CallLite) => callAt(c);
         const now30 = mine.filter((c) => at(c) >= now - 30 * DAY);
-        const prev30 = mine.filter((c) => at(c) < now - 30 * DAY);
+        // Movement: this 30 days against the 30 before it, by call date.
+        const prev30 = mine.filter((c) => at(c) < now - 30 * DAY && at(c) >= now - 60 * DAY);
         const slp = avg(now30.map((c) => c.slp_score).filter((x): x is number => x !== null));
         const slpPrev = avg(prev30.map((c) => c.slp_score).filter((x): x is number => x !== null));
+        const ten = (k: "product" | "rep" | "company") => avg1(now30.map((c) => c.tens?.[k]).filter((x): x is number => typeof x === "number"));
+        const tens = { product: ten("product"), rep: ten("rep"), company: ten("company") };
+        const tv = Object.entries(tens).filter(([, v]) => v !== null) as [string, number][];
+        const weakest = tv.length > 1 ? tv.reduce((a, b) => (b[1] < a[1] ? b : a))[0] : null;
+        // Hardship: Options Script first calls only (renew calls have no hardship target; follow-ups covered it before).
+        const hsCalls = now30.filter((c) => !renewScripts.has(c.script_id ?? "") && c.fu !== "followup" && typeof c.hs === "number" && c.hs > 0);
+        const hs = hsCalls.length ? hsCalls.reduce((a, c) => a + (c.hs as number), 0) / hsCalls.length : null;
         const kr = kpi?.curRows.find((r) => r.rep_id === p.id);
         const kp = kpi?.prevRows.find((r) => r.rep_id === p.id);
         const deals = kr && kpi ? headlineValue(kr, kpi.cur.columns, "deals") : null;
@@ -142,6 +175,10 @@ export default function Reps() {
           p,
           slp,
           slpDelta: slp !== null && slpPrev !== null ? slp - slpPrev : null,
+          tens,
+          weakest,
+          hs,
+          hsN: hsCalls.length,
           real: now30.filter((c) => c.source !== "roleplay").length,
           practice: now30.filter((c) => c.source === "roleplay").length,
           deals,
@@ -158,7 +195,48 @@ export default function Reps() {
           })(),
         };
       });
-  }, [people, calls, kpi, notes, reviews, showAll, ret, look]);
+  }, [people, calls, kpi, notes, reviews, showAll, ret, look, renewScripts]);
+
+  const TRAJ_RANK: Record<string, number> = { slipping: 0, mixed: 1, early: 2, steady: 3, improving: 4 };
+  const sorted = useMemo(() => {
+    const val = (r: (typeof rows)[number]): number | string | null => {
+      switch (sort.key) {
+        case "name": return (r.p.full_name || "").toLowerCase();
+        case "slp": return r.slp;
+        case "product": return r.tens.product;
+        case "rep": return r.tens.rep;
+        case "company": return r.tens.company;
+        case "hardship": return r.hs;
+        case "calls": return r.real + r.practice;
+        case "review": {
+          const t = r.review ? (superMode ? r.review.trajectory : r.review.core_trajectory) : null;
+          return t ? TRAJ_RANK[t] ?? 2 : null;
+        }
+      }
+    };
+    // Empty values always sink to the bottom, whichever way it's sorted.
+    return [...rows].sort((a, b) => {
+      const x = val(a);
+      const y = val(b);
+      if (x === null && y === null) return 0;
+      if (x === null) return 1;
+      if (y === null) return -1;
+      return (x < y ? -1 : x > y ? 1 : 0) * sort.dir;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, sort, superMode]);
+
+  const head = (key: SortKey, label: string, cls = "", title?: string) => (
+    <th
+      className={`rx-sort ${cls}`}
+      title={title}
+      aria-sort={sort.key === key ? (sort.dir === 1 ? "ascending" : "descending") : "none"}
+      onClick={() => setSort((s) => (s.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: key === "name" ? 1 : -1 }))}
+    >
+      {label}
+      {sort.key === key ? (sort.dir === 1 ? " ↑" : " ↓") : ""}
+    </th>
+  );
 
   return (
     <main className="shell rx-page" style={{ maxWidth: 1120 }}>
@@ -175,9 +253,13 @@ export default function Reps() {
         <table className="rx-table rx-fit">
           <thead>
             <tr>
-              <th>Rep</th>
-              <th className="num" title="Straight Line score, last 30 days">SLP 30d</th>
-              <th className="num" title="Real calls / practice calls graded, last 30 days">Calls / practice</th>
+              {head("name", "Rep")}
+              {head("slp", "SLP 30d", "num rx-slp", "Straight Line score, last 30 days by call date. The arrow is the change from the 30 days before.")}
+              {head("product", "Product (Ten 1)", "num rx-hide-sm", "Client's certainty in the product, 1-10, last 30 days")}
+              {head("rep", "Rep (Ten 2)", "num rx-hide-sm", "Client's trust in the rep, 1-10, last 30 days")}
+              {head("company", "Company (Ten 3)", "num rx-hide-sm", "Client's certainty in the company, 1-10, last 30 days")}
+              {head("hardship", "Hardship", "num", "Average time before moving off hardship, Options Script first calls, last 30 days. Target 8-12 min. Renew calls have no hardship target.")}
+              {head("calls", "Calls / practice", "num rx-hide-sm", "Real calls / practice calls graded, last 30 days")}
               {superMode && (
                 <>
               <th className="num">{kpi ? `Deals ${fmtMonth(monthOf(kpi.cur), false)}` : "Deals"}</th>
@@ -194,11 +276,11 @@ export default function Reps() {
               <th className="num">Notes</th>
                 </>
               )}
-              <th>Review</th>
+              {head("review", "Review")}
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {sorted.map((r) => (
               <tr key={r.p.id} className="link" onClick={() => router.push(`/admin/reps/${r.p.id}`)}>
                 <td>
                   <a href={`/admin/reps/${r.p.id}`} onClick={(e) => e.preventDefault()}>
@@ -206,23 +288,42 @@ export default function Reps() {
                   </a>
                   {!r.p.active && <small className="muted"> · inactive</small>}
                 </td>
-                <td className="num">
+                <td className="num rx-slp">
                   {r.slp === null ? (
                     <span className="muted">--</span>
                   ) : (
-                    <>
+                    <span className="rx-score">
                       <span className={`pill ${scoreBand(r.slp)}`}>{r.slp}</span>
                       {r.slpDelta !== null && r.slpDelta !== 0 && (
-                        <small className={r.slpDelta > 0 ? "rx-up" : "rx-down"}>
-                          {" "}
+                        <small className={`rx-delta ${r.slpDelta > 0 ? "rx-up" : "rx-down"}`}>
                           {r.slpDelta > 0 ? "▲" : "▼"}
                           {Math.abs(r.slpDelta)}
                         </small>
                       )}
-                    </>
+                    </span>
                   )}
                 </td>
-                <td className="num">
+                {(["product", "rep", "company"] as const).map((k) => (
+                  <td key={k} className="num rx-hide-sm">
+                    {r.tens[k] === null ? (
+                      <span className="muted">--</span>
+                    ) : (
+                      <span className={`pill ${tenBand(r.tens[k]!)}`} style={r.weakest === k ? { fontWeight: 800, outline: "1px solid currentColor" } : undefined} title={r.weakest === k ? "Weakest of the three" : undefined}>
+                        {r.tens[k]!.toFixed(1)}
+                      </span>
+                    )}
+                  </td>
+                ))}
+                <td className="num" title={r.hsN ? `${r.hsN} Options first call${r.hsN === 1 ? "" : "s"}` : undefined}>
+                  {r.hs === null ? (
+                    <span className="muted">--</span>
+                  ) : (
+                    <span className={`pill ${hardshipBand(r.hs)}`} style={r.hsN < 3 ? { opacity: 0.6 } : undefined}>
+                      {clock(r.hs)}
+                    </span>
+                  )}
+                </td>
+                <td className="num rx-hide-sm">
                   {r.real} / {r.practice}
                 </td>
                 {superMode && (

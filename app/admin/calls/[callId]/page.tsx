@@ -1154,6 +1154,7 @@ export default function CallDetail() {
                     <h2>Spotlights</h2>
                     <p className="hint" style={{ marginTop: -4 }}>The moments that decide most sales, and the follow-up game. Extra awareness only -- they don&rsquo;t change either score.</p>
                     <div className="rx-grid2">
+                      {hs && (
                       <section className="card">
                         <b>Hardship depth</b>{" "}
                         {g.spotlights.followup?.kind === "followup" && hs.moved_on_at === 0 ? (
@@ -1175,6 +1176,8 @@ export default function CallDetail() {
                           </p>
                         )}
                       </section>
+                      )}
+                      {td && (
                       <section className="card">
                         <b>Loan turndown pickup</b>{" "}
                         {td.happened ? (
@@ -1193,6 +1196,7 @@ export default function CallDetail() {
                           <p className="hint">No loan decline on this call.</p>
                         )}
                       </section>
+                      )}
                     </div>
                     {g.spotlights.followup && (g.spotlights.followup.kind === "followup" || g.spotlights.followup.ended_open) && (() => {
                       const f = g.spotlights.followup!;

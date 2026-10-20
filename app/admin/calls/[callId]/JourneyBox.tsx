@@ -44,8 +44,19 @@ export default function JourneyBox({ supabase, callId, clientLabel, source, onCh
     void load();
   }, [load]);
 
-  async function set(patch: { call_number?: number | null; handoff?: string | null }) {
+  async function set(patch: { call_number?: number | null; handoff?: string | null; script_id?: string }) {
     setError("");
+    // A renew call is always graded on the Renew script (it picks up the Options Script at Phase 2);
+    // switching it back off returns it to the script Renew continues into.
+    if ("handoff" in patch) {
+      const [{ data: sc }, { data: cur }] = await Promise.all([
+        supabase.from("scripts").select("id, title, continues_into").eq("active", true),
+        supabase.from("calls").select("script_id").eq("id", callId).maybeSingle(),
+      ]);
+      const renew = ((sc || []) as { id: string; title: string; continues_into: string | null }[]).find((x) => x.continues_into || /renew/i.test(x.title));
+      if (renew && patch.handoff === "renew") patch.script_id = renew.id;
+      else if (renew && !patch.handoff && cur?.script_id === renew.id && renew.continues_into) patch.script_id = renew.continues_into;
+    }
     const { error } = await supabase.from("calls").update(patch).eq("id", callId);
     if (error) return setError(error.message);
     // Re-grade so the grade knows where this call sits in the journey.

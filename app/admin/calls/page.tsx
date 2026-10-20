@@ -36,7 +36,7 @@ const repLabelOf = (c: CallRow): string =>
   c.profiles?.full_name?.trim() || c.rep_name?.trim() || "Unknown rep";
 
 const nameOf = (p: Person) => p.full_name?.trim() || p.email || "Unnamed";
-type ScriptOpt = { id: string; title: string; team: string | null; sort_order: number };
+type ScriptOpt = { id: string; title: string; team: string | null; sort_order: number; continues_into?: string | null };
 
 type CallRow = {
   id: string;
@@ -135,9 +135,10 @@ export default function Calls() {
       if (+mm >= 1 && +mm <= 12 && +dd >= 1 && +dd <= 31) setCallDate(`${yyyy}-${mm}-${dd}`);
     }
     if (!/^recording-[0-9a-f]{8}-[0-9a-f]{4}-/i.test(f.name)) return;
-    const renew = scripts.find((x) => /renew/i.test(x.title));
+    const renew = scripts.find((x) => x.continues_into || /renew/i.test(x.title));
     if (!renew) return;
     setScriptId(renew.id);
+    setUpHandoff("renew");
     setVinNote(`Vindico recording -- grading against ${renew.title} (it continues on the Options Script at Phase 2). Change it below if this one isn't a renew lead.`);
   }
   const [client, setClient] = useState("");
@@ -185,7 +186,7 @@ export default function Calls() {
 
       const [peopleRes, scriptRes] = await Promise.all([
         supabase.from("profiles").select("id, full_name, email, team, org_id").eq("active", true),
-        supabase.from("scripts").select("id, title, team, sort_order").eq("active", true).order("sort_order"),
+        supabase.from("scripts").select("id, title, team, sort_order, continues_into").eq("active", true).order("sort_order"),
       ]);
       if (cancelled) return;
 
@@ -683,7 +684,18 @@ export default function Calls() {
           </label>
           <label className="field">
             <span>Renew?</span>
-            <select value={upHandoff} onChange={(e) => setUpHandoff(e.target.value)}>
+            <select
+              value={upHandoff}
+              onChange={(e) => {
+                const v = e.target.value;
+                setUpHandoff(v);
+                // Renew means the Renew script, always; no need to pick it twice.
+                const renew = scripts.find((x) => x.continues_into || /renew/i.test(x.title));
+                if (!renew) return;
+                if (v === "renew") setScriptId(renew.id);
+                else if (scriptId === renew.id && renew.continues_into) setScriptId(renew.continues_into);
+              }}
+            >
               <option value="">No</option>
               <option value="renew">Renew</option>
             </select>

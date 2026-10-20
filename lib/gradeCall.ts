@@ -185,6 +185,9 @@ export async function prepareGrade(
         (script.continues_from ? ` from ${script.continues_from}` : "") +
         ". Those sections are included above, in order, and are graded the same way."
     );
+    notes.push(
+      "A renew call is fast-paced on purpose: the client went through the full hardship conversation months ago. There is no hardship length target -- never coach the rep to dig longer into hardship or mark them down for moving on quickly. Judge whether they confirmed the debt is still a problem and kept pace with the conversation. There is no loan on this call, so there is no loan turndown either."
+    );
   }
 
   /*
@@ -1219,6 +1222,11 @@ async function grade(
     for (const t of result.turning_points) t.direction = low(t.direction);
     clean(result);
     nameSections(result, prior.naming);
+    // Renew calls: no hardship target and no loan, so those two spotlights don't apply.
+    if (prior.naming.skip.length && result.spotlights) {
+      delete result.spotlights.hardship;
+      delete result.spotlights.turndown;
+    }
     if (prior.naming.lang === "es") await englishQuotes(result, key, new Set(prior.naming.english));
     result.slp ||= [];
     for (const a of result.emotional_arc) a.landed = low(a.landed);
