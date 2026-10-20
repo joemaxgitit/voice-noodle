@@ -73,17 +73,60 @@ export default function Roleplay() {
   // Managers can follow a practice call live (/admin/live/[callId]): every line goes out on a channel.
   const live = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const sent = useRef<{ who: string; text: string; at: number }[]>([]);
+  // Live audio for listening managers: both sides of the call mixed, sent browser to browser (WebRTC).
+  const mix = useRef<MediaStream | null>(null);
+  const peers = useRef(new Map<string, RTCPeerConnection>());
+  const buildMix = (c: unknown) => {
+    try {
+      const out = (c as { output?: { getAnalyser?: () => AnalyserNode | undefined } }).output;
+      const an = out?.getAnalyser?.();
+      if (!an) return;
+      const ctx = an.context as AudioContext;
+      const dest = ctx.createMediaStreamDestination();
+      an.connect(dest); // the practice client's voice
+      if (micStream.current) ctx.createMediaStreamSource(micStream.current).connect(dest); // the rep
+      mix.current = dest.stream;
+    } catch {
+      mix.current = null; // the live transcript still works
+    }
+  };
   const openLive = (id: string) => {
     sent.current = [];
     const ch = supabase.channel(`practice-live:${id}`, { config: { broadcast: { self: false } } });
+    const send = (event: string, payload: Record<string, unknown>) => void ch.send({ type: "broadcast", event, payload });
     // Someone joined late: send them everything so far.
-    ch.on("broadcast", { event: "hello" }, () => void ch.send({ type: "broadcast", event: "all", payload: { lines: sent.current, persona: info.current?.persona ?? "" } }));
+    ch.on("broadcast", { event: "hello" }, () => send("all", { lines: sent.current, persona: info.current?.persona ?? "", audio: !!mix.current }));
+    ch.on("broadcast", { event: "listen" }, async ({ payload }) => {
+      const from = String((payload as { from?: string }).from || "");
+      if (!from) return;
+      if (!mix.current) return send("noaudio", { to: from });
+      peers.current.get(from)?.close();
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }] });
+      peers.current.set(from, pc);
+      for (const t of mix.current.getAudioTracks()) pc.addTrack(t, mix.current);
+      pc.onicecandidate = (e) => e.candidate && send("ice", { to: from, from: "rep", candidate: e.candidate.toJSON() });
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      send("offer", { to: from, sdp: offer });
+    });
+    ch.on("broadcast", { event: "answer" }, async ({ payload }) => {
+      const p = payload as { from: string; sdp: RTCSessionDescriptionInit };
+      await peers.current.get(p.from)?.setRemoteDescription(p.sdp).catch(() => {});
+    });
+    ch.on("broadcast", { event: "ice" }, async ({ payload }) => {
+      const p = payload as { to: string; from: string; candidate: RTCIceCandidateInit };
+      if (p.to !== "rep") return;
+      await peers.current.get(p.from)?.addIceCandidate(p.candidate).catch(() => {});
+    });
     ch.subscribe();
     live.current = ch;
   };
   const sendLive = (event: string, payload: Record<string, unknown>) => void live.current?.send({ type: "broadcast", event, payload });
   const closeLive = () => {
     sendLive("end", {});
+    for (const pc of peers.current.values()) pc.close();
+    peers.current.clear();
+    mix.current = null;
     if (live.current) void supabase.removeChannel(live.current);
     live.current = null;
   };
@@ -238,6 +281,7 @@ export default function Roleplay() {
         onError: (message) => setError(String(message || "The call had a problem.")),
       });
       conv.current = c as unknown as LiveConversation;
+      buildMix(c);
       if (!convId.current) convId.current = c.getId();
     } catch (e) {
       stopMic();

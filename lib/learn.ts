@@ -11,9 +11,8 @@
     - real hang-ups teach practice clients when to hang up on a rep,
     - managers can have new practice clients drafted from real calls.
 
-  The wording a practice client uses only changes once a week (it is
-  picked from calls learned before this Monday), so the voice agents are
-  not rebuilt after every single call.
+  The material updates as calls are learned; the Practice calls page
+  brings the voice agents up to date by itself when it changes.
 */
 
 export const OBJECTION_TYPES = [
@@ -100,7 +99,7 @@ const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…`
  * a given set of insights (newest first), so the agent fingerprint only
  * changes when the weekly library does.
  */
-export function realVoice(insights: ClientInsight[], lang: "en" | "es", cutoff = libraryCutoff()): RealVoice {
+export function realVoice(insights: ClientInsight[], lang: "en" | "es", cutoff = "9999"): RealVoice {
   const pool = insights
     .filter((i) => i.kind !== "skip" && i.created_at < cutoff)
     .sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : a.id.localeCompare(b.id)));

@@ -146,6 +146,8 @@ function leadOf(d: Draft): Lead {
   };
 }
 
+type Proposal = { backstory: string; patience: number; why: string; based_on?: string[]; at?: string };
+
 const slugOf = (s: string) =>
   s
     .toLowerCase()
@@ -169,6 +171,8 @@ export default function RoleplayAdmin() {
   const [calls, setCalls] = useState<PracticeRow[]>([]);
   const [insights, setInsights] = useState<ClientInsight[] | null>(null);
   const [suggesting, setSuggesting] = useState(false);
+  const [tuning, setTuning] = useState(false);
+  const [review, setReview] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResults, setSyncResults] = useState<SyncResult[]>([]);
@@ -415,6 +419,32 @@ export default function RoleplayAdmin() {
     await load();
   }
 
+  async function tune() {
+    setTuning(true);
+    setError("");
+    setNotice("");
+    const res = await fetch("/api/roleplay/tune", { method: "POST", headers: { Authorization: `Bearer ${await token()}`, "Content-Type": "application/json" }, body: "{}" }).catch(() => null);
+    const b = res ? await res.json().catch(() => ({})) : {};
+    setTuning(false);
+    if (!res?.ok) return setError(b?.error || "Could not tune the clients.");
+    setNotice(b.tuned ? `${b.tuned} client${b.tuned === 1 ? " has an update" : "s have updates"} suggested from real calls. Review each one below.` : "Your clients already match what real calls show. Nothing to change.");
+    await load();
+  }
+
+  async function applyProposal(personaId: string, accept: boolean) {
+    const sec = secrets.get(personaId) as (PersonaSecret & { proposal?: Proposal | null }) | undefined;
+    if (!sec) return;
+    const patch = accept && sec.proposal ? { backstory: sec.proposal.backstory, patience: sec.proposal.patience, proposal: null, updated_at: new Date().toISOString() } : { proposal: null };
+    const { error } = await supabase.from("roleplay_persona_secrets").update(patch).eq("persona_id", personaId);
+    if (error) return setError(error.message);
+    setReview(null);
+    if (accept) {
+      setNotice("Applied. Updating the voice agent...");
+      await sync(personaId);
+      setNotice("");
+    } else await load();
+  }
+
   // Which voice agents no longer match what's saved.
   const stale = useMemo(() => {
     const out = new Map<string, "ready" | "stale" | "missing" | "no-secret">();
@@ -585,14 +615,21 @@ export default function RoleplayAdmin() {
               <span>
                 <b>Learning from real calls:</b> {full.length} full call{full.length === 1 ? "" : "s"}
                 {es ? ` (${es} in Spanish)` : ""} and {insights.filter((i) => i.kind === "short").length} short ones so far. Practice clients use {lines} real objection
-                line{lines === 1 ? "" : "s"} and what real clients hung up on, refreshed every Monday.
+                line{lines === 1 ? "" : "s"} and what real clients hung up on, kept up to date as calls come in.
                 {fresh >= 3 ? ` ${fresh} calls haven't been used for a new client yet.` : ""}
               </span>
-              {fresh >= 3 && (
-                <button onClick={() => void suggest()} disabled={suggesting}>
-                  {suggesting ? "Drafting…" : "Draft new clients from real calls · about $0.10"}
-                </button>
-              )}
+              <span className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                {insights.length >= 3 && personas.length > 0 && (
+                  <button className="primary" onClick={() => void tune()} disabled={tuning}>
+                    {tuning ? "Tuning…" : "Tune our clients from real calls · about $0.10"}
+                  </button>
+                )}
+                {fresh >= 3 && personas.length < 8 && (
+                  <button onClick={() => void suggest()} disabled={suggesting}>
+                    {suggesting ? "Drafting…" : "Draft a new client · about $0.10"}
+                  </button>
+                )}
+              </span>
             </div>
           );
         })()}
@@ -638,6 +675,38 @@ export default function RoleplayAdmin() {
                   {p.script_id ? ` · ${scripts.find((x) => x.id === p.script_id)?.title ?? "script"}` : " · no script"}
                 </div>
                 {s && <div className="facts">Right result: {RIGHT_OUTCOME_LABEL[s.right_outcome]}</div>}
+                {(() => {
+                  const pr = (s as (PersonaSecret & { proposal?: Proposal | null }) | undefined)?.proposal;
+                  if (!pr) return null;
+                  return review === p.id ? (
+                    <div className="card" style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                      <b>Suggested from real calls</b>
+                      <p className="hint" style={{ margin: 0 }}>{pr.why}</p>
+                      <small className="muted">Patience {s?.patience ?? "--"} → {pr.patience}</small>
+                      <details>
+                        <summary className="hint" style={{ cursor: "pointer" }}>Current backstory</summary>
+                        <p style={{ whiteSpace: "pre-wrap", fontSize: 13 }}>{s?.backstory}</p>
+                      </details>
+                      <div>
+                        <small className="muted">New backstory</small>
+                        <p style={{ whiteSpace: "pre-wrap", fontSize: 13, marginTop: 4 }}>{pr.backstory}</p>
+                      </div>
+                      <div className="row">
+                        <button className="primary" onClick={() => void applyProposal(p.id, true)}>
+                          Apply
+                        </button>
+                        <button onClick={() => void applyProposal(p.id, false)}>Dismiss</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="row" style={{ marginTop: 6 }}>
+                      <span className="pill fair">Update suggested</span>
+                      <button className="tr-sm" onClick={() => setReview(p.id)}>
+                        Review
+                      </button>
+                    </div>
+                  );
+                })()}
                 <div className="row">
                   <button onClick={() => openEditor(toDraft(p, s ?? null, p.sort_order))}>Edit</button>
                 </div>

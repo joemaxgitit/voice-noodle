@@ -44,3 +44,7 @@ select 'real-call learning ready' as result;
 -- Notes a manager drops while listening in on a practice call: [{ at, text, by, name, when }].
 alter table public.calls add column if not exists live_notes jsonb;
 notify pgrst, 'reload schema';
+
+-- Suggested updates to a practice client from real calls, waiting for a manager: { backstory, patience, why, based_on, at }.
+alter table public.roleplay_persona_secrets add column if not exists proposal jsonb;
+notify pgrst, 'reload schema';

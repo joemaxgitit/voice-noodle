@@ -14,6 +14,7 @@ export const maxDuration = 300;
 */
 
 const MODEL = process.env.SUGGEST_MODEL || "claude-sonnet-5-5";
+const MAX_CLIENTS = 8;
 const str = { type: "string" } as const;
 const int = { type: "integer" } as const;
 const SCHEMA = {
@@ -61,7 +62,7 @@ const SCHEMA = {
 
 const INSTRUCTIONS = `You design practice clients for a debt relief sales team (Lionside Financial; the program is run by Bolton). Below are anonymous profiles of REAL clients from recent calls, and short descriptions of the practice clients the team already has.
 
-Create at most 2 NEW practice clients that cover real situations the existing ones don't. Each must be a blend of several real clients, never a copy of one: invent a new first and last name, a plausible US state, round, realistic debts (creditor names like real card issuers and personal-loan companies are fine), and a backstory written to the AI that will play them (second person: "You are..."). The backstory must include: who they are, how they fell behind, what they hide until a rep earns it, their real objections and how they actually say them (use the real wording style), what would genuinely win them, what makes them hang up, and who else decides.
+Create at most {N} NEW practice client(s) that cover real situations the existing ones don't. Each must be a blend of several real clients, never a copy of one: invent a new first and last name, a plausible US state, round, realistic debts (creditor names like real card issuers and personal-loan companies are fine), and a backstory written to the AI that will play them (second person: "You are..."). The backstory must include: who they are, how they fell behind, what they hide until a rep earns it, their real objections and how they actually say them (use the real wording style), what would genuinely win them, what makes them hang up, and who else decides.
 - speaks: "es" for a client who mainly speaks Spanish (write the backstory in English, but say they speak Spanish and how).
 - Tens and pain 1-10 as they'd start; patience 1 (hangs up fast) to 10 (very patient), from how the real clients behaved.
 - right_outcome: what a great rep should get with this person, and right_outcome_note why.
@@ -92,6 +93,9 @@ export async function POST(request: Request) {
   if (error) return NextResponse.json({ error: /client_insights|does not exist/i.test(error.message) ? "Run supabase/real-call-learning.sql first." : error.message }, { status: 500 });
   const pool = (ins || []) as ClientInsight[];
   if (pool.length < 3) return NextResponse.json({ made: 0 });
+  // A small, steady cast: never more than 8 practice clients. Past that, tune the ones we have.
+  const room = Math.min(2, MAX_CLIENTS - (personas || []).length);
+  if (room <= 0) return NextResponse.json({ error: `You already have ${MAX_CLIENTS} practice clients. Use "Tune our clients" instead, or delete one first.` }, { status: 400 });
 
   const existing = (personas || [])
     .map((p) => `- ${p.title} (${p.difficulty}): ${String((secrets || []).find((s) => s.persona_id === p.id)?.backstory || "").slice(0, 300)}`)
@@ -111,7 +115,7 @@ export async function POST(request: Request) {
       max_tokens: 12000,
       ...thinkingFor(MODEL),
       output_config: { effort: "high", format: { type: "json_schema", schema: SCHEMA } },
-      messages: [{ role: "user", content: [{ type: "text", text: INSTRUCTIONS }, { type: "text", text: `Existing practice clients:\n${existing || "(none)"}\n\nReal clients:\n${real}` }] }],
+      messages: [{ role: "user", content: [{ type: "text", text: INSTRUCTIONS.replace("{N}", String(room)) }, { type: "text", text: `Existing practice clients:\n${existing || "(none)"}\n\nReal clients:\n${real}` }] }],
     }),
     signal: AbortSignal.timeout(280_000),
   });
@@ -126,7 +130,7 @@ export async function POST(request: Request) {
   };
   let drafts: Draft[] = [];
   try {
-    drafts = (JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as { clients: Draft[] }).clients.slice(0, 2);
+    drafts = (JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as { clients: Draft[] }).clients.slice(0, room);
   } catch {
     return NextResponse.json({ error: "The drafter returned something unreadable. Try again." }, { status: 500 });
   }

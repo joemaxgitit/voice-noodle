@@ -27,6 +27,13 @@ export default function ListenIn() {
   const [error, setError] = useState("");
   const [me, setMe] = useState({ id: "", name: "" });
   const end = useRef<HTMLDivElement>(null);
+  // Live audio: the rep's browser sends both sides of the call straight here (WebRTC).
+  const chRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const myId = useRef(`m${Math.random().toString(36).slice(2, 10)}`);
+  const pendingIce = useRef<RTCIceCandidateInit[]>([]);
+  const [audio, setAudio] = useState<"off" | "connecting" | "on" | "none" | "failed">("off");
 
   useEffect(() => {
     void (async () => {
@@ -55,18 +62,75 @@ export default function ListenIn() {
         setState("live");
         setLines((payload as { lines: Line[] }).lines || []);
       })
-      .on("broadcast", { event: "hangup" }, () => setState("hungup"))
-      .on("broadcast", { event: "end" }, () => setState((s) => (s === "hungup" ? s : "ended")))
+      .on("broadcast", { event: "offer" }, async ({ payload }) => {
+        const p = payload as { to: string; sdp: RTCSessionDescriptionInit };
+        if (p.to !== myId.current) return;
+        pcRef.current?.close();
+        const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }] });
+        pcRef.current = pc;
+        pc.ontrack = (e) => {
+          if (audioRef.current) {
+            audioRef.current.srcObject = e.streams[0] ?? new MediaStream([e.track]);
+            void audioRef.current.play().catch(() => {});
+          }
+          setAudio("on");
+        };
+        pc.onconnectionstatechange = () => {
+          if (pc.connectionState === "failed") setAudio("failed");
+        };
+        pc.onicecandidate = (e) => e.candidate && void ch.send({ type: "broadcast", event: "ice", payload: { to: "rep", from: myId.current, candidate: e.candidate.toJSON() } });
+        await pc.setRemoteDescription(p.sdp);
+        for (const c of pendingIce.current.splice(0)) await pc.addIceCandidate(c).catch(() => {});
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        void ch.send({ type: "broadcast", event: "answer", payload: { from: myId.current, sdp: answer } });
+      })
+      .on("broadcast", { event: "ice" }, async ({ payload }) => {
+        const p = payload as { to: string; candidate: RTCIceCandidateInit };
+        if (p.to !== myId.current) return;
+        const pc = pcRef.current;
+        if (pc?.remoteDescription) await pc.addIceCandidate(p.candidate).catch(() => {});
+        else pendingIce.current.push(p.candidate);
+      })
+      .on("broadcast", { event: "noaudio" }, ({ payload }) => {
+        if ((payload as { to: string }).to === myId.current) setAudio("none");
+      })
+      .on("broadcast", { event: "hangup" }, () => {
+        setState("hungup");
+        pcRef.current?.close();
+        setAudio("off");
+      })
+      .on("broadcast", { event: "end" }, () => {
+        setState((s) => (s === "hungup" ? s : "ended"));
+        pcRef.current?.close();
+        setAudio("off");
+      })
       .subscribe((status) => {
         // Ask the rep's page for everything said so far.
         if (status === "SUBSCRIBED") void ch.send({ type: "broadcast", event: "hello", payload: {} });
       });
+    chRef.current = ch;
     return () => {
+      pcRef.current?.close();
       void supabase.removeChannel(ch);
     };
   }, [supabase, callId]);
 
   useEffect(() => end.current?.scrollIntoView({ behavior: "smooth", block: "end" }), [lines.length]);
+
+  function listen() {
+    setAudio("connecting");
+    void chRef.current?.send({ type: "broadcast", event: "listen", payload: { from: myId.current } });
+    // No answer within 10 seconds: the rep's page may be older or the audio couldn't be shared.
+    setTimeout(() => setAudio((a) => (a === "connecting" ? "failed" : a)), 10_000);
+  }
+
+  function stopListening() {
+    pcRef.current?.close();
+    pcRef.current = null;
+    if (audioRef.current) audioRef.current.srcObject = null;
+    setAudio("off");
+  }
 
   async function addNote() {
     const text = note.trim();
@@ -100,6 +164,24 @@ export default function ListenIn() {
         )}
       </p>
       {error && <div className="error">{error}</div>}
+
+      {(state === "live" || state === "waiting") && (
+        <div className="row" style={{ margin: "0 0 12px", gap: 10 }}>
+          {audio === "on" ? (
+            <button onClick={stopListening}>Stop audio</button>
+          ) : (
+            <button className="primary" onClick={listen} disabled={audio === "connecting"}>
+              {audio === "connecting" ? "Connecting audio…" : "🔊 Listen to the call"}
+            </button>
+          )}
+          <small className="muted">
+            {audio === "on" && "You're hearing both sides live. They can't hear you."}
+            {audio === "none" && "Audio isn't available from this rep's browser -- the transcript still updates live."}
+            {audio === "failed" && "Couldn't connect the audio (often a strict network). Try again, or follow the transcript."}
+          </small>
+        </div>
+      )}
+      <audio ref={audioRef} autoPlay hidden />
 
       <section className="card" style={{ maxHeight: "60vh", overflowY: "auto", display: "grid", gap: 8 }}>
         {!lines.length && <p className="hint" style={{ margin: 0 }}>Nothing said yet.</p>}
