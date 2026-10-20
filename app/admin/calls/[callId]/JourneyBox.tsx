@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { clock, scoreBand } from "@/lib/calls";
-import { journeyStatus, numbered, type JourneyCall } from "@/lib/journey";
+import type { JourneyRead } from "@/app/api/journeys/read/route";
+import { clientKey, journeyStatus, numbered, type JourneyCall } from "@/lib/journey";
 
 /**
  * This call in the client's journey: its call number, whether another rep
@@ -15,12 +16,15 @@ export default function JourneyBox({ supabase, callId, clientLabel, source }: { 
   const [mine, setMine] = useState<{ call_number: number | null; handoff: string | null } | null>(null);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
+  const [read, setRead] = useState<{ read: JourneyRead; updated_at: string; calls_read: number } | null>(null);
 
   const load = useCallback(async () => {
     const own = await supabase.from("calls").select("call_number, handoff").eq("id", callId).maybeSingle();
     if (own.error) return setError(/call_number|handoff/.test(own.error.message) ? "Run supabase/follow-ups.sql to track call numbers." : own.error.message);
     setMine((own.data as { call_number: number | null; handoff: string | null }) ?? { call_number: null, handoff: null });
     if (!clientLabel?.trim()) return setCalls([]);
+    const jr = await supabase.from("client_journeys").select("read, updated_at, calls_read").eq("client_key", clientKey(clientLabel)).maybeSingle();
+    setRead((jr.data as { read: JourneyRead; updated_at: string; calls_read: number } | null) ?? null);
     const { data } = await supabase
       .from("calls")
       .select("id, client_label, call_date, created_at, call_number, handoff, rep_id, rep_name, status, outcome, outcome_manual, retention, score, slp_score, duration_secs, scripts(title), profiles:rep_id(full_name)")
@@ -83,6 +87,42 @@ export default function JourneyBox({ supabase, callId, clientLabel, source }: { 
               ? `${list.length} call${list.length === 1 ? "" : "s"} with ${clientLabel.trim()} on record · ${status === "enrolled" ? "enrolled" : status === "renew" ? "went to renew" : "still open"}`
               : "Add the client ID to link this client's calls together."}
           </span>
+        </div>
+      )}
+      {read && list.length > 1 && (
+        <div className="card" style={{ marginTop: 10 }}>
+          <b>The journey so far</b> <small className="muted">· read across {read.calls_read} calls, {new Date(read.updated_at).toLocaleDateString()}</small>
+          <p style={{ margin: "6px 0" }}>{read.read.story}</p>
+          {read.read.bridges.length > 0 && (
+            <>
+              <small className="muted" style={{ fontWeight: 600 }}>Bridges -- what carried over well</small>
+              <ul className="plain-list" style={{ marginTop: 2 }}>
+                {read.read.bridges.map((b, i) => (
+                  <li key={i}>
+                    <b>{b.what}</b> <small className="muted">· calls {b.calls}</small> -- {b.evidence}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {read.read.disconnects.length > 0 && (
+            <>
+              <small style={{ fontWeight: 600, color: "var(--bad)" }}>Disconnects -- what broke between calls</small>
+              <ul className="plain-list" style={{ marginTop: 2 }}>
+                {read.read.disconnects.map((b, i) => (
+                  <li key={i}>
+                    <b>{b.what}</b> <small className="muted">· calls {b.calls}</small> -- {b.evidence}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          <p style={{ margin: "6px 0 0" }}>
+            <b>What decided it:</b> {read.read.decided_it}
+          </p>
+          <p style={{ margin: "4px 0 0" }}>
+            <b>Next move:</b> {read.read.next_move}
+          </p>
         </div>
       )}
       {list.length > 1 && (

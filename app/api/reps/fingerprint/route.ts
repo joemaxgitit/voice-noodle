@@ -96,7 +96,7 @@ export async function POST(request: Request) {
 
   const { data, error } = await supabase
     .from("calls")
-    .select("id, retention, score, slp_score, grade, call_date, created_at")
+    .select("id, retention, score, slp_score, grade, call_date, created_at, client_label")
     .eq("rep_id", repId)
     .neq("source", "roleplay")
     .in("retention", ["graduated", "paid6", "cancelled"])
@@ -147,7 +147,14 @@ export async function POST(request: Request) {
       .map((r) => `${r.call_date || r.created_at.slice(0, 10)} | outcome: ${r.outcome_manual || r.outcome || "?"}\n${digest({ ...r, retention: "graduated" } as InsightCall).replace(/^GRADUATED: /, "")}`)
       .join("\n\n");
   }
+  // Whole-journey reads for this rep's clients: how they bridge calls, and where it breaks.
+  const labels = [...new Set(rows.map((r) => ((r as unknown as { client_label?: string | null }).client_label || "").trim().toLowerCase()).filter(Boolean))];
+  const jr = labels.length ? await supabase.from("client_journeys").select("client_key, read").in("client_key", labels) : { data: [] };
+  const journeys = ((jr.data || []) as { client_key: string; read: { story?: string; bridges?: { what: string }[]; disconnects?: { what: string }[] } }[])
+    .map((j) => `- ${j.read.story ?? ""} Bridges: ${(j.read.bridges ?? []).map((b) => b.what).join("; ") || "none"}. Disconnects: ${(j.read.disconnects ?? []).map((b) => b.what).join("; ") || "none"}.`)
+    .slice(0, 10);
   const extra = [
+    journeys.length ? `<their_multi_call_journeys>\n${journeys.join("\n")}\nUse these too: how this rep carries a client across calls is part of their style.\n</their_multi_call_journeys>` : "",
     team.length ? `<team_patterns>\n${team.map((p) => `- ${p.pattern}: ${p.how_it_sounds} (works for ${p.reps.length} reps)`).join("\n")}\n</team_patterns>` : "<team_patterns>(none found yet -- try_next must be empty)</team_patterns>",
     active.length ? `<current_experiments>\n${active.map((e) => `- id ${e.id}: ${e.pattern} -- started ${e.started_at.slice(0, 10)}. ${e.how_to_try ?? ""}`).join("\n")}\n</current_experiments>\n<recent_calls>\n${recent || "(no graded calls since they started)"}\n</recent_calls>` : "<current_experiments>(none)</current_experiments>",
   ].join("\n\n");

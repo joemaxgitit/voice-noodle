@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { startJob } from "@/lib/callsClient";
 import { cleanRecording } from "@/lib/cleanRecording";
+import { clientKey, numbered } from "@/lib/journey";
 import { estimateFor, okToSpend, transcribeEstimate, usd } from "@/lib/spend";
 import {
   OUTCOME_LABEL,
@@ -247,6 +248,63 @@ export default function Calls() {
       }
     })();
   }, [calls, supabase]);
+
+  // Client journeys, kept up to date in the background:
+  //  - a call graded before an earlier call in its journey existed gets re-graded, so it knows the whole story;
+  //  - each journey of 2+ graded calls gets a fresh journey read (about 5 cents) whenever one of its calls is graded.
+  const journeyRun = useRef(0);
+  const journeyKicked = useRef(new Set<string>());
+  useEffect(() => {
+    if (anyBusy || Date.now() - journeyRun.current < 60_000) return;
+    journeyRun.current = Date.now();
+    void (async () => {
+      const [{ data: cs }, nums, js] = await Promise.all([
+        supabase.from("calls").select("id, client_label, call_date, created_at, status, graded_at:grade->>graded_at").neq("source", "roleplay").not("client_label", "is", null).limit(3000),
+        supabase.from("calls").select("id, call_number").not("call_number", "is", null).limit(3000),
+        supabase.from("client_journeys").select("client_key, updated_at"),
+      ]);
+      if (js.error) return; // journeys table not there yet
+      const num = new Map(((nums.data || []) as { id: string; call_number: number }[]).map((x) => [x.id, x.call_number]));
+      const readAt = new Map(((js.data || []) as { client_key: string; updated_at: string }[]).map((x) => [x.client_key, x.updated_at]));
+      type C = { id: string; client_label: string | null; call_date: string | null; created_at: string; status: string; graded_at: string | null };
+      const groups = new Map<string, C[]>();
+      for (const c of (cs || []) as C[]) {
+        const k = clientKey(c.client_label);
+        if (k) groups.set(k, [...(groups.get(k) || []), c]);
+      }
+      let regrades = 0;
+      let reads = 0;
+      for (const [k, list] of groups) {
+        if (list.length < 2 || list.some((c) => BUSY.includes(c.status as CallRow["status"]))) continue;
+        const ordered = numbered(list.map((c) => ({ ...c, call_number: num.get(c.id) ?? null, rep_id: null, outcome: null, outcome_manual: null, retention: null, score: null, slp_score: null })));
+        // A later call graded before an earlier one existed doesn't know the earlier call: re-grade it.
+        for (const c of ordered) {
+          if (regrades >= 2 || c.status !== "graded" || !c.graded_at || journeyKicked.current.has(c.id)) continue;
+          const stale = ordered.some((e) => e.n < c.n && e.status === "graded" && e.graded_at && e.graded_at > c.graded_at!);
+          if (!stale) continue;
+          journeyKicked.current.add(c.id);
+          regrades++;
+          await startJob(supabase, "grade", c.id);
+        }
+        // Fresh journey read when any of its calls was graded since the last one.
+        const graded = ordered.filter((c) => c.status === "graded" && c.graded_at);
+        const newest = graded.map((c) => c.graded_at!).sort().at(-1);
+        if (reads < 1 && graded.length >= 2 && newest && (!readAt.get(k) || readAt.get(k)! < newest) && !journeyKicked.current.has(`read:${k}`)) {
+          journeyKicked.current.add(`read:${k}`);
+          reads++;
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          await fetch("/api/journeys/read", {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: `Bearer ${session?.access_token ?? ""}` },
+            body: JSON.stringify({ clientLabel: list[0].client_label }),
+          }).catch(() => null);
+        }
+      }
+      if (regrades) await loadCalls();
+    })();
+  }, [calls, anyBusy, supabase, loadCalls]);
 
   // Transcript ready -> start grading.
   useEffect(() => {
