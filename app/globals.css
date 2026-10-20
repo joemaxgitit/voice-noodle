@@ -1567,3 +1567,18 @@ select {
     margin-left: 0;
   }
 }
+
+/* Where a script hands off to another (Renew -> Options Script from Phase 2). */
+.script-handoff {
+  grid-column: 1 / -1;
+  margin: 8px 0 26px;
+  padding: 10px 0;
+  border-top: 1px dashed var(--line);
+  border-bottom: 1px dashed var(--line);
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--live);
+}

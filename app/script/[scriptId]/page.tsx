@@ -42,6 +42,8 @@ type Mod = {
   sort_order: number;
   kind: string;
   language: string;
+  /** Set on sections carried over from the script this one continues into. */
+  carried?: string;
 };
 
 /**
@@ -86,7 +88,7 @@ function ScriptView() {
 
     (async () => {
       const [sRes, mRes, nRes] = await Promise.all([
-        supabase.from("scripts").select("title").eq("id", params.scriptId).single(),
+        supabase.from("scripts").select("*").eq("id", params.scriptId).single(),
         supabase
           .from("modules")
           .select("id, title, sort_order, kind, language")
@@ -96,16 +98,54 @@ function ScriptView() {
 
       if (cancelled) return;
 
-      const modules = ((mRes.data || []) as Mod[]).sort(
+      const own = ((mRes.data || []) as Mod[]).sort(
         (a, b) => a.sort_order - b.sort_order
       );
+      const SEG_COLS =
+        "id, segment_code, script_text, tones, tone_map, verbatim, condition, script_note, section, sort_order, module_id, recordings(narrator_id, audio_path, timings, words)";
+
+      /*
+        A script that hands off to another -- the Renew script continues on
+        the Options Script from Phase 2. Show the rest of the call right after
+        it, the same way the grader reads it: the other script's sections from
+        the hand-off line on, then its objection loops.
+      */
+      const script = (sRes.data || {}) as { title?: string; continues_into?: string | null; continues_from?: string | null };
+      let carriedMods: Mod[] = [];
+      let carriedSegs: Seg[] = [];
+      if (script.continues_into) {
+        const [cs, cm] = await Promise.all([
+          supabase.from("scripts").select("title").eq("id", script.continues_into).single(),
+          supabase.from("modules").select("id, title, sort_order, kind, language").eq("script_id", script.continues_into),
+        ]);
+        const contTitle = (cs.data?.title || "the next script").replace(/\s+[—-]\s+.*$/, "");
+        const next = ((cm.data || []) as Mod[]).sort((a, b) => a.sort_order - b.sort_order);
+        const { data: ns } = next.length
+          ? await supabase.from("segments").select(SEG_COLS).in("module_id", next.map((m) => m.id))
+          : { data: [] };
+        const nextSegs = (ns || []) as unknown as Seg[];
+        const from = script.continues_from;
+        for (const lg of ["en", "es"]) {
+          const ms = next.filter((m) => (m.language || "en") === lg);
+          const startSeg = from ? nextSegs.find((g) => g.segment_code === from && ms.some((m) => m.id === g.module_id)) : undefined;
+          const startMod = startSeg ? ms.find((m) => m.id === startSeg.module_id) : undefined;
+          const keep = ms.filter((m) => m.kind !== "loop" && (!startMod || m.sort_order >= startMod.sort_order));
+          const loops = ms.filter((m) => m.kind === "loop");
+          for (const m of [...keep, ...loops]) {
+            carriedMods.push({ ...m, carried: contTitle });
+            carriedSegs.push(
+              ...nextSegs.filter((g) => g.module_id === m.id && (m.id !== startMod?.id || !startSeg || g.sort_order >= startSeg.sort_order))
+            );
+          }
+        }
+        carriedMods = carriedMods.map((m, i) => ({ ...m, sort_order: 100000 + i }));
+      }
+      const modules = [...own, ...carriedMods];
 
       const { data: segData } = await supabase
         .from("segments")
-        .select(
-          "id, segment_code, script_text, tones, tone_map, verbatim, condition, script_note, section, sort_order, module_id, recordings(narrator_id, audio_path, timings, words)"
-        )
-        .in("module_id", modules.map((m) => m.id));
+        .select(SEG_COLS)
+        .in("module_id", own.map((m) => m.id));
 
       if (cancelled) return;
 
@@ -131,7 +171,7 @@ function ScriptView() {
       );
       setTitle(sRes.data?.title || "Script");
       setMods(modules);
-      setSegs(((segData || []) as unknown as Seg[]).sort((a, b) => a.sort_order - b.sort_order));
+      setSegs([...((segData || []) as unknown as Seg[]), ...carriedSegs].sort((a, b) => a.sort_order - b.sort_order));
       setLoading(false);
     })();
 
@@ -519,12 +559,18 @@ function ScriptView() {
 
       {readError && <div className="error no-print">{readError}</div>}
 
-      {visible.map((m) => {
+      {visible.map((m, i) => {
         const mine = segs.filter((sg) => sg.module_id === m.id);
         if (mine.length === 0) return null;
+        const firstCarried = !!m.carried && !visible.slice(0, i).some((x) => x.carried);
 
         return (
           <section className="script-block" key={m.id}>
+            {firstCarried && (
+              <div className="script-handoff">
+                {lang === "es" ? `Continúa en ${m.carried}` : `Continues on the ${m.carried}`}
+              </div>
+            )}
             {/*
               Margin bracket. The label reads horizontally and sits at the
               vertical midpoint of the bracket spanning its segments.
