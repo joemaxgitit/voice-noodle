@@ -600,11 +600,10 @@ export default function Calls() {
             </select>
           </label>
           <label className="field">
-            <span>Taken by another rep?</span>
+            <span>Renew?</span>
             <select value={upHandoff} onChange={(e) => setUpHandoff(e.target.value)}>
               <option value="">No</option>
-              <option value="renew">Renew lead</option>
-              <option value="coverage">Covering for an absent rep</option>
+              <option value="renew">Renew</option>
             </select>
           </label>
         </div>

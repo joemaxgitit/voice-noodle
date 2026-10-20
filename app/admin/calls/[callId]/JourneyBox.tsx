@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { clock, scoreBand } from "@/lib/calls";
-import { HANDOFF_LABEL, journeyStatus, numbered, type JourneyCall } from "@/lib/journey";
+import { journeyStatus, numbered, type JourneyCall } from "@/lib/journey";
 
 /**
  * This call in the client's journey: its call number, whether another rep
@@ -72,11 +72,10 @@ export default function JourneyBox({ supabase, callId, clientLabel, source }: { 
             </select>
           </label>
           <label className="field" style={{ margin: 0 }}>
-            <span>Taken by another rep?</span>
-            <select value={mine.handoff ?? ""} onChange={(e) => void set({ handoff: e.target.value || null })} style={{ width: "auto" }}>
-              <option value="">No -- the client&rsquo;s own rep</option>
-              <option value="renew">{HANDOFF_LABEL.renew}</option>
-              <option value="coverage">{HANDOFF_LABEL.coverage}</option>
+            <span>Renew?</span>
+            <select value={mine.handoff === "renew" ? "renew" : ""} onChange={(e) => void set({ handoff: e.target.value || null })} style={{ width: "auto" }}>
+              <option value="">No</option>
+              <option value="renew">Renew</option>
             </select>
           </label>
           <span className="muted" style={{ fontSize: 13 }}>
@@ -94,7 +93,7 @@ export default function JourneyBox({ supabase, callId, clientLabel, source }: { 
               <span className="what">
                 <b>
                   {c.rep}
-                  {c.handoff ? <small className="muted"> · {c.handoff === "renew" ? "renew" : "covering"}</small> : null}
+                  {c.handoff === "renew" || /renew/i.test(c.script_title || "") ? <small className="muted"> · renew</small> : null}
                 </b>
                 <small>
                   {c.call_date || c.created_at.slice(0, 10)}
