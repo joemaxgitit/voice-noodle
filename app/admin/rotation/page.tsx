@@ -107,13 +107,8 @@ export default function Rotation() {
     };
 
     // People and the last couple of months first, so the page shows right away; the full year follows.
-    // Only the super admin runs rotation; every manager can see the record.
-    void supabase
-      .from("profiles")
-      .select("super_admin")
-      .eq("id", session.user.id)
-      .maybeSingle()
-      .then(({ data }) => setCanEdit(!!(data as { super_admin?: boolean } | null)?.super_admin));
+    // Anyone who can open the page (the super admin, or managers when Rotation is switched on) can run it.
+    setCanEdit(true);
     const [p, v, recent] = await Promise.all([
       supabase.from("profiles").select("id, full_name, role, active, kpi_name").eq("org_id", prof?.org_id ?? "").order("full_name"),
       // Reps on the Vindico auto dialer make rotation automatically (own query, so a missing column never breaks the page).

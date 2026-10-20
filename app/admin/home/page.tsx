@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { scoreBand } from "@/lib/calls";
 import { addDays, fmtDate, fmtRange, fmtWeek, MASTERY, MEETING, mycTeacherName, today, weekdayOf, workWeek, type MasteryWeek, type Meeting, type TrainingEvent } from "@/lib/training";
 import IdeaBox from "../IdeaBox";
+import { hasFeature, type FeatureFlags } from "@/lib/features";
 import { loadSpend, type SpendSummary } from "@/lib/spend";
 import SpendMeters from "../spending/SpendMeters";
 import "../calls/calls.css";
@@ -44,7 +45,7 @@ export default function ManagerHome() {
   const [meId, setMeId] = useState("");
   const [idea, setIdea] = useState(false);
   const [service, setService] = useState(false);
-  const [superAdmin, setSuperAdmin] = useState(false);
+  const [on, setOn] = useState({ rotation: false, dealclip: false, mastery: false, meeting: false });
   useEffect(() => {
     void loadSpend(supabase).then(({ summary }) => setSpend(summary));
   }, [supabase]);
@@ -60,7 +61,10 @@ export default function ManagerHome() {
       setService(me?.role === "manager" && me?.team === "ams");
       // The Deal Clip is the super admin's alone.
       const { data: sa } = await supabase.from("profiles").select("super_admin").eq("id", session.user.id).maybeSingle();
-      setSuperAdmin(!!(sa as { super_admin?: boolean } | null)?.super_admin);
+      const isSuper = !!(sa as { super_admin?: boolean } | null)?.super_admin;
+      const { data: f } = await supabase.from("app_features").select("flags").maybeSingle();
+      const flags = (f as { flags?: FeatureFlags } | null)?.flags ?? {};
+      setOn({ rotation: hasFeature(flags, "rotation", isSuper), dealclip: hasFeature(flags, "dealclip", isSuper), mastery: hasFeature(flags, "mastery", isSuper), meeting: hasFeature(flags, "meeting", isSuper) });
       setName((me?.full_name || "").split(" ")[0]);
       setOrgId(me?.org_id ?? "");
       setMeId(session.user.id);
@@ -137,12 +141,12 @@ export default function ManagerHome() {
       <div className="rx-actions" style={{ margin: "6px 0 16px" }}>
         {!service && (
           <>
-            {superAdmin && (
+            {on.rotation && (
               <Link className="btn primary" href="/admin/rotation" style={{ textDecoration: "none" }}>
                 Nightly close: rotation
               </Link>
             )}
-            {superAdmin && (
+            {on.dealclip && (
               <Link className="btn" href="/admin/dealclip" style={{ textDecoration: "none" }}>
                 Morning: Deal Clip
               </Link>
@@ -166,7 +170,7 @@ export default function ManagerHome() {
       {idea && orgId && (
         <section className="card" style={{ marginBottom: 16 }}>
           <h3 className="rx-sec-title">An idea for later</h3>
-          {superAdmin && <IdeaBox supabase={supabase} orgId={orgId} me={meId} />}
+          {(on.mastery || on.meeting) && <IdeaBox supabase={supabase} orgId={orgId} me={meId} />}
         </section>
       )}
 
@@ -202,9 +206,9 @@ export default function ManagerHome() {
             const dow = weekdayOf(d);
             const evs = events.filter((e) => e.event_date === d);
             // Master Your Craft and the Thursday meeting show for the super admin only.
-            const myc = superAdmin && (MASTERY.days as readonly number[]).includes(dow);
+            const myc = on.mastery && (MASTERY.days as readonly number[]).includes(dow);
             const instructor = mastery ? mycTeacherName(mastery, dow, nameOf) || null : null;
-            const meet = superAdmin && dow === 4;
+            const meet = on.meeting && dow === 4;
             if (!evs.length && !myc && !meet) return null;
             return (
               <div key={d} style={{ padding: "8px 0", borderBottom: "1px solid var(--line)", ...(d === today() ? { background: "var(--live-dim)", margin: "0 -8px", padding: "8px" } : {}) }}>

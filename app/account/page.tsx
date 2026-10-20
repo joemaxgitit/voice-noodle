@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import FeatureToggles from "./FeatureToggles";
 
 /** Change your own password. Also where a temporary password sends you on sign-in. */
 function AccountForm() {
@@ -50,7 +51,7 @@ function AccountForm() {
         </div>
       )}
       <div className="eyebrow">Account</div>
-      <h1>{first ? "Choose your password" : "Change password"}</h1>
+      <h1>{first ? "Choose your password" : "Account"}</h1>
       {first && <p className="muted">You signed in with a temporary password. Pick your own to continue.</p>}
       {email && <p className="muted">Signed in as {email}</p>}
 
@@ -74,6 +75,7 @@ function AccountForm() {
         {error && <div className="error">{error}</div>}
         {done && <div className="status">Password changed.{first ? " Taking you in…" : ""}</div>}
       </form>
+      {!first && <FeatureToggles supabase={supabase} />}
     </main>
   );
 }

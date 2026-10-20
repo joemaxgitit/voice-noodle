@@ -1,3 +1,4 @@
+import { featureForPath, hasFeature, type FeatureFlags } from "@/lib/features";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -101,10 +102,14 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // Rotation, the Deal Clip, Master Your Craft and the Thursday meeting are the super admin's alone.
-    if (["/admin/dealclip", "/admin/rotation", "/admin/mastery", "/admin/meeting"].some((x) => path.startsWith(x))) {
-      const { data: sa } = await supabase.from("profiles").select("super_admin").eq("id", user.id).maybeSingle();
-      if (!(sa as { super_admin?: boolean } | null)?.super_admin) {
+    // Extra features: the super admin always has them; everyone else only when switched on (Account page).
+    const feature = featureForPath(path);
+    if (feature) {
+      const [{ data: sa }, { data: f }] = await Promise.all([
+        supabase.from("profiles").select("super_admin").eq("id", user.id).maybeSingle(),
+        supabase.from("app_features").select("flags").maybeSingle(),
+      ]);
+      if (!hasFeature((f as { flags?: FeatureFlags } | null)?.flags, feature, !!(sa as { super_admin?: boolean } | null)?.super_admin)) {
         const url = request.nextUrl.clone();
         url.pathname = "/admin/home";
         url.search = "";
