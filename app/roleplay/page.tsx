@@ -70,6 +70,23 @@ export default function Roleplay() {
   const startedAt = useRef<number>(0);
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
+  // Managers can follow a practice call live (/admin/live/[callId]): every line goes out on a channel.
+  const live = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const sent = useRef<{ who: string; text: string; at: number }[]>([]);
+  const openLive = (id: string) => {
+    sent.current = [];
+    const ch = supabase.channel(`practice-live:${id}`, { config: { broadcast: { self: false } } });
+    // Someone joined late: send them everything so far.
+    ch.on("broadcast", { event: "hello" }, () => void ch.send({ type: "broadcast", event: "all", payload: { lines: sent.current, persona: info.current?.persona ?? "" } }));
+    ch.subscribe();
+    live.current = ch;
+  };
+  const sendLive = (event: string, payload: Record<string, unknown>) => void live.current?.send({ type: "broadcast", event, payload });
+  const closeLive = () => {
+    sendLive("end", {});
+    if (live.current) void supabase.removeChannel(live.current);
+    live.current = null;
+  };
   const micStream = useRef<MediaStream | null>(null);
   const ending = useRef(false);
 
@@ -194,6 +211,7 @@ export default function Roleplay() {
           startedAt.current = Date.now();
           setPhase("live");
           startRecorder();
+          openLive(callId.current);
           // Saved straight away, so a closed tab can still be graded later.
           supabase
             .from("calls")
@@ -204,11 +222,18 @@ export default function Roleplay() {
         onModeChange: ({ mode }) => setMode(mode),
         onMessage: (m) => {
           if (!m.message?.trim()) return;
-          setLines((ls) => [...ls, { who: m.role === "user" ? "rep" : "client", text: m.message }]);
+          const line = { who: m.role === "user" ? "rep" : "client", text: m.message };
+          setLines((ls) => [...ls, line as Line]);
+          const at = startedAt.current ? Math.round((Date.now() - startedAt.current) / 1000) : 0;
+          sent.current.push({ ...line, at });
+          sendLive("line", { ...line, at });
         },
         onDisconnect: () => {
           // The client hung up, the time limit hit, or the line dropped.
-          if (!ending.current) hangUp();
+          if (!ending.current) {
+            sendLive("hangup", {});
+            hangUp();
+          }
         },
         onError: (message) => setError(String(message || "The call had a problem.")),
       });
@@ -261,6 +286,7 @@ export default function Roleplay() {
       // already closed
     }
     conv.current = null;
+    closeLive();
 
     const blob = await stopRecorder();
     stopMic();

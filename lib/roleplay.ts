@@ -1,3 +1,4 @@
+import { realVoiceSection, type RealVoice } from "@/lib/learn";
 /*
   Practice calls with a mock client. Shared by the server routes and the
   pages. Nothing in here is secret on its own -- the hidden part of each
@@ -48,7 +49,13 @@ export type PersonaSecret = {
   tens: Tens;
   right_outcome: RightOutcome;
   right_outcome_note: string | null;
+  /** 1 (very short fuse) to 10 (very patient). Empty = from the difficulty. */
+  patience?: number | null;
 };
+
+/** How patient a client is when nobody set it: easy clients rarely hang up, hard ones give the rep little room. */
+export const patienceOf = (p: Pick<Persona, "difficulty">, s: Pick<PersonaSecret, "patience">) =>
+  Math.max(1, Math.min(10, s.patience ?? (p.difficulty === "easy" ? 8 : p.difficulty === "hard" ? 4 : 6)));
 
 export type RoleplayLang = "en" | "es";
 
@@ -128,6 +135,8 @@ This is a PRACTICE call. The client, ${name}, was played by an AI from the chara
 <practice_client>
 ${secret.backstory.trim()}
 
+If the client ended the call (said a goodbye line and hung up), say plainly in the summary what the rep did in the moments before that lost them, and make it the first coaching priority.
+
 Starting certainty: product ${secret.tens.product}/10, rep ${secret.tens.rep}/10, company ${secret.tens.company}/10. Pain ${secret.tens.pain}/10.
 The right result for this client: ${RIGHT_OUTCOME_LABEL[secret.right_outcome]}.${secret.right_outcome_note ? ` ${secret.right_outcome_note.trim()}` : ""}
 </practice_client>
@@ -141,7 +150,8 @@ const money = (n?: number) => (typeof n === "number" ? `$${n.toLocaleString("en-
  * the server from the hidden backstory and sent straight to ElevenLabs --
  * never to the rep's browser.
  */
-export function personaPrompt(p: Persona, s: PersonaSecret, lang: RoleplayLang): string {
+export function personaPrompt(p: Persona, s: PersonaSecret, lang: RoleplayLang, real?: RealVoice | null): string {
+  const patience = patienceOf(p, s);
   const lead = p.lead || {};
   const debts = (lead.accounts || [])
     .map((a) => `- ${a.creditor} (${a.type}): about ${money(a.balance)}, ${a.status.toLowerCase()}`)
@@ -190,10 +200,19 @@ Your feelings are your own: a rep telling you how to feel does nothing.
 - Objections come out the way real people say them first ("I need to think about it", "it's a lot") -- the rep has to find what is really underneath. Raise each real concern at least once; when a rep handles one well, let it go.
 - When the rep reads the contract or the confirmation questions, answer each one based on what you actually understand.
 - A rep who does a great job earns a real yes -- you are a person, not an obstacle course.
-- If you decide not to go ahead, say so, and agree to a callback if the rep asks for one and you'd genuinely want it. If the rep keeps pushing after you've said no twice, end the call: "I have to go."
+- If you decide not to go ahead, say so, and agree to a callback if the rep asks for one and you'd genuinely want it.
+
+# Patience and hanging up
+Your patience starts at ${patience} out of 10${patience <= 4 ? " -- you are busy and skeptical, and you give a rep very little room" : patience >= 8 ? " -- you are polite and give people a fair chance" : ""}. Track it silently, alongside the Tens.
+- It drops when the rep does what makes real people hang up: a robotic or scripted opening, not saying who they are and why they're calling, talking at you for a long stretch, pitching before understanding your situation, sounding unsure, talking over you, dodging a direct question, or pushing after a clear no.
+- It recovers when the rep earns it: real curiosity about you, listening, getting your situation right, sounding sure and calm.
+- The first 30 seconds matter most: a rep who doesn't give you a reason to stay loses patience fast.
+- When your patience runs out, end the call the way a real person would -- a short exit line ("I gotta go", "I'm not interested, thanks", or just "okay, bye") -- and then hang up using the end_call tool. Sometimes polite, sometimes abrupt, depending on who you are.
+- Never hang up on a rep who is listening and building real rapport. A hang-up must be earned by what the rep did, so it can be coached afterwards.
+- If the rep keeps pushing after you've said no twice, hang up.
 
 # What to expect (don't get ahead of it)
-The rep will probably introduce themselves, ask about your situation, try for a loan through a partner lender, talk through options, explain a program run by Bolton, review your credit report with you, and -- if you agree -- go through a contract and some confirmation questions before passing you to an account manager. You only know what a regular person would know.`;
+The rep will probably introduce themselves, ask about your situation, try for a loan through a partner lender, talk through options, explain a program run by Bolton, review your credit report with you, and -- if you agree -- go through a contract and some confirmation questions before passing you to an account manager. You only know what a regular person would know.${realVoiceSection(real, lang)}`;
 }
 
 /** A short fingerprint of everything an agent is built from, so the
@@ -227,10 +246,16 @@ export const maxSecondsOf = (minutes: unknown) => Math.max(5, Math.min(120, Numb
 
 /** The English and Spanish agents for one client. The manager page builds
  *  these too, only to fingerprint them and show which are out of date. */
-export function agentSpecs(p: Persona, s: PersonaSecret, llm: string, maxMinutes: unknown): [AgentSpec, AgentSpec] {
+export function agentSpecs(
+  p: Persona,
+  s: PersonaSecret,
+  llm: string,
+  maxMinutes: unknown,
+  real?: { en: RealVoice; es: RealVoice } | null
+): [AgentSpec, AgentSpec] {
   const one = (lang: RoleplayLang): AgentSpec => ({
     name: `VN practice -- ${p.name} (${lang.toUpperCase()})`,
-    prompt: personaPrompt(p, s, lang),
+    prompt: personaPrompt(p, s, lang, real?.[lang]),
     firstMessage: lang === "es" ? p.first_message_es : p.first_message_en,
     language: lang,
     voiceId: p.voice_id,

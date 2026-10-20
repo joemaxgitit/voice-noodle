@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/callsServer";
 import { upsertAgent, xiKey } from "@/lib/roleplayServer";
 import { agentHash, agentSpecs, type Persona, type PersonaSecret } from "@/lib/roleplay";
+import { realVoice, type ClientInsight } from "@/lib/learn";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -36,8 +37,12 @@ export async function POST(request: Request) {
   if (body.personaId) q = q.eq("id", body.personaId);
   const [{ data: personas, error }, { data: secrets }] = await Promise.all([
     q,
-    supabase.from("roleplay_persona_secrets").select("persona_id, backstory, tens, right_outcome, right_outcome_note"),
+    supabase.from("roleplay_persona_secrets").select("*"),
   ]);
+  // Real-call wording and hang-up triggers (empty until real calls have been learned from).
+  const { data: ins } = await supabase.from("client_insights").select("id, lang, kind, objections, moments, ending, created_at").order("created_at", { ascending: false }).limit(400);
+  const pool = (ins || []) as ClientInsight[];
+  const real = pool.length ? { en: realVoice(pool, "en"), es: realVoice(pool, "es") } : null;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const secretOf = new Map((secrets || []).map((s) => [s.persona_id as string, s as unknown as PersonaSecret]));
@@ -51,7 +56,7 @@ export async function POST(request: Request) {
       continue;
     }
 
-    const specs = agentSpecs(p, secret, llm, org?.roleplay_max_minutes);
+    const specs = agentSpecs(p, secret, llm, org?.roleplay_max_minutes, real);
     const hash = agentHash(specs);
 
     if (!body.force && p.agent_hash === hash && p.agent_en && p.agent_es) {

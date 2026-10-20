@@ -109,7 +109,27 @@ function bodies(s: AgentSpec) {
     conversation_config: { agent, tts: { ...voice } },
     platform_settings: { auth: { enable_auth: true } },
   };
-  return [full, noModel, minimal];
+  // The client can hang up (ElevenLabs' built-in end_call tool). Dropped if the account rejects it.
+  const withHangup = {
+    ...full,
+    conversation_config: {
+      ...full.conversation_config,
+      agent: {
+        ...agent,
+        prompt: {
+          ...agent.prompt,
+          built_in_tools: {
+            end_call: {
+              name: "end_call",
+              description: "Hang up the phone. Use only when your patience has run out or you have firmly said goodbye.",
+              params: { system_tool_type: "end_call" },
+            },
+          },
+        },
+      },
+    },
+  };
+  return [withHangup, full, noModel, minimal];
 }
 
 /** Creates the agent, or updates it in place. Returns its id. */

@@ -211,6 +211,38 @@ export default function Calls() {
     })();
   }, [calls, supabase, loadCalls]);
 
+  // Graded real call -> keep an anonymous client profile for the practice clients (lib/learn.ts).
+  // One at a time, quietly, about a third of a cent each; older calls are worked through too.
+  const learning = useRef(false);
+  const learned = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (learning.current) return;
+    learning.current = true;
+    void (async () => {
+      try {
+        if (!learned.current) {
+          const { data, error } = await supabase.from("client_insights").select("call_id");
+          if (error) return; // table not there yet
+          learned.current = new Set((data || []).map((x) => x.call_id as string));
+        }
+        const todo = calls.filter((c) => c.status === "graded" && !learned.current!.has(c.id));
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        for (const c of todo.slice(0, 20)) {
+          learned.current.add(c.id);
+          await fetch("/api/calls/learn", {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: `Bearer ${session?.access_token ?? ""}` },
+            body: JSON.stringify({ callId: c.id }),
+          }).catch(() => null);
+        }
+      } finally {
+        learning.current = false;
+      }
+    })();
+  }, [calls, supabase]);
+
   // Transcript ready -> start grading.
   useEffect(() => {
     for (const c of calls) {

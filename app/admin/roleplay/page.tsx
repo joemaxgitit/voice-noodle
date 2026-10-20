@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { realVoice, type ClientInsight } from "@/lib/learn";
 import { createClient } from "@/lib/supabase/client";
 import { clock, money, scoreBand, OUTCOME_LABEL, type Grade, type Outcome } from "@/lib/calls";
 import {
   agentHash,
   agentSpecs,
+  patienceOf,
   DIFFICULTY_LABEL,
   RIGHT_OUTCOME_LABEL,
   ROLEPLAY_LLMS,
@@ -76,6 +78,7 @@ type Draft = {
   rep: number;
   company: number;
   pain: number;
+  patience: number;
   right_outcome: RightOutcome;
   right_outcome_note: string;
 };
@@ -114,6 +117,7 @@ function toDraft(p: Persona | null, s: PersonaSecret | null, nextSort: number): 
     rep: s?.tens.rep ?? 5,
     company: s?.tens.company ?? 5,
     pain: s?.tens.pain ?? 6,
+    patience: s?.patience ?? patienceOf({ difficulty: p?.difficulty ?? "medium" }, { patience: null }),
     right_outcome: s?.right_outcome ?? "enrolled",
     right_outcome_note: s?.right_outcome_note ?? "",
   };
@@ -163,6 +167,8 @@ export default function RoleplayAdmin() {
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceError, setVoiceError] = useState("");
   const [calls, setCalls] = useState<PracticeRow[]>([]);
+  const [insights, setInsights] = useState<ClientInsight[] | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResults, setSyncResults] = useState<SyncResult[]>([]);
@@ -240,7 +246,7 @@ export default function RoleplayAdmin() {
         .eq("id", me?.org_id ?? "")
         .single(),
       supabase.from("roleplay_personas").select("*").order("sort_order"),
-      supabase.from("roleplay_persona_secrets").select("persona_id, backstory, tens, right_outcome, right_outcome_note"),
+      supabase.from("roleplay_persona_secrets").select("*"),
       supabase.from("scripts").select("id, title").eq("active", true).order("sort_order"),
       supabase
         .from("calls")
@@ -265,6 +271,9 @@ export default function RoleplayAdmin() {
     setSecrets(new Map(((s.data || []) as SecretRow[]).map((x) => [x.persona_id, x])));
     setScripts(sc.data || []);
     setCalls((c.data || []) as unknown as PracticeRow[]);
+    // The real-call library (separate, so the page works before its table exists).
+    const ins = await supabase.from("client_insights").select("id, call_id, lang, kind, outcome, objections, moments, ending, used_in, created_at").order("created_at", { ascending: false }).limit(400);
+    setInsights(ins.error ? null : ((ins.data || []) as ClientInsight[]));
     setLoading(false);
   }, [supabase]);
 
@@ -360,6 +369,7 @@ export default function RoleplayAdmin() {
       tens: { product: clamp(draft.product), rep: clamp(draft.rep), company: clamp(draft.company), pain: clamp(draft.pain) },
       right_outcome: draft.right_outcome,
       right_outcome_note: draft.right_outcome_note.trim() || null,
+      patience: clamp(draft.patience),
       updated_at: new Date().toISOString(),
     });
     setSaving(false);
@@ -379,6 +389,32 @@ export default function RoleplayAdmin() {
     load();
   }
 
+  // Real-call wording for the practice clients; changes once a week.
+  const real = useMemo(() => (insights && insights.length ? { en: realVoice(insights, "en"), es: realVoice(insights, "es") } : null), [insights]);
+
+  // When only the weekly real-call wording has moved on, bring the voices up to date by themselves.
+  const autoSynced = useRef(false);
+  useEffect(() => {
+    if (autoSynced.current || loading || syncing || !real) return;
+    const due = personas.filter((p) => p.active && stale.get(p.id) === "stale");
+    if (!due.length) return;
+    autoSynced.current = true;
+    void sync();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [real, personas, loading]);
+
+  async function suggest() {
+    setSuggesting(true);
+    setError("");
+    setNotice("");
+    const res = await fetch("/api/roleplay/suggest", { method: "POST", headers: { Authorization: `Bearer ${await token()}`, "Content-Type": "application/json" }, body: "{}" }).catch(() => null);
+    const b = res ? await res.json().catch(() => ({})) : {};
+    setSuggesting(false);
+    if (!res?.ok) return setError(b?.error || "Could not draft new clients.");
+    setNotice(b.made ? `Drafted ${b.made} new practice client${b.made === 1 ? "" : "s"} from real calls. They're hidden until you check them and switch them on.` : "Nothing new to draft yet.");
+    await load();
+  }
+
   // Which voice agents no longer match what's saved.
   const stale = useMemo(() => {
     const out = new Map<string, "ready" | "stale" | "missing" | "no-secret">();
@@ -386,12 +422,12 @@ export default function RoleplayAdmin() {
       const s = secrets.get(p.id);
       if (!s) out.set(p.id, "no-secret");
       else if (!p.agent_en || !p.agent_es) out.set(p.id, "missing");
-      else if (org && agentHash(agentSpecs(p, s, org.roleplay_llm, org.roleplay_max_minutes)) !== p.agent_hash)
+      else if (org && agentHash(agentSpecs(p, s, org.roleplay_llm, org.roleplay_max_minutes, real)) !== p.agent_hash)
         out.set(p.id, "stale");
       else out.set(p.id, "ready");
     }
     return out;
-  }, [personas, secrets, org]);
+  }, [personas, secrets, org, real]);
 
   const needSync = personas.filter((p) => p.active && stale.get(p.id) !== "ready").length;
   const voiceName = (id: string | null) => voices.find((v) => v.id === id)?.name || (id ? "Custom voice" : "Default voice");
@@ -539,6 +575,27 @@ export default function RoleplayAdmin() {
           </button>
         </div>
 
+        {insights && (() => {
+          const full = insights.filter((i) => i.kind === "full");
+          const es = full.filter((i) => i.lang === "es").length;
+          const fresh = full.filter((i) => !i.used_in).length;
+          const lines = (real?.en.lines.length ?? 0) + (real?.es.lines.length ?? 0);
+          return (
+            <div className="rp-banner" style={{ alignItems: "flex-start" }}>
+              <span>
+                <b>Learning from real calls:</b> {full.length} full call{full.length === 1 ? "" : "s"}
+                {es ? ` (${es} in Spanish)` : ""} and {insights.filter((i) => i.kind === "short").length} short ones so far. Practice clients use {lines} real objection
+                line{lines === 1 ? "" : "s"} and what real clients hung up on, refreshed every Monday.
+                {fresh >= 3 ? ` ${fresh} calls haven't been used for a new client yet.` : ""}
+              </span>
+              {fresh >= 3 && (
+                <button onClick={() => void suggest()} disabled={suggesting}>
+                  {suggesting ? "Drafting…" : "Draft new clients from real calls · about $0.10"}
+                </button>
+              )}
+            </div>
+          );
+        })()}
         {needSync > 0 && (
           <div className="rp-banner">
             <span>
@@ -573,6 +630,7 @@ export default function RoleplayAdmin() {
                     {st === "ready" ? "Voice ready" : st === "stale" ? "Needs sync" : st === "no-secret" ? "No backstory" : "Not set up"}
                   </span>
                   {!p.active && <span className="pill">Hidden</span>}
+                  {(p as Persona & { origin?: string }).origin === "learned" && <span className="pill tone">From real calls</span>}
                 </div>
                 <h3>{p.title}</h3>
                 <div className="who">
@@ -811,6 +869,10 @@ export default function RoleplayAdmin() {
                 <input type="number" min={1} max={10} value={d[k]} onChange={(e) => set(k, Number(e.target.value))} />
               </label>
             ))}
+            <label className="field">
+              <span>Patience (1 hangs up fast, 10 very patient)</span>
+              <input type="number" min={1} max={10} value={d.patience} onChange={(e) => set("patience", Number(e.target.value))} />
+            </label>
           </div>
           <div className="rp-form-grid">
             <label className="field">

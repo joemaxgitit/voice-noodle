@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { presenceChannel, type Here } from "@/lib/usePresence";
@@ -28,6 +30,31 @@ export default function Live() {
   const [people, setPeople] = useState<Here[]>([]);
   const [ready, setReady] = useState(false);
   const [tick, setTick] = useState(0);
+  // Practice calls happening right now, to listen in on.
+  const [onCalls, setOnCalls] = useState<{ id: string; created_at: string; persona: string; rep: string }[]>([]);
+  useEffect(() => {
+    const read = async () => {
+      const since = new Date(Date.now() - 2 * 3600_000).toISOString();
+      const { data } = await supabase
+        .from("calls")
+        .select("id, created_at, roleplay, profiles:rep_id(full_name)")
+        .eq("source", "roleplay")
+        .eq("status", "live")
+        .gte("created_at", since)
+        .order("created_at", { ascending: false });
+      setOnCalls(
+        ((data || []) as unknown as { id: string; created_at: string; roleplay: { persona?: string } | null; profiles: { full_name: string | null } | null }[]).map((c) => ({
+          id: c.id,
+          created_at: c.created_at,
+          persona: c.roleplay?.persona || "a practice client",
+          rep: c.profiles?.full_name || "A rep",
+        }))
+      );
+    };
+    void read();
+    const t = setInterval(read, 15_000);
+    return () => clearInterval(t);
+  }, [supabase]);
 
   // Re-render every half minute so the "for how long" figures stay honest.
   useEffect(() => {
@@ -95,6 +122,24 @@ export default function Live() {
         Who has the app open and what they are on. Nothing here is kept &mdash;
         for what happened earlier, use Listening.
       </p>
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <b>On a practice call now</b>
+        {onCalls.length === 0 ? (
+          <p className="hint" style={{ margin: "4px 0 0" }}>Nobody is on a practice call right now.</p>
+        ) : (
+          onCalls.map((c) => (
+            <div key={c.id} className="row" style={{ justifyContent: "space-between", marginTop: 8 }}>
+              <span>
+                <span className="live-dot on" /> {c.rep} with {c.persona} <small className="muted">· {ago(new Date(c.created_at).getTime())}</small>
+              </span>
+              <Link className="btn primary" href={`/admin/live/${c.id}`} style={{ textDecoration: "none" }}>
+                Listen in
+              </Link>
+            </div>
+          ))
+        )}
+      </section>
 
       {!ready && <p className="muted">Connecting&hellip;</p>}
 

@@ -43,6 +43,8 @@ import "../calls.css";
 
 type Call = {
   id: string;
+  /** Notes a manager dropped while listening in on a practice call. */
+  live_notes?: { at: number; text: string; name: string }[] | null;
   source: string | null; // "roleplay" for a practice call with a mock client
   roleplay: RoleplayInfo | null;
   client_label: string | null;
@@ -348,7 +350,9 @@ export default function CallDetail() {
       .eq("id", callId)
       .single();
     if (error) setError(error.message);
-    setCall((data as unknown as Call) || null);
+    // Separate, so the page loads before the live_notes column exists.
+    const ln = data && (data as { source?: string }).source === "roleplay" ? await supabase.from("calls").select("live_notes").eq("id", callId).single() : null;
+    setCall(data ? ({ ...(data as unknown as Call), live_notes: (ln?.data as { live_notes?: Call["live_notes"] } | null)?.live_notes ?? null } as Call) : null);
   }, [supabase, callId]);
 
   // Corrections managers made on this call, and this manager's org for new ones.
@@ -939,6 +943,19 @@ export default function CallDetail() {
           <p className="muted" style={{ marginTop: 6 }}>
             Call ended: {g.furthest_point}
           </p>
+          {!!call.live_notes?.length && (
+            <>
+              <h2>Notes from listening in</h2>
+              {call.live_notes.map((n, i) => (
+                <p key={i} style={{ margin: "4px 0" }}>
+                  <small className="muted">
+                    {Math.floor(n.at / 60)}:{String(n.at % 60).padStart(2, "0")} · {n.name.split(" ")[0]}
+                  </small>{" "}
+                  {n.text}
+                </p>
+              ))}
+            </>
+          )}
 
           {(call.outcome || call.outcome_manual || g.outcome) && (
             <>
