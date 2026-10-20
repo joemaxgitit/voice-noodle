@@ -78,6 +78,7 @@ export default function Rotation() {
   const [impBusy, setImpBusy] = useState("");
   const impInput = useRef<HTMLInputElement>(null);
 
+  const [canEdit, setCanEdit] = useState(false);
   const load = useCallback(async () => {
     const {
       data: { session },
@@ -106,6 +107,13 @@ export default function Rotation() {
     };
 
     // People and the last couple of months first, so the page shows right away; the full year follows.
+    // Only the super admin runs rotation; every manager can see the record.
+    void supabase
+      .from("profiles")
+      .select("super_admin")
+      .eq("id", session.user.id)
+      .maybeSingle()
+      .then(({ data }) => setCanEdit(!!(data as { super_admin?: boolean } | null)?.super_admin));
     const [p, v, recent] = await Promise.all([
       supabase.from("profiles").select("id, full_name, role, active, kpi_name").eq("org_id", prof?.org_id ?? "").order("full_name"),
       // Reps on the Vindico auto dialer make rotation automatically (own query, so a missing column never breaks the page).
@@ -313,6 +321,7 @@ export default function Rotation() {
   }
 
   async function override(d: Daily) {
+    if (!canEdit) return;
     const now = madeOf(d);
     const note = prompt(`${nameOf(d)}, ${fmtDay(d.day, true)}: mark as ${now ? "MISSED" : "MADE"} rotation? Add a reason (e.g. "excused -- training all afternoon"):`, d.override_note ?? "");
     if (note === null) return;
@@ -366,7 +375,7 @@ export default function Rotation() {
       {error && <div className="error">{error}</div>}
       {status && <div className="status">{status}</div>}
 
-      {!grid ? (
+      {!canEdit ? null : !grid ? (
         <label
           className={`rx-drop${over ? " over" : ""}`}
           onDragOver={(e) => {
@@ -490,7 +499,7 @@ export default function Rotation() {
                 Rotation for {fmtDay(latest.forDay, true)}
               </h3>
               <p className="hint" style={{ margin: "2px 0 0" }}>
-                From {fmtDay(latest.day, true)}&rsquo;s numbers &middot; tap a name to override with a reason
+                From {fmtDay(latest.day, true)}&rsquo;s numbers{canEdit ? " · tap a name to override with a reason" : ""}
               </p>
             </div>
             <button onClick={() => void copyList()}>{copied ? "Copied" : "Copy the list"}</button>
@@ -598,7 +607,7 @@ export default function Rotation() {
             </table>
           </div>
           <p className="hint" style={{ marginBottom: 0 }}>
-            ✓ made rotation, ✗ missed, A absent, · no numbers that day. A ring marks a manager override or a note from the old tracker. Tap any day to change it.
+            ✓ made rotation, ✗ missed, A absent, · no numbers that day. A ring marks a manager override or a note from the old tracker.{canEdit ? " Tap any day to change it." : ""}
             {formerNames.length > 0 && (
               <>
                 {" "}
@@ -611,6 +620,7 @@ export default function Rotation() {
           </p>
         </section>
       )}
+      {canEdit && (
       <details className="card" style={{ marginTop: 14 }} open={!!imp}>
         <summary style={{ cursor: "pointer", fontWeight: 650 }}>Import past rotation records</summary>
         {!imp ? (
@@ -661,6 +671,7 @@ export default function Rotation() {
           </div>
         )}
       </details>
+      )}
     </main>
   );
 }

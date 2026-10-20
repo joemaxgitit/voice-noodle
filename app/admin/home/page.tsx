@@ -137,9 +137,11 @@ export default function ManagerHome() {
       <div className="rx-actions" style={{ margin: "6px 0 16px" }}>
         {!service && (
           <>
-            <Link className="btn primary" href="/admin/rotation" style={{ textDecoration: "none" }}>
-              Nightly close: rotation
-            </Link>
+            {superAdmin && (
+              <Link className="btn primary" href="/admin/rotation" style={{ textDecoration: "none" }}>
+                Nightly close: rotation
+              </Link>
+            )}
             {superAdmin && (
               <Link className="btn" href="/admin/dealclip" style={{ textDecoration: "none" }}>
                 Morning: Deal Clip
