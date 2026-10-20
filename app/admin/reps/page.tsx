@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { scoreBand } from "@/lib/calls";
 import { fmtKpi, headlineValue, monthlyReports, monthOf, fmtMonth, type KpiReport, type KpiRow } from "@/lib/kpi";
 import DropBox from "./DropBox";
+import { useMode } from "@/lib/superMode";
 import "../calls/calls.css";
 import "../training/training.css";
 import "./reps.css";
@@ -19,6 +20,7 @@ const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((s, x) => s + x,
 
 /** The team at a glance, and the drop box that feeds every profile. */
 export default function Reps() {
+  const { superMode } = useMode();
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [orgId, setOrgId] = useState("");
@@ -163,8 +165,9 @@ export default function Reps() {
       <div className="eyebrow">Team</div>
       <h1>Reps</h1>
       <p className="muted" style={{ maxWidth: "66ch" }}>
-        Every rep&rsquo;s profile collects their graded calls, practice calls, KPI reports, your notes and files, and training. Open one to see the
-        arc, prep a KPI one-on-one, or run a coaching review. Managers only.
+        {superMode
+          ? "Every rep’s profile collects their graded calls, practice calls, KPI reports, your notes and files, and training. Open one to see the arc, prep a KPI one-on-one, or run a coaching review. Managers only."
+          : "Every rep’s graded calls, practice calls and Straight Line progress. Open one to see the arc or run a coaching review. Managers only."}
       </p>
       {error && <div className="error">{error}</div>}
 
@@ -175,6 +178,8 @@ export default function Reps() {
               <th>Rep</th>
               <th className="num" title="Straight Line score, last 30 days">SLP 30d</th>
               <th className="num" title="Real calls / practice calls graded, last 30 days">Calls / practice</th>
+              {superMode && (
+                <>
               <th className="num">{kpi ? `Deals ${fmtMonth(monthOf(kpi.cur), false)}` : "Deals"}</th>
               <th className="num">Close %</th>
               <th className="num" title="Cancelled before the 1st payment, from the latest Friday retention lookback. Lower is better.">
@@ -187,6 +192,8 @@ export default function Reps() {
                 Cancel 3 mo
               </th>
               <th className="num">Notes</th>
+                </>
+              )}
               <th>Review</th>
             </tr>
           </thead>
@@ -218,6 +225,8 @@ export default function Reps() {
                 <td className="num">
                   {r.real} / {r.practice}
                 </td>
+                {superMode && (
+                  <>
                 <td className="num">{r.deals ? fmtKpi(r.deals.v, r.deals.type) : "--"}</td>
                 <td className="num">
                   {r.close ? fmtKpi(r.close.v, r.close.type) : "--"}
@@ -249,6 +258,8 @@ export default function Reps() {
                   {r.look?.rate != null ? `${Math.round(r.look.rate * 100)}%` : r.look?.n ? `${r.look.n} cancels` : "--"}
                 </td>
                 <td className="num">{r.notes || ""}</td>
+                  </>
+                )}
                 <td>
                   {r.review ? (
                     <span className={`pill ${r.review.trajectory === "improving" ? "good" : r.review.trajectory === "slipping" ? "poor" : "fair"}`}>
@@ -267,7 +278,7 @@ export default function Reps() {
         <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} style={{ width: "auto" }} /> Show inactive reps
       </label>
 
-      {orgId && <DropBox supabase={supabase} orgId={orgId} me={me} people={people.filter((p) => p.active || p.role === "rep")} onSaved={() => void load()} />}
+      {orgId && superMode && <DropBox supabase={supabase} orgId={orgId} me={me} people={people.filter((p) => p.active || p.role === "rep")} onSaved={() => void load()} />}
     </main>
   );
 }

@@ -1,4 +1,4 @@
-import { featureForPath, hasFeature, type FeatureFlags } from "@/lib/features";
+import { isExtraPath } from "@/lib/features";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -102,14 +102,15 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // Extra features: the super admin always has them; everyone else only when switched on (Account page).
-    const feature = featureForPath(path);
-    if (feature) {
-      const [{ data: sa }, { data: f }] = await Promise.all([
+    // The extras only open in super mode (switched per person on the super admin's Account page).
+    if (isExtraPath(path)) {
+      const [{ data: sa }, sm] = await Promise.all([
         supabase.from("profiles").select("super_admin").eq("id", user.id).maybeSingle(),
-        supabase.from("app_features").select("flags").maybeSingle(),
+        supabase.from("profiles").select("super_mode").eq("id", user.id).maybeSingle(),
       ]);
-      if (!hasFeature((f as { flags?: FeatureFlags } | null)?.flags, feature, !!(sa as { super_admin?: boolean } | null)?.super_admin)) {
+      const superAdmin = !!(sa as { super_admin?: boolean } | null)?.super_admin;
+      const superMode = sm.error ? superAdmin : !!(sm.data as { super_mode?: boolean } | null)?.super_mode;
+      if (!superMode) {
         const url = request.nextUrl.clone();
         url.pathname = "/admin/home";
         url.search = "";

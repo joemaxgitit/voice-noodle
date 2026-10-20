@@ -19,7 +19,7 @@ const KIND_TEXT: Record<Kind, string> = { real: "Call", practice: "Practice", tr
 
 /** Everything on record, newest first. */
 export default function Activity({ ctx }: { ctx: Ctx }) {
-  const { history: h, people } = ctx;
+  const { history: h, people, superMode } = ctx;
   const [filter, setFilter] = useState<Kind | "all">("all");
 
   const events = useMemo(() => {
@@ -50,17 +50,17 @@ export default function Activity({ ctx }: { ctx: Ctx }) {
       });
     for (const c of h.completions)
       if (c.kind !== "quiz") out.push({ at: c.completed_at, kind: "training", title: `Completed: ${c.title ?? "training item"}`, sub: c.kind });
-    for (const a of h.attendance)
+    for (const a of superMode ? h.attendance : [])
       if (a.status !== "present")
         out.push({ at: a.week_start, kind: "training", title: `Master Your Craft: ${a.status.replace(/_/g, " ")}`, sub: `week of ${a.week_start}` });
-    for (const n of h.notes)
+    for (const n of superMode ? h.notes : [])
       out.push({
         at: n.note_date,
         kind: "note",
         title: `${TAG_LABEL[n.tag]} from ${people.get(n.author_id || "") ?? "a manager"}`,
         sub: n.body.length > 200 ? `${n.body.slice(0, 200)}…` : n.body,
       });
-    for (const x of h.sessions)
+    for (const x of superMode ? h.sessions : [])
       out.push({
         at: x.session_date,
         kind: "note",
@@ -77,16 +77,16 @@ export default function Activity({ ctx }: { ctx: Ctx }) {
             .filter(Boolean)
             .join(" · "),
         });
-    for (const f of h.files) out.push({ at: f.created_at, kind: "note", title: `File: ${f.name}`, sub: f.note || undefined });
+    for (const f of superMode ? h.files : []) out.push({ at: f.created_at, kind: "note", title: `File: ${f.name}`, sub: f.note || undefined });
     return out.sort((a, b) => (a.at < b.at ? 1 : -1));
-  }, [h, people]);
+  }, [h, people, superMode]);
 
   const shown = filter === "all" ? events : events.filter((e) => e.kind === filter);
 
   return (
     <div>
       <div className="rx-presets" role="group" aria-label="Filter">
-        {FILTERS.map((f) => (
+        {FILTERS.filter((f) => superMode || f.id !== "note").map((f) => (
           <button key={f.id} className={filter === f.id ? "on" : ""} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>
             {f.label}
           </button>

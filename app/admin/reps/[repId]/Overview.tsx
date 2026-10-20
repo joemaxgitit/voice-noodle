@@ -10,7 +10,7 @@ const DAY = 86400000;
 const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((s, x) => s + x, 0) / xs.length) : null);
 
 export default function Overview({ ctx }: { ctx: Ctx }) {
-  const { history: h, openTab, people } = ctx;
+  const { history: h, openTab, people, superMode } = ctx;
   const now = Date.now();
 
   const graded = useMemo(() => h.calls.filter((c) => c.status === "graded"), [h.calls]);
@@ -88,7 +88,7 @@ export default function Overview({ ctx }: { ctx: Ctx }) {
             </div>
           );
         })()}
-        {h.daily.length > 0 && (() => {
+        {superMode && h.daily.length > 0 && (() => {
           const last20 = h.daily.slice(0, 20);
           const made = last20.filter((d) => d.override_made ?? d.made).length;
           let streak = 0;
@@ -177,6 +177,7 @@ export default function Overview({ ctx }: { ctx: Ctx }) {
             </>
           )}
         </section>
+        {superMode && (
         <section className="card">
           <h3 className="rx-sec-title">Last one-on-one</h3>
           {h.sessions[0] ? (
@@ -198,6 +199,7 @@ export default function Overview({ ctx }: { ctx: Ctx }) {
             Start a one-on-one
           </button>
         </section>
+        )}
       </div>
       {real.length > 0 && (
         <p className="hint">

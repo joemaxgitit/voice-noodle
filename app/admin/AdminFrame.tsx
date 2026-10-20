@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { hasFeature, type FeatureFlags, type FeatureKey } from "@/lib/features";
+import { useMode } from "@/lib/superMode";
 import { createClient } from "@/lib/supabase/client";
 import "./admin-frame.css";
 
@@ -13,7 +13,7 @@ import "./admin-frame.css";
   unchanged and keeps its own data, buttons and behaviour.
 */
 
-type Item = { href: string; label: string; icon: keyof typeof ICONS; match: (p: string) => boolean; salesOnly?: boolean; feature?: FeatureKey };
+type Item = { href: string; label: string; icon: keyof typeof ICONS; match: (p: string) => boolean; salesOnly?: boolean; extra?: boolean };
 
 const GROUPS: { title: string; items: Item[] }[] = [
   {
@@ -24,10 +24,10 @@ const GROUPS: { title: string; items: Item[] }[] = [
     title: "Team",
     items: [
       { href: "/admin/reps", label: "Reps", icon: "people", match: (p) => p.startsWith("/admin/reps") },
-      { href: "/admin/rotation", label: "Rotation", icon: "rotate", match: (p) => p.startsWith("/admin/rotation"), salesOnly: true, feature: "rotation" },
-      { href: "/admin/dealclip", label: "Deal Clip", icon: "chart", match: (p) => p.startsWith("/admin/dealclip"), salesOnly: true, feature: "dealclip" },
-      { href: "/admin/coaching", label: "Coaching trends", icon: "chart", match: (p) => p.startsWith("/admin/coaching"), feature: "coaching" },
-      { href: "/admin/reports", label: "Sales reports", icon: "table", match: (p) => p.startsWith("/admin/reports") },
+      { href: "/admin/rotation", label: "Rotation", icon: "rotate", match: (p) => p.startsWith("/admin/rotation"), salesOnly: true, extra: true },
+      { href: "/admin/dealclip", label: "Deal Clip", icon: "chart", match: (p) => p.startsWith("/admin/dealclip"), salesOnly: true, extra: true },
+      { href: "/admin/coaching", label: "Coaching trends", icon: "chart", match: (p) => p.startsWith("/admin/coaching"), extra: true },
+      { href: "/admin/reports", label: "Sales reports", icon: "table", match: (p) => p.startsWith("/admin/reports"), extra: true },
     ],
   },
   {
@@ -45,8 +45,8 @@ const GROUPS: { title: string; items: Item[] }[] = [
   {
     title: "Meetings",
     items: [
-      { href: "/admin/mastery", label: "Master Your Craft", icon: "cap", match: (p) => p.startsWith("/admin/mastery"), feature: "mastery" },
-      { href: "/admin/meeting", label: "Thursday meeting", icon: "megaphone", match: (p) => p.startsWith("/admin/meeting"), feature: "meeting" },
+      { href: "/admin/mastery", label: "Master Your Craft", icon: "cap", match: (p) => p.startsWith("/admin/mastery"), extra: true },
+      { href: "/admin/meeting", label: "Thursday meeting", icon: "megaphone", match: (p) => p.startsWith("/admin/meeting"), extra: true },
     ],
   },
   {
@@ -104,7 +104,8 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
   const path = usePathname() || "/admin";
   const [open, setOpen] = useState(false);
   // Who's signed in: service managers don't have rotation or the Deal Clip.
-  const [who, setWho] = useState<{ label: string; service: boolean; superAdmin: boolean; flags: FeatureFlags }>({ label: "Manager", service: false, superAdmin: false, flags: {} });
+  const [who, setWho] = useState<{ label: string; service: boolean; superAdmin: boolean }>({ label: "Manager", service: false, superAdmin: false });
+  const mode = useMode();
   useEffect(() => {
     const supabase = createClient();
     void (async () => {
@@ -122,8 +123,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
           : service
             ? "Service manager"
             : "Sales manager";
-      const { data: f } = await supabase.from("app_features").select("flags").maybeSingle();
-      setWho({ label, service, superAdmin: !!(sa as { super_admin?: boolean } | null)?.super_admin, flags: ((f as { flags?: FeatureFlags } | null)?.flags ?? {}) });
+      setWho({ label, service, superAdmin: !!(sa as { super_admin?: boolean } | null)?.super_admin });
     })();
   }, []);
 
@@ -169,7 +169,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="af-nav">
-          {GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !(i.salesOnly && who.service) && !(i.feature && !hasFeature(who.flags, i.feature, who.superAdmin))) }))
+          {GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !(i.salesOnly && who.service) && !(i.extra && !mode.superMode)) }))
             // A heading with nothing under it (Meetings, for everyone but the super admin) isn't shown.
             .filter((g) => g.items.length)
             .map((g) => (

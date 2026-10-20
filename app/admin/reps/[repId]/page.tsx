@@ -1,5 +1,6 @@
 "use client";
 
+import { useMode } from "@/lib/superMode";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -18,12 +19,12 @@ import "../../training/training.css";
 import "../reps.css";
 
 type Tab = "overview" | "one" | "kpi" | "activity" | "notes" | "cards" | "review";
-const TABS: { id: Tab; label: string }[] = [
+const TABS: { id: Tab; label: string; extra?: boolean }[] = [
   { id: "overview", label: "Overview" },
-  { id: "one", label: "One-on-one" },
-  { id: "kpi", label: "KPI one-on-one" },
+  { id: "one", label: "One-on-one", extra: true },
+  { id: "kpi", label: "KPI one-on-one", extra: true },
   { id: "activity", label: "Calls & activity" },
-  { id: "notes", label: "Notes & files" },
+  { id: "notes", label: "Notes & files", extra: true },
   { id: "cards", label: "Training cards" },
   { id: "review", label: "Coaching review" },
 ];
@@ -39,6 +40,8 @@ export type Ctx = {
   reload: () => Promise<void>;
   openTab: (t: Tab) => void;
   seedCard: (focus: string, reviewId: string | null) => void;
+  /** Super mode shows the extras: one-on-ones, notes, KPI, retention, rotation. */
+  superMode: boolean;
 };
 
 /** One rep, everything on record: managers and admins only. */
@@ -46,6 +49,7 @@ export default function RepProfile() {
   const { repId } = useParams<{ repId: string }>();
   const supabase = useMemo(() => createClient(), []);
   const [tab, setTab] = useState<Tab>("overview");
+  const { superMode } = useMode();
   const [rep, setRep] = useState<{ full_name: string | null; role: string; team: string | null; active: boolean; kpi_name: string | null } | null>(null);
   const [orgId, setOrgId] = useState("");
   const [me, setMe] = useState("");
@@ -94,9 +98,11 @@ export default function RepProfile() {
   const name = rep?.full_name || "This rep";
   const missingSql = errors.some((e) => /rep_notes|rep_files|rep_reviews|kpi_|does not exist/i.test(e));
 
+  // A link to an extra tab falls back to the overview outside super mode.
+  const cur: Tab = superMode || !TABS.find((x) => x.id === tab)?.extra ? tab : "overview";
   const ctx: Ctx | null =
     history && orgId
-      ? { supabase, orgId, me, repId, repName: name, history, people, reload, openTab, seedCard: (focus: string, reviewId: string | null) => (setSeed({ focus, reviewId }), openTab("cards")) }
+      ? { supabase, orgId, me, repId, repName: name, history, people, reload, openTab, superMode, seedCard: (focus: string, reviewId: string | null) => (setSeed({ focus, reviewId }), openTab("cards")) }
       : null;
 
   return (
@@ -133,8 +139,8 @@ export default function RepProfile() {
       </p>
 
       <nav className="tr-tabs rx-noprint" role="tablist" aria-label="Profile sections">
-        {TABS.map((t) => (
-          <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? "active" : ""} onClick={() => openTab(t.id)}>
+        {TABS.filter((t) => superMode || !t.extra).map((t) => (
+          <button key={t.id} role="tab" aria-selected={cur === t.id} className={cur === t.id ? "active" : ""} onClick={() => openTab(t.id)}>
             {t.label}
           </button>
         ))}
@@ -147,9 +153,9 @@ export default function RepProfile() {
         <p className="muted">Loading&hellip;</p>
       ) : (
         <>
-          {tab === "overview" && <Overview ctx={ctx} />}
-          {tab === "one" && <OneOnOne ctx={ctx} />}
-          {tab === "kpi" && (
+          {cur === "overview" && <Overview ctx={ctx} />}
+          {cur === "one" && <OneOnOne ctx={ctx} />}
+          {cur === "kpi" && (
             <KpiTab
               supabase={supabase}
               orgId={orgId}
@@ -159,10 +165,10 @@ export default function RepProfile() {
               setPrefs={(p: Map<string, MetricPref>) => setHistory((h) => (h ? { ...h, prefs: p } : h))}
             />
           )}
-          {tab === "activity" && <Activity ctx={ctx} />}
-          {tab === "notes" && <NotesFiles ctx={ctx} />}
-          {tab === "cards" && <Cards ctx={ctx} seed={seed} clearSeed={clearSeed} />}
-          {tab === "review" && <Reviews ctx={ctx} />}
+          {cur === "activity" && <Activity ctx={ctx} />}
+          {cur === "notes" && <NotesFiles ctx={ctx} />}
+          {cur === "cards" && <Cards ctx={ctx} seed={seed} clearSeed={clearSeed} />}
+          {cur === "review" && <Reviews ctx={ctx} />}
         </>
       )}
     </main>

@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { scoreBand } from "@/lib/calls";
 import { addDays, fmtDate, fmtRange, fmtWeek, MASTERY, MEETING, mycTeacherName, today, weekdayOf, workWeek, type MasteryWeek, type Meeting, type TrainingEvent } from "@/lib/training";
 import IdeaBox from "../IdeaBox";
-import { hasFeature, type FeatureFlags } from "@/lib/features";
+import { useMode } from "@/lib/superMode";
 import { loadSpend, type SpendSummary } from "@/lib/spend";
 import SpendMeters from "../spending/SpendMeters";
 import "../calls/calls.css";
@@ -45,7 +45,9 @@ export default function ManagerHome() {
   const [meId, setMeId] = useState("");
   const [idea, setIdea] = useState(false);
   const [service, setService] = useState(false);
-  const [on, setOn] = useState({ rotation: false, dealclip: false, mastery: false, meeting: false });
+  // The extras show in super mode only.
+  const { superMode } = useMode();
+  const on = { rotation: superMode, dealclip: superMode, mastery: superMode, meeting: superMode };
   useEffect(() => {
     void loadSpend(supabase).then(({ summary }) => setSpend(summary));
   }, [supabase]);
@@ -59,12 +61,6 @@ export default function ManagerHome() {
       if (!session) return;
       const { data: me } = await supabase.from("profiles").select("org_id, full_name, role, team").eq("id", session.user.id).single();
       setService(me?.role === "manager" && me?.team === "ams");
-      // The Deal Clip is the super admin's alone.
-      const { data: sa } = await supabase.from("profiles").select("super_admin").eq("id", session.user.id).maybeSingle();
-      const isSuper = !!(sa as { super_admin?: boolean } | null)?.super_admin;
-      const { data: f } = await supabase.from("app_features").select("flags").maybeSingle();
-      const flags = (f as { flags?: FeatureFlags } | null)?.flags ?? {};
-      setOn({ rotation: hasFeature(flags, "rotation", isSuper), dealclip: hasFeature(flags, "dealclip", isSuper), mastery: hasFeature(flags, "mastery", isSuper), meeting: hasFeature(flags, "meeting", isSuper) });
       setName((me?.full_name || "").split(" ")[0]);
       setOrgId(me?.org_id ?? "");
       setMeId(session.user.id);
@@ -156,18 +152,22 @@ export default function ManagerHome() {
         <Link className="btn" href="/admin/calls" style={{ textDecoration: "none" }}>
           Upload a call
         </Link>
-        <Link className="btn" href="/admin/reports" style={{ textDecoration: "none" }}>
-          Upload a sales report
-        </Link>
-        <Link className="btn" href="/admin/reps" style={{ textDecoration: "none" }}>
-          Team drop box
-        </Link>
-        <button className={idea ? "primary" : ""} onClick={() => setIdea(!idea)} aria-expanded={idea}>
-          Log an idea
-        </button>
+        {superMode && (
+          <>
+            <Link className="btn" href="/admin/reports" style={{ textDecoration: "none" }}>
+              Upload a sales report
+            </Link>
+            <Link className="btn" href="/admin/reps" style={{ textDecoration: "none" }}>
+              Team drop box
+            </Link>
+            <button className={idea ? "primary" : ""} onClick={() => setIdea(!idea)} aria-expanded={idea}>
+              Log an idea
+            </button>
+          </>
+        )}
       </div>
 
-      {idea && orgId && (
+      {idea && orgId && superMode && (
         <section className="card" style={{ marginBottom: 16 }}>
           <h3 className="rx-sec-title">An idea for later</h3>
           {(on.mastery || on.meeting) && <IdeaBox supabase={supabase} orgId={orgId} me={meId} />}
@@ -276,7 +276,7 @@ export default function ManagerHome() {
           </div>
         )}
       </section>
-      {lastReport && (
+      {lastReport && superMode && (
         <p className="hint">
           Latest sales report: {lastReport.title}, through {fmtDate(lastReport.period_end, { month: "short", day: "numeric" })}.
         </p>
