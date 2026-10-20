@@ -101,8 +101,8 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // Rotation and the Deal Clip are the super admin's alone.
-    if (path.startsWith("/admin/dealclip") || path.startsWith("/admin/rotation")) {
+    // Rotation, the Deal Clip, Master Your Craft and the Thursday meeting are the super admin's alone.
+    if (["/admin/dealclip", "/admin/rotation", "/admin/mastery", "/admin/meeting"].some((x) => path.startsWith(x))) {
       const { data: sa } = await supabase.from("profiles").select("super_admin").eq("id", user.id).maybeSingle();
       if (!(sa as { super_admin?: boolean } | null)?.super_admin) {
         const url = request.nextUrl.clone();

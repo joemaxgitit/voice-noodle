@@ -45,8 +45,8 @@ const GROUPS: { title: string; items: Item[] }[] = [
   {
     title: "Meetings",
     items: [
-      { href: "/admin/mastery", label: "Master Your Craft", icon: "cap", match: (p) => p.startsWith("/admin/mastery") },
-      { href: "/admin/meeting", label: "Thursday meeting", icon: "megaphone", match: (p) => p.startsWith("/admin/meeting") },
+      { href: "/admin/mastery", label: "Master Your Craft", icon: "cap", match: (p) => p.startsWith("/admin/mastery"), superOnly: true },
+      { href: "/admin/meeting", label: "Thursday meeting", icon: "megaphone", match: (p) => p.startsWith("/admin/meeting"), superOnly: true },
     ],
   },
   {

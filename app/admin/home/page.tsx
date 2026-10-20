@@ -166,7 +166,7 @@ export default function ManagerHome() {
       {idea && orgId && (
         <section className="card" style={{ marginBottom: 16 }}>
           <h3 className="rx-sec-title">An idea for later</h3>
-          <IdeaBox supabase={supabase} orgId={orgId} me={meId} />
+          {superAdmin && <IdeaBox supabase={supabase} orgId={orgId} me={meId} />}
         </section>
       )}
 
@@ -201,9 +201,10 @@ export default function ManagerHome() {
           {days.map((d) => {
             const dow = weekdayOf(d);
             const evs = events.filter((e) => e.event_date === d);
-            const myc = (MASTERY.days as readonly number[]).includes(dow);
+            // Master Your Craft and the Thursday meeting show for the super admin only.
+            const myc = superAdmin && (MASTERY.days as readonly number[]).includes(dow);
             const instructor = mastery ? mycTeacherName(mastery, dow, nameOf) || null : null;
-            const meet = dow === 4;
+            const meet = superAdmin && dow === 4;
             if (!evs.length && !myc && !meet) return null;
             return (
               <div key={d} style={{ padding: "8px 0", borderBottom: "1px solid var(--line)", ...(d === today() ? { background: "var(--live-dim)", margin: "0 -8px", padding: "8px" } : {}) }}>

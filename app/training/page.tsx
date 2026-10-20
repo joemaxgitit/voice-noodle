@@ -38,6 +38,9 @@ import "../admin/calls/calls.css";
 import "./training.css";
 import MyCards from "./MyCards";
 
+/** Master Your Craft and the Thursday meeting, on the rep side. Off for now. */
+const SHOW_MEETINGS = false;
+
 type Slot = { date: string; start: string; minutes: number; title: string; who: string; kind: "event" | "mastery" | "meeting"; notes?: string | null; materials: string[] };
 
 /**
@@ -141,7 +144,8 @@ export default function MyTraining() {
         notes: e.notes,
         materials: e.material_ids,
       }));
-    if (mastery && myDay) {
+    // Master Your Craft and the Thursday meeting are turned off for reps for now.
+    if (SHOW_MEETINGS && mastery && myDay) {
       out.push({
         date: addDays(week, myDay - 1),
         start: MASTERY.start,
@@ -153,7 +157,7 @@ export default function MyTraining() {
         materials: mastery.material_ids,
       });
     }
-    out.push({
+    if (SHOW_MEETINGS) out.push({
       date: addDays(week, 3),
       start: meeting?.start_time.slice(0, 5) ?? MEETING.start,
       minutes: MEETING.target,
@@ -311,6 +315,7 @@ export default function MyTraining() {
       </section>
 
       {/* ---------- Master Your Craft ---------- */}
+      {SHOW_MEETINGS && (
       <section className="my-section">
         <h2>Master Your Craft</h2>
         <div className="card">
@@ -367,6 +372,7 @@ export default function MyTraining() {
           )}
         </div>
       </section>
+      )}
 
       {/* ---------- library ---------- */}
       <section className="my-section">
