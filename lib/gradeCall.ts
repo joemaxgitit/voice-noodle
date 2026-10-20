@@ -931,6 +931,7 @@ export function nameSections(g: Grade, n: Naming) {
 }
 
 const SPANISH = /[¿¡ñ]|\b(qué|cómo|porque|usted|tengo|está|estoy|puedo|quiero|tarjetas|deuda|pagar|ahorita|bueno|gracias|también|entonces|necesito|dinero)\b/i;
+const SPANISH_TITLE = /[áéíóúñ¿¡]|\b(el|la|los|las|del|sobre|cierre|contrato|presentación|crédito|villano|remate|apertura|dificultad)\b/i;
 const NAME_KEYS = new Set(["section", "stage", "status", "landed", "outcome", "close_quality", "model", "graded_at", "role", "speaker", "severity", "direction", "kind", "skill"]);
 
 /**
@@ -938,15 +939,16 @@ const NAME_KEYS = new Set(["section", "stage", "status", "landed", "outcome", "c
  * sometimes come back in Spanish. Translate whatever is left, in one cheap
  * pass, so a manager never has to read Spanish.
  */
-export async function englishQuotes(g: Grade, key: string) {
+export async function englishQuotes(g: Grade, key: string, englishTitles: Set<string> = new Set()) {
   const spots: { obj: Record<string, unknown> | unknown[]; k: string | number }[] = [];
   const walk = (x: unknown, depth = 0) => {
     if (!x || typeof x !== "object" || depth > 6) return;
     const entries: [string | number, unknown][] = Array.isArray(x) ? x.map((v, i) => [i, v]) : Object.entries(x as Record<string, unknown>);
     for (const [k, v] of entries) {
       if (typeof v === "string") {
-        if (typeof k === "string" && NAME_KEYS.has(k)) continue;
-        if (v.length > 2 && SPANISH.test(v)) spots.push({ obj: x as Record<string, unknown>, k });
+        // Section names that found their English title stay as they are; any still in Spanish get translated too.
+        if (typeof k === "string" && NAME_KEYS.has(k) && !(k === "section" && !englishTitles.has(v.replace(/^Objection:\s*/, "")) && SPANISH_TITLE.test(v))) continue;
+        if (v.length > 2 && (SPANISH.test(v) || (k === "section" && SPANISH_TITLE.test(v)))) spots.push({ obj: x as Record<string, unknown>, k });
       } else walk(v, depth + 1);
     }
   };
@@ -1217,7 +1219,7 @@ async function grade(
     for (const t of result.turning_points) t.direction = low(t.direction);
     clean(result);
     nameSections(result, prior.naming);
-    if (prior.naming.lang === "es") await englishQuotes(result, key);
+    if (prior.naming.lang === "es") await englishQuotes(result, key, new Set(prior.naming.english));
     result.slp ||= [];
     for (const a of result.emotional_arc) a.landed = low(a.landed);
     // Scores outside 1-10 would skew the average; clamp them.
