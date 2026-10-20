@@ -1,5 +1,6 @@
 "use client";
 
+import { reviewView } from "@/lib/repHistory";
 import { useEffect, useState } from "react";
 import type { RepReview, ReviewBody } from "@/lib/repHistory";
 import { okToSpend, usd, useEstimate } from "@/lib/spend";
@@ -65,8 +66,9 @@ export default function Reviews({ ctx }: { ctx: Ctx }) {
       <section className="card rx-noprint">
         <h3 className="rx-sec-title">Run a coaching review</h3>
         <p className="hint" style={{ marginTop: 0 }}>
-          Claude reads every graded call (real and practice), the KPI reports month by month, your notes and files, knowledge checks and
-          attendance, and writes {repName.split(" ")[0]}&rsquo;s arc: what&rsquo;s slipping before it gets worse, what&rsquo;s getting better, and what to
+          {ctx.superMode
+            ? "Claude reads every graded call (real and practice), the KPI reports month by month, your notes and files, knowledge checks and attendance, and writes"
+            : "Claude reads every graded call (real and practice), the Straight Line, script and tonality scores, and practice, and writes"} {repName.split(" ")[0]}&rsquo;s arc: what&rsquo;s slipping before it gets worse, what&rsquo;s getting better, and what to
           coach next. Takes a minute or two.
         </p>
         <div className="rx-presets" role="group" aria-label="Window">
@@ -103,7 +105,11 @@ export default function Reviews({ ctx }: { ctx: Ctx }) {
               The review from {new Date(shown.created_at).toLocaleString()} failed: {shown.error}
             </div>
           ) : shown.review ? (
-            <ReviewView r={shown} author={people.get(shown.created_by || "") ?? "a manager"} onCard={(f) => ctx.seedCard(f, shown.id)} />
+            reviewView(shown.review, ctx.superMode) ? (
+              <ReviewView r={shown} v={reviewView(shown.review, ctx.superMode)!} author={people.get(shown.created_by || "") ?? "a manager"} onCard={(f) => ctx.seedCard(f, shown.id)} />
+            ) : (
+              <p className="hint">This review was run before the voice and script view existed. Run a new one to see it.</p>
+            )
           ) : null}
         </div>
       )}
@@ -117,14 +123,17 @@ export default function Reviews({ ctx }: { ctx: Ctx }) {
                 <tr key={r.id} className="link" onClick={() => setOpenId(r.id)} style={r.id === shown?.id ? { background: "var(--ink-2)" } : undefined}>
                   <td style={{ whiteSpace: "nowrap" }}>{new Date(r.created_at).toLocaleDateString()}</td>
                   <td>
-                    {r.status === "done" && r.review ? r.review.headline : r.status === "working" ? "Writing…" : `Failed: ${r.error ?? ""}`}
+                    {r.status === "done" && r.review
+                      ? (reviewView(r.review, ctx.superMode)?.headline ?? "Run before the voice and script view")
+                      : r.status === "working"
+                        ? "Writing…"
+                        : `Failed: ${r.error ?? ""}`}
                   </td>
                   <td className="num">
-                    {r.review && (
-                      <span className={`pill ${r.review.trajectory === "improving" ? "good" : r.review.trajectory === "slipping" ? "poor" : "fair"}`}>
-                        {TRAJ[r.review.trajectory]}
-                      </span>
-                    )}
+                    {reviewView(r.review, ctx.superMode) && (() => {
+                      const t = reviewView(r.review, ctx.superMode)!.trajectory;
+                      return <span className={`pill ${t === "improving" ? "good" : t === "slipping" ? "poor" : "fair"}`}>{TRAJ[t]}</span>;
+                    })()}
                   </td>
                 </tr>
               ))}
@@ -148,8 +157,7 @@ function describeInputs(i: Record<string, number>) {
   return parts.length ? parts.join(", ") : "what's on record";
 }
 
-function ReviewView({ r, author, onCard }: { r: RepReview; author: string; onCard: (focus: string) => void }) {
-  const v = r.review!;
+function ReviewView({ r, v, author, onCard }: { r: RepReview; v: NonNullable<ReturnType<typeof reviewView>>; author: string; onCard: (focus: string) => void }) {
   return (
     <div className="rx-review">
       <div className="rx-verdict">
@@ -160,7 +168,7 @@ function ReviewView({ r, author, onCard }: { r: RepReview; author: string; onCar
           <p className="hint" style={{ marginTop: 8 }}>
             {new Date(r.created_at).toLocaleDateString()} · run by {author} ·{" "}
             {r.period_from ? `since ${r.period_from}` : "everything on record"}
-            {r.inputs ? ` · read ${describeInputs(r.inputs)}` : ""}
+            {r.inputs ? ` · read ${describeInputs(v.coreOnly ? { calls: r.inputs.calls, practice: r.inputs.practice, quizzes: r.inputs.quizzes } : r.inputs)}` : ""}
             {r.focus ? ` · focus: ${r.focus}` : ""}
           </p>
         </div>
@@ -221,6 +229,7 @@ function ReviewView({ r, author, onCard }: { r: RepReview; author: string; onCar
       </section>
 
       <div className="rx-grid2">
+        {!v.coreOnly && (
         <section className="card">
           <h3 className="rx-sec-title">KPIs month to month</h3>
           <p style={{ marginTop: 0, lineHeight: 1.55 }}>{v.kpi_read}</p>
@@ -237,6 +246,7 @@ function ReviewView({ r, author, onCard }: { r: RepReview; author: string; onCar
             </>
           )}
         </section>
+        )}
         <section className="card">
           <h3 className="rx-sec-title">Questions to ask</h3>
           <ul className="plain-list">

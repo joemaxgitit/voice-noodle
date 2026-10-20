@@ -41,8 +41,32 @@ export const REVIEW_SCHEMA = {
     "compliance_watch",
     "questions_to_ask",
     "data_gaps",
+    "core",
   ],
   properties: {
+    // The voice, tone, script and Straight Line view: what core-mode managers see.
+    core: {
+      type: "object",
+      additionalProperties: false,
+      required: ["trajectory", "headline", "arc", "slipping", "improving", "focus_next", "questions_to_ask"],
+      properties: {
+        trajectory: { type: "string", enum: ["improving", "steady", "slipping", "mixed", "early"] },
+        headline: { type: "string" },
+        arc: { type: "string" },
+        slipping: { type: "array", items: trendItem },
+        improving: { type: "array", items: trendItem },
+        focus_next: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["skill", "why", "drill"],
+            properties: { skill: { type: "string" }, why: { type: "string" }, drill: { type: "string" } },
+          },
+        },
+        questions_to_ask: { type: "array", items: { type: "string" } },
+      },
+    },
     trajectory: { type: "string", enum: ["improving", "steady", "slipping", "mixed", "early"] },
     headline: { type: "string" },
     arc: { type: "string" },
@@ -200,6 +224,7 @@ How to write it:
 - "since" is when a trend started (a date or month) or "" if unclear; "action" is "" for improving trends if nothing is needed.
 - "data_gaps": what is missing that would sharpen this (no KPI reports, no real calls graded lately, etc.). "" if nothing.
 - Never put a client's personal or banking details in the review.
+- "core": a SECOND, separate version of the review for coaches who only see voice, tone, script and Straight Line training. Same fields, but built ONLY from the graded calls (real and practice), their Straight Line, script, tonality and voice measurements, script practice drills, knowledge checks and training cards. In "core", never mention or hint at deals, sales numbers, closing ratio, conversion, KPIs, rank, retention or cancellations, rotation, the Deal Clip, attendance, one-on-ones, or manager notes and files -- not even indirectly ("despite strong numbers"). Judge trajectory from the calls alone. If there are few or no graded calls in the window, say so plainly and lean on practice. Its focus_next drills are trainer sections and mock clients only.
 - Stay on the work. If a note mentions the rep's personal life (health, family, money), don't repeat it or speculate about it; at most say the rep's state came up in a one-on-one.`;
 
 export async function buildReviewInput(opts: {

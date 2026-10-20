@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { skillAverages } from "@/lib/repHistory";
+import { reviewView, skillAverages } from "@/lib/repHistory";
 import { scoreBand } from "@/lib/calls";
 import { LineChart } from "../charts";
 import type { Ctx } from "./page";
@@ -30,7 +30,11 @@ export default function Overview({ ctx }: { ctx: Ctx }) {
   const skills = [...(skillsNow.size ? skillsNow : skillsAll)].sort((a, b) => a[1].avg - b[1].avg);
 
   const quizPassRate = h.quizzes.length ? Math.round((100 * h.quizzes.filter((q) => q.passed).length) / h.quizzes.length) : null;
-  const latestReview = h.reviews.find((r) => r.status === "done" && r.review);
+  // In core mode only reviews with the voice and script view count.
+  const latestReview = h.reviews
+    .filter((r) => r.status === "done" && r.review)
+    .map((r) => ({ ...r, review: reviewView(r.review, superMode) }))
+    .find((r) => r.review);
   const fmt = (x: number) => new Date(x).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
   const series = [

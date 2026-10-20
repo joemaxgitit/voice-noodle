@@ -13,7 +13,7 @@ import "./reps.css";
 
 type Person = { id: string; full_name: string | null; role: string; team: string | null; active: boolean };
 type CallLite = { rep_id: string; created_at: string; call_date: string | null; source: string; slp_score: number | null; status: string };
-type ReviewLite = { rep_id: string; status: string; created_at: string; trajectory: string | null };
+type ReviewLite = { rep_id: string; status: string; created_at: string; trajectory: string | null; core_trajectory?: string | null };
 
 const DAY = 86400000;
 const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((s, x) => s + x, 0) / xs.length) : null);
@@ -54,7 +54,7 @@ export default function Reps() {
       supabase.from("kpi_reports").select("*"),
       supabase.from("kpi_rows").select("id, report_id, rep_id, salesman, data"),
       supabase.from("rep_notes").select("rep_id"),
-      supabase.from("rep_reviews").select("rep_id, status, created_at, trajectory:review->>trajectory").order("created_at", { ascending: false }),
+      supabase.from("rep_reviews").select("rep_id, status, created_at, trajectory:review->>trajectory, core_trajectory:review->core->>trajectory").order("created_at", { ascending: false }),
     ]);
     const err = p.error || c.error || r.error || n.error;
     if (err) setError(/kpi_|rep_notes|rep_reviews|does not exist/i.test(err.message) ? `${err.message} -- run supabase/rep-profile.sql in the Supabase SQL Editor first.` : err.message);
@@ -261,11 +261,11 @@ export default function Reps() {
                   </>
                 )}
                 <td>
-                  {r.review ? (
-                    <span className={`pill ${r.review.trajectory === "improving" ? "good" : r.review.trajectory === "slipping" ? "poor" : "fair"}`}>
-                      {r.review.trajectory ?? "done"}
-                    </span>
-                  ) : (
+                  {r.review && (superMode || r.review.core_trajectory) ? (() => {
+                    // Core mode shows the voice-and-script read only.
+                    const t = superMode ? r.review.trajectory : r.review.core_trajectory;
+                    return <span className={`pill ${t === "improving" ? "good" : t === "slipping" ? "poor" : "fair"}`}>{t ?? "done"}</span>;
+                  })() : (
                     <span className="muted">--</span>
                   )}
                 </td>

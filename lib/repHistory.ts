@@ -71,7 +71,19 @@ export type ReviewBody = {
   compliance_watch: string[];
   questions_to_ask: string[];
   data_gaps: string;
+  /** The voice, tone, script and Straight Line view (core mode). Missing on reviews run before it existed. */
+  core?: ReviewCore;
 };
+
+export type ReviewCore = Pick<ReviewBody, "trajectory" | "headline" | "arc" | "slipping" | "improving" | "focus_next" | "questions_to_ask">;
+
+/** What a manager sees of a review: everything in super mode, the core view otherwise (null if the review predates it). */
+export function reviewView(r: ReviewBody | null | undefined, superMode: boolean): (ReviewBody & { coreOnly?: boolean }) | null {
+  if (!r) return null;
+  if (superMode) return r;
+  if (!r.core) return null;
+  return { ...r, ...r.core, kpi_read: "", kpi_talking_points: [], compliance_watch: [], data_gaps: "", coreOnly: true };
+}
 
 export type RepReview = {
   id: string;

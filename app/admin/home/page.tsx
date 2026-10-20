@@ -29,6 +29,8 @@ type Attn = { href: string; title: string; why: string; tone: "bad" | "fair" };
 const DAY = 86400000;
 const avg = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
 
+type Latest = { rep_id: string; created_at: string; trajectory: string | null; headline: string | null; core_trajectory: string | null; core_headline: string | null };
+
 /** Where managers land: this week's schedule, who needs attention, and the latest calls. */
 export default function ManagerHome() {
   const supabase = useMemo(() => createClient(), []);
@@ -38,7 +40,7 @@ export default function ManagerHome() {
   const [events, setEvents] = useState<TrainingEvent[]>([]);
   const [mastery, setMastery] = useState<MasteryWeek | null>(null);
   const [meeting, setMeeting] = useState<(Meeting & { items: number }) | null>(null);
-  const [slipping, setSlipping] = useState<{ rep_id: string; headline: string | null; created_at: string }[]>([]);
+  const [slipping, setSlipping] = useState<Latest[]>([]);
   const [lastReport, setLastReport] = useState<{ title: string; period_end: string } | null>(null);
   const [spend, setSpend] = useState<SpendSummary | null>(null);
   const [orgId, setOrgId] = useState("");
@@ -78,7 +80,7 @@ export default function ManagerHome() {
         supabase.from("training_events").select("*").gte("event_date", week).lte("event_date", addDays(week, 4)).order("event_date").order("start_time"),
         supabase.from("mastery_weeks").select("*").eq("week_start", week).maybeSingle(),
         supabase.from("meetings").select("*").eq("meeting_date", thu).maybeSingle(),
-        supabase.from("rep_reviews").select("rep_id, created_at, status, trajectory:review->>trajectory, headline:review->>headline").eq("status", "done").order("created_at", { ascending: false }),
+        supabase.from("rep_reviews").select("rep_id, created_at, status, trajectory:review->>trajectory, headline:review->>headline, core_trajectory:review->core->>trajectory, core_headline:review->core->>headline").eq("status", "done").order("created_at", { ascending: false }),
         supabase.from("kpi_reports").select("title, period_end").order("created_at", { ascending: false }).limit(1),
       ]);
       setPeople((p.data || []) as Person[]);
@@ -91,11 +93,11 @@ export default function ManagerHome() {
       }
       // latest review per rep, only those that came back slipping
       const seen = new Set<string>();
-      const slip: { rep_id: string; headline: string | null; created_at: string }[] = [];
-      for (const r of (rv.data || []) as { rep_id: string; created_at: string; trajectory: string | null; headline: string | null }[]) {
+      const slip: Latest[] = [];
+      for (const r of (rv.data || []) as Latest[]) {
         if (seen.has(r.rep_id)) continue;
         seen.add(r.rep_id);
-        if (r.trajectory === "slipping") slip.push(r);
+        slip.push(r);
       }
       setSlipping(slip);
       setLastReport((kr.data?.[0] as { title: string; period_end: string }) || null);
@@ -108,8 +110,12 @@ export default function ManagerHome() {
     const out: Attn[] = [];
     const now = Date.now();
     const at = (c: CallLite) => new Date(c.call_date || c.created_at).getTime();
-    for (const s of slipping)
-      out.push({ href: `/admin/reps/${s.rep_id}?tab=review`, title: nameOf(s.rep_id), why: `Coaching review says slipping: ${s.headline ?? ""}`, tone: "bad" });
+    // Core mode goes by the voice-and-script read of the review only.
+    for (const s of slipping) {
+      const t = superMode ? s.trajectory : s.core_trajectory;
+      const head = superMode ? s.headline : s.core_headline;
+      if (t === "slipping") out.push({ href: `/admin/reps/${s.rep_id}?tab=review`, title: nameOf(s.rep_id), why: `Coaching review says slipping: ${head ?? ""}`, tone: "bad" });
+    }
     // Straight Line average down 5+ against the 30 days before
     for (const p of people.filter((x) => x.role === "rep" && x.active)) {
       const mine = calls.filter((c) => c.rep_id === p.id && c.status === "graded" && c.slp_score !== null);
@@ -122,7 +128,7 @@ export default function ManagerHome() {
       out.push({ href: `/admin/calls/${c.id}`, title: `${nameOf(c.rep_id)} -- call failed to process`, why: "Open it to retry", tone: "fair" });
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calls, people, slipping]);
+  }, [calls, people, slipping, superMode]);
 
   const recent = calls.filter((c) => c.status === "graded").slice(0, 8);
 
