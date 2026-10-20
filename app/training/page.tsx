@@ -214,9 +214,6 @@ export default function MyTraining() {
   return (
     <main className="shell my-shell">
       <div className="topbar">
-        <Link className="btn" href="/proedgesolutions" style={{ textDecoration: "none" }}>
-          &larr; Training
-        </Link>
         <Link className="btn" href="/roleplay" style={{ textDecoration: "none" }}>
           Practice call
         </Link>

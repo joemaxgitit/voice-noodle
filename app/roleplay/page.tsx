@@ -446,20 +446,18 @@ export default function Roleplay() {
   // ---------------- picking a client ----------------
   return (
     <main className="shell rp-shell">
-      <div className="topbar">
-        <Link className="btn" href="/proedgesolutions" style={{ textDecoration: "none" }}>
-          &larr; {es ? "Entrenamiento" : "Training"}
-        </Link>
-      </div>
-
       <div className="eyebrow">{es ? "Llamadas de práctica" : "Practice calls"}</div>
       <h1>{es ? "Llama a un cliente de práctica" : "Call a practice client"}</h1>
 
-      {!enabled ? (
-        <p className="muted">
-          {es ? "Las llamadas de práctica están desactivadas por ahora." : "Practice calls are switched off right now."}
-        </p>
-      ) : (
+      {/* Always visible; when a manager has them switched off, the call buttons just can't be pressed. */}
+      {!enabled && (
+        <div className="note" style={{ margin: "0 0 12px" }}>
+          {es
+            ? "Las llamadas de práctica están apagadas por ahora. Puedes ver a los clientes; podrás llamarlos cuando se vuelvan a activar."
+            : "Practice calls are switched off right now. You can look around -- you'll be able to call these clients when they're switched back on."}
+        </div>
+      )}
+      {(
         <>
           <p className="muted" style={{ maxWidth: "62ch" }}>
             {es
@@ -518,10 +516,12 @@ export default function Roleplay() {
                         </>
                       ) : null}
                     </div>
-                    <button className="primary" disabled={!ready} onClick={() => start(p)}>
-                      {ready
-                        ? `${es ? "Llamar a" : "Call"} ${p.name.split(" ")[0]}`
-                        : es ? "Voz no configurada" : "Voice not set up yet"}
+                    <button className="primary" disabled={!ready || !enabled} onClick={() => start(p)}>
+                      {!enabled
+                        ? es ? "Apagadas por ahora" : "Switched off for now"
+                        : ready
+                          ? `${es ? "Llamar a" : "Call"} ${p.name.split(" ")[0]}`
+                          : es ? "Voz no configurada" : "Voice not set up yet"}
                     </button>
                   </div>
                 );

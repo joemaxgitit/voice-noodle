@@ -90,9 +90,12 @@ const ICONS = {
   menu: "M4 6h16M4 12h16M4 18h16",
   close: "M6 6l12 12M18 6L6 18",
   signout: "M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l-5-5 5-5M5 12h11",
+  chevron: "M9 6l6 6-6 6",
+  loop: "M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3",
+  target: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 12h.01",
 };
 
-function Icon({ name }: { name: keyof typeof ICONS }) {
+export function Icon({ name }: { name: keyof typeof ICONS }) {
   return (
     <svg className="af-icon" viewBox="0 0 24 24" aria-hidden="true">
       <path d={ICONS[name]} />

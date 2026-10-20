@@ -6,7 +6,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SlpSkill } from "@/lib/calls";
 import { skillAverages, type HistCall } from "@/lib/repHistory";
 import { LineChart } from "./admin/reps/charts";
-import RotationCard from "./RotationCard";
 import "./admin/reps/reps.css";
 
 type Call = { id: string; created_at: string; slp_score: number | null; status: string; slp: SlpSkill[] | null };
@@ -142,7 +141,6 @@ export default function ProgressPanel({ supabase, userId, es, linesDone }: { sup
         </section>
       </div>
 
-      <RotationCard supabase={supabase} userId={userId} es={es} strip />
 
       {cards.length > 0 && (
         <section className="my-section">

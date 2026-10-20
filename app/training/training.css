@@ -132,3 +132,11 @@ button.tr-icon { padding: 7px 10px; min-width: 36px; }
 }
 .home-tabs button:hover:not(:disabled) { color: var(--text); border-color: transparent; }
 .home-tabs button.active, .home-tabs button.active:hover:not(:disabled) { color: var(--text); border-bottom-color: var(--live); }
+
+/* ---------- Today: next best move ---------- */
+.next-move .k { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--live); }
+.btn.big { padding: 12px 18px; font-size: 15px; }
+.goal-dots { display: inline-flex; gap: 6px; }
+.goal-dots i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line); display: inline-block; }
+.goal-dots i.on { background: var(--ok); border-color: var(--ok); }
+a.btn.primary { background: var(--live); border-color: var(--live); color: #191308; }

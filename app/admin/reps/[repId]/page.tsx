@@ -131,7 +131,7 @@ export default function RepProfile() {
             One-on-one
           </button>
           <button onClick={() => openTab("review")}>Coaching review</button>
-          <Link className="btn" href={`/admin/reps/${repId}/view`} style={{ textDecoration: "none" }}>
+          <Link className="btn" href={`/view-as/${repId}`} style={{ textDecoration: "none" }}>
             Rep&rsquo;s view
           </Link>
         </div>
