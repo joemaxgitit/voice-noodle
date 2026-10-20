@@ -168,10 +168,13 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="af-nav">
-          {GROUPS.map((g) => (
+          {GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !(i.salesOnly && who.service) && !(i.superOnly && !who.superAdmin)) }))
+            // A heading with nothing under it (Meetings, for everyone but the super admin) isn't shown.
+            .filter((g) => g.items.length)
+            .map((g) => (
             <div className="af-group" key={g.title || "top"}>
               {g.title && <div className="af-group-title">{g.title}</div>}
-              {g.items.filter((i) => !(i.salesOnly && who.service) && !(i.superOnly && !who.superAdmin)).map((i) => {
+              {g.items.map((i) => {
                 const active = i.match(path);
                 return (
                   <Link
