@@ -119,6 +119,8 @@ export default function Calls() {
   const [scriptId, setScriptId] = useState("");
   const [client, setClient] = useState("");
   const [callDate, setCallDate] = useState(today());
+  // For older calls whose outcome is already known (graduated, 6+ payments, cancelled).
+  const [upStatus, setUpStatus] = useState("");
   const [busy, setBusy] = useState("");
   const [filterRep, setFilterRep] = useState("");
   const [filterOutcome, setFilterOutcome] = useState("");
@@ -372,6 +374,7 @@ export default function Calls() {
         script_id: scriptId,
         client_label: client.trim() || null,
         call_date: callDate || null,
+        ...(upStatus ? { retention: upStatus } : {}),
         file_name: file.name,
         duration_secs: seconds,
         voice,
@@ -416,6 +419,7 @@ export default function Calls() {
 
     setFile(null);
     setClient("");
+    setUpStatus("");
     setRepName("");
     if (fileInput.current) fileInput.current.value = "";
     router.push(`/admin/calls/${row.id}`);
@@ -566,6 +570,16 @@ export default function Calls() {
           <label className="field">
             <span>Call date</span>
             <input type="date" value={callDate} onChange={(e) => setCallDate(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>Client status (optional)</span>
+            <select value={upStatus} onChange={(e) => setUpStatus(e.target.value)}>
+              <option value="">Not known yet</option>
+              <option value="active">Active</option>
+              <option value="cancelled">Cancelled</option>
+              <option value="paid6">Made 6+ payments</option>
+              <option value="graduated">Graduated</option>
+            </select>
           </label>
         </div>
 

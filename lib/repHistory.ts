@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { FingerprintRow } from "@/lib/fingerprint";
 import type { Flag, SlpSkill, ThreeTens, ComplianceResult, SectionResult, Spotlights } from "@/lib/calls";
 import type { KpiReport, KpiRow, MetricPref } from "@/lib/kpi";
 import type { CoachingSession } from "@/lib/coaching";
@@ -147,6 +148,8 @@ export type RepHistory = {
   retention: RetentionLite[];
   /** Morning Deal Clip snapshots, newest first: month-to-date deals and the month-end projection. */
   dealClips: DealClipLite[];
+  /** The rep's own style that works, newest first. */
+  fingerprints: FingerprintRow[];
   /** Script practice: recorded line attempts (pace, clarity, pauses) and lines completed. */
   practice: { attempts: { created_at: string; segment: string; pace: number | null; clarity: number | null; pauses: number | null }[]; linesDone: number; lastDone: string | null };
   calls: HistCall[];
@@ -251,6 +254,7 @@ export async function loadRepHistory(
     earlier: [],
     retention: [],
     dealClips: [],
+    fingerprints: [],
     practice: { attempts: [], linesDone: 0, lastDone: null },
     calls: rows<HistCall>(calls, errors, "calls"),
     notes: rows<RepNote>(notes, errors, "notes"),
@@ -269,6 +273,8 @@ export async function loadRepHistory(
     personas: new Map(rows<{ id: string; name: string; title: string }>(personas, [], "personas").map((p) => [p.id, `${p.name} -- ${p.title}`])),
   };
   // Separate, so a database without this table still loads the profile.
+  const fp = await supabase.from("rep_fingerprints").select("id, rep_id, created_at, inputs, body, usd").eq("rep_id", repId).order("created_at", { ascending: false }).limit(10);
+  history.fingerprints = (fp.data || []) as FingerprintRow[];
   const dc = await supabase.from("deal_clips").select("day, deals, ratio, clip, gone, total").eq("rep_id", repId).order("day", { ascending: false }).limit(120);
   history.dealClips = ((dc.data || []) as DealClipLite[]).map((x) => ({ ...x, deals: Number(x.deals), ratio: x.ratio === null ? null : Number(x.ratio), clip: Number(x.clip) }));
   const eh = await supabase.from("coaching_history").select("topic, sessions").eq("rep_id", repId);

@@ -281,6 +281,16 @@ export async function buildReviewInput(opts: {
           .join("\n")
       : "(none)",
     "",
+    "THIS REP'S OWN STYLE THAT WORKS (from their own proven sales -- graduated or 6+ payments -- against their own cancels; never compared with other reps):",
+    h.fingerprints[0]
+      ? [
+          h.fingerprints[0].body.summary,
+          ...h.fingerprints[0].body.markers.map((m) => `works for them: ${m.marker} -- ${m.how_it_sounds} (in ${m.in_proven} proven, ${m.in_cancels} cancels)`),
+          ...h.fingerprints[0].body.watch_outs.map((m) => `their own cancel pattern: ${m.marker} (in ${m.in_cancels} cancels, ${m.in_proven} proven)`),
+          "Strengthen this rep's own style -- don't coach them toward a different one. The Straight Line fundamentals still apply to everyone.",
+        ].join("\n")
+      : "(not found yet)",
+    "",
     "DEAL CLIP (morning month-to-date deals and month-end projection; context on pace, not a coaching topic by itself):",
     h.dealClips.length
       ? h.dealClips
