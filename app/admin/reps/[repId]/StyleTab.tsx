@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FINGERPRINT_MIN, FINGERPRINT_SOLID } from "@/lib/fingerprint";
+import { EXPERIMENT_FAIR_TRY, FINGERPRINT_MIN, FINGERPRINT_SOLID, type Experiment } from "@/lib/fingerprint";
 import { okToSpend } from "@/lib/spend";
 import type { Ctx } from "./page";
 
@@ -21,6 +21,14 @@ export default function StyleTab({ ctx }: { ctx: Ctx }) {
   const cancelled = real.filter((c) => c.retention === "cancelled").length;
   const enough = proven >= FINGERPRINT_MIN.proven && cancelled >= FINGERPRINT_MIN.cancelled;
   const latest = h.fingerprints[0];
+  const trying = h.experiments.filter((e) => e.status === "trying");
+  const past = h.experiments.filter((e) => e.status !== "trying");
+
+  async function settle(e: Experiment, status: "kept" | "dropped") {
+    const { error } = await supabase.from("rep_experiments").update({ status, ended_at: new Date().toISOString() }).eq("id", e.id);
+    if (error) return setError(error.message);
+    await reload();
+  }
 
   async function run() {
     if (!(await okToSpend(supabase, 0.15, "Finding this rep's style"))) return;
@@ -46,7 +54,8 @@ export default function StyleTab({ ctx }: { ctx: Ctx }) {
         <h3 className="rx-sec-title">{first}&rsquo;s style that works</h3>
         <p className="hint" style={{ marginTop: 0 }}>
           What shows up in {first}&rsquo;s calls whose clients stuck (graduated or made 6+ payments) and not in {first}&rsquo;s calls whose clients cancelled.
-          Compared only with {first}&rsquo;s own calls -- never with other reps -- so it strengthens {first}&rsquo;s own way of selling. The Straight Line
+          Compared only with {first}&rsquo;s own calls -- never with other reps -- so it strengthens {first}&rsquo;s own way of selling. Each refresh also checks how
+          {first}&rsquo;s experiments are going and, when there&rsquo;s room, suggests a team-proven pattern that fits {first}&rsquo;s style. The Straight Line
           grading stays the same for everyone. Managers only.
         </p>
         <p style={{ margin: "6px 0" }}>
@@ -78,7 +87,7 @@ export default function StyleTab({ ctx }: { ctx: Ctx }) {
           </div>
           <p style={{ fontWeight: 600, lineHeight: 1.5 }}>{latest.body.summary}</p>
 
-          <h3 className="rx-sec-title">What works for {first}</h3>
+          <h3 className="rx-sec-title">Keep doing -- what works for {first}</h3>
           {latest.body.markers.map((m, i) => (
             <div key={i} style={{ marginBottom: 12 }}>
               <b>{m.marker}</b>{" "}
@@ -89,6 +98,47 @@ export default function StyleTab({ ctx }: { ctx: Ctx }) {
               <small className="muted">{m.evidence}</small>
             </div>
           ))}
+
+          <h3 className="rx-sec-title">Trying now</h3>
+          {trying.length === 0 ? (
+            <p className="hint" style={{ marginTop: 0 }}>
+              Nothing right now. Each refresh can suggest a team-proven pattern that fits {first}&rsquo;s style, once there are team patterns (Insights &amp;
+              tuning).
+            </p>
+          ) : (
+            trying.map((e) => (
+              <div key={e.id} className="card" style={{ marginBottom: 10, background: "var(--ink-3)" }}>
+                <b>{e.pattern}</b> <small className="muted">· since {new Date(e.started_at).toLocaleDateString()}</small>
+                {e.why_fits && <div className="hint" style={{ margin: "2px 0" }}>{e.why_fits}</div>}
+                {e.how_to_try && <div>{e.how_to_try}</div>}
+                {e.last_check && (
+                  <small className="muted">
+                    Showing up in {e.last_check.showing_in} of {e.last_check.of} calls since · {e.last_check.effect.replace("_", " ")}
+                    {e.last_check.of < EXPERIMENT_FAIR_TRY ? ` · judged after ${EXPERIMENT_FAIR_TRY} calls` : ""} -- {e.last_check.note}
+                  </small>
+                )}
+                <div className="row" style={{ marginTop: 6 }}>
+                  <button className="tr-sm" onClick={() => void settle(e, "kept")}>
+                    It&rsquo;s working -- keep it
+                  </button>
+                  <button className="tr-sm" onClick={() => void settle(e, "dropped")}>
+                    Drop it
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+          {past.length > 0 && (
+            <details style={{ marginBottom: 10 }}>
+              <summary className="hint" style={{ cursor: "pointer" }}>Earlier experiments ({past.length})</summary>
+              {past.map((e) => (
+                <p key={e.id} style={{ margin: "4px 0" }}>
+                  <span className={`pill ${e.status === "kept" ? "good" : ""}`}>{e.status}</span> {e.pattern}
+                  {e.last_check?.note ? <small className="muted"> -- {e.last_check.note}</small> : null}
+                </p>
+              ))}
+            </details>
+          )}
 
           {latest.body.watch_outs.length > 0 && (
             <>

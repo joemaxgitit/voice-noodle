@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin, thinkingFor } from "@/lib/callsServer";
 import { gradeCostUsd, type Grade } from "@/lib/calls";
 import { digest, type InsightCall } from "@/lib/insights";
-import { FINGERPRINT_MIN, type Fingerprint } from "@/lib/fingerprint";
+import { EXPERIMENT_FAIR_TRY, FINGERPRINT_MIN, type Experiment, type Fingerprint, type TeamPattern } from "@/lib/fingerprint";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -19,8 +19,33 @@ const str = { type: "string" } as const;
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["summary", "markers", "watch_outs", "keep_universal", "practice_focus"],
+  required: ["summary", "markers", "watch_outs", "keep_universal", "practice_focus", "try_next", "experiment_checks"],
   properties: {
+    try_next: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["pattern", "why_fits", "how_to_try"],
+        properties: { pattern: str, why_fits: str, how_to_try: str },
+      },
+    },
+    experiment_checks: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "showing_in", "of", "effect", "verdict", "note"],
+        properties: {
+          id: str,
+          showing_in: { type: "integer" },
+          of: { type: "integer" },
+          effect: { type: "string", enum: ["helping", "no_change", "hurting", "too_early"] },
+          verdict: { type: "string", enum: ["keep_trying", "kept", "dropped"] },
+          note: str,
+        },
+      },
+    },
     summary: str,
     markers: {
       type: "array",
@@ -54,7 +79,11 @@ Find this rep's personal success fingerprint: the specific, repeatable things in
 - keep_universal: one sentence reminding that the Straight Line fundamentals (roadmap, tonality, three tens, compliance) still apply to them -- name the one fundamental their proven sales do best.
 - practice_focus: one or two sentences on how practice should strengthen their style and target their own watch-out.
 - summary: two plain sentences for a manager.
-Only claim a marker when the counts support it. With few calls, say so in the summary and keep to the clearest one or two.`;
+Only claim a marker when the counts support it. With few calls, say so in the summary and keep to the clearest one or two.
+
+Experiments (a small stretch, never a style change):
+- experiment_checks: for each experiment the rep is currently trying (listed below with its start date), look at their recent calls since it started: showing_in = in how many of those calls they actually did it, of = how many calls since it started, effect = whether calls where they did it went better (enrollments, clients staying warm, the roadmap landing) than calls where they didn't -- "too_early" if there's too little to tell. verdict: "kept" if it has clearly become part of how they sell and it's helping; "dropped" if after a fair try (about ${EXPERIMENT_FAIR_TRY}+ calls) it doesn't fit them or isn't helping; otherwise "keep_trying". note: one plain sentence.
+- try_next: 0 to 2 team-proven patterns (from the list below) for this rep to try next -- only ones that are NOT already part of their own style and that sit closest to how they already sell (a warm storyteller gets a story-based pattern, not a rapid-fire one). Suggest as many as their calls genuinely support, which may be none. why_fits: one sentence tying it to their style. how_to_try: one or two sentences on doing it in their own words. Never suggest anything that would cut against their own markers.`;
 
 export async function POST(request: Request) {
   const ctx = await requireAdmin(request);
@@ -95,7 +124,34 @@ export async function POST(request: Request) {
       .filter(Boolean)
       .join("\n");
   };
-  const text = `<proven_sales>\n${proven.slice(0, 15).map(block).join("\n\n")}\n</proven_sales>\n\n<cancelled>\n${cancels.slice(0, 12).map(block).join("\n\n")}\n</cancelled>`;
+  // Team-proven patterns, this rep's current experiments, and their calls since those started.
+  const [tp, ex] = await Promise.all([
+    supabase.from("team_patterns").select("body").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("rep_experiments").select("*").eq("rep_id", repId).eq("status", "trying"),
+  ]);
+  const team = ((tp.data?.body as { patterns?: TeamPattern[] } | null)?.patterns ?? []).filter((p) => !p.reps.includes(repId));
+  const active = (ex.data || []) as Experiment[];
+  let recent = "";
+  if (active.length) {
+    const since = active.map((e) => e.started_at).sort()[0];
+    const { data: rc } = await supabase
+      .from("calls")
+      .select("id, retention, score, slp_score, grade, call_date, created_at, outcome, outcome_manual")
+      .eq("rep_id", repId)
+      .neq("source", "roleplay")
+      .eq("status", "graded")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(15);
+    recent = ((rc || []) as (InsightCall & { call_date: string | null; created_at: string; outcome: string | null; outcome_manual: string | null })[])
+      .map((r) => `${r.call_date || r.created_at.slice(0, 10)} | outcome: ${r.outcome_manual || r.outcome || "?"}\n${digest({ ...r, retention: "graduated" } as InsightCall).replace(/^GRADUATED: /, "")}`)
+      .join("\n\n");
+  }
+  const extra = [
+    team.length ? `<team_patterns>\n${team.map((p) => `- ${p.pattern}: ${p.how_it_sounds} (works for ${p.reps.length} reps)`).join("\n")}\n</team_patterns>` : "<team_patterns>(none found yet -- try_next must be empty)</team_patterns>",
+    active.length ? `<current_experiments>\n${active.map((e) => `- id ${e.id}: ${e.pattern} -- started ${e.started_at.slice(0, 10)}. ${e.how_to_try ?? ""}`).join("\n")}\n</current_experiments>\n<recent_calls>\n${recent || "(no graded calls since they started)"}\n</recent_calls>` : "<current_experiments>(none)</current_experiments>",
+  ].join("\n\n");
+  const text = `<proven_sales>\n${proven.slice(0, 15).map(block).join("\n\n")}\n</proven_sales>\n\n<cancelled>\n${cancels.slice(0, 12).map(block).join("\n\n")}\n</cancelled>\n\n${extra}`;
 
   const res = await fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {
     method: "POST",
@@ -129,5 +185,27 @@ export async function POST(request: Request) {
     usd,
   });
   if (insErr) return NextResponse.json({ error: /rep_fingerprints|does not exist/i.test(insErr.message) ? "Run supabase/rep-fingerprint.sql first." : insErr.message }, { status: 500 });
+
+  // Experiments: apply the checks, then start the suggested ones (the app suggests; managers can drop or keep any).
+  const now = new Date().toISOString();
+  let stillTrying = active.length;
+  for (const c of body.experiment_checks ?? []) {
+    const e = active.find((x) => x.id === c.id);
+    if (!e) continue;
+    const done = c.verdict !== "keep_trying" && c.of >= EXPERIMENT_FAIR_TRY;
+    await supabase
+      .from("rep_experiments")
+      .update({
+        last_check: { showing_in: c.showing_in, of: c.of, effect: c.effect, note: c.note, at: now },
+        ...(done ? { status: c.verdict, ended_at: now } : {}),
+      })
+      .eq("id", e.id);
+    if (done) stillTrying--;
+  }
+  if (stillTrying === 0) {
+    for (const t of (body.try_next ?? []).slice(0, 2)) {
+      await supabase.from("rep_experiments").insert({ org_id: orgId, rep_id: repId, pattern: t.pattern, how_to_try: t.how_to_try, why_fits: t.why_fits });
+    }
+  }
   return NextResponse.json({ ok: true, usd });
 }

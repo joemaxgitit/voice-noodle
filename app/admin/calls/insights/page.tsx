@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { TEAM_MIN_REPS, type TeamPattern } from "@/lib/fingerprint";
+import { okToSpend } from "@/lib/spend";
 import { asProven, compare, favouring, formatValue, MIN_FOR_FINDINGS, type InsightCall, type Metric } from "@/lib/insights";
 import "../calls.css";
 import "../../reps/reps.css";
@@ -47,6 +49,34 @@ export default function Insights() {
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  // Team-proven patterns: what works in proven sales across 3+ reps.
+  const [team, setTeam] = useState<{ body: { patterns: TeamPattern[]; reps?: number }; created_at: string } | null>(null);
+  const [teamBusy, setTeamBusy] = useState(false);
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+  const loadTeam = useCallback(async () => {
+    const { data } = await supabase.from("team_patterns").select("body, created_at").order("created_at", { ascending: false }).limit(1).maybeSingle();
+    setTeam((data as typeof team) ?? null);
+    const { data: p } = await supabase.from("profiles").select("id, full_name");
+    setNames(new Map(((p || []) as { id: string; full_name: string | null }[]).map((x) => [x.id, (x.full_name || "").split(" ")[0]])));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    void loadTeam();
+  }, [loadTeam]);
+  async function findTeam() {
+    if (!(await okToSpend(supabase, 0.05, "Finding team patterns"))) return;
+    setTeamBusy(true);
+    setError("");
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const res = await fetch("/api/team/patterns", { method: "POST", headers: { Authorization: `Bearer ${session?.access_token ?? ""}`, "Content-Type": "application/json" }, body: "{}" }).catch(() => null);
+    const b = res ? await res.json().catch(() => ({})) : {};
+    setTeamBusy(false);
+    if (!res?.ok) return setError(b?.error || "Couldn't find team patterns.");
+    await loadTeam();
+  }
+
   // Spotlights vs results: does time in hardship and the turndown pickup line up with enrollments on real calls?
   const [spot, setSpot] = useState<{ outcome: string | null; manual: string | null; hs: number | null; pickup: string | null; even: string | null }[]>([]);
 
@@ -187,6 +217,29 @@ export default function Insights() {
       </p>
       {error && <div className="error">{error}</div>}
       {note && <div className="note">{note}</div>}
+
+      <h2>Team patterns</h2>
+      <p className="muted" style={{ marginTop: 0 }}>
+        Things that show up in proven sales (graduated or 6+ payments) across {TEAM_MIN_REPS} or more reps, found from each rep&rsquo;s &ldquo;Style that works&rdquo;.
+        They&rsquo;re offered to reps as things worth trying when they fit their style -- never required.
+      </p>
+      {team?.body.patterns.length ? (
+        <div style={{ display: "grid", gap: 10 }}>
+          {team.body.patterns.map((p, i) => (
+            <section key={i} className="card">
+              <b>{p.pattern}</b> <small className="muted">· works for {p.reps.map((r) => names.get(r) || "a rep").join(", ")}</small>
+              <div>{p.how_it_sounds}</div>
+              <small className="muted">{p.evidence}</small>
+            </section>
+          ))}
+          <small className="muted">Found {new Date(team.created_at).toLocaleDateString()} from {team.body.reps ?? "?"} reps&rsquo; styles.</small>
+        </div>
+      ) : (
+        <p className="hint">{team ? "No pattern reached 3 reps yet." : "Not looked for yet."}</p>
+      )}
+      <button onClick={() => void findTeam()} disabled={teamBusy} style={{ marginTop: 8 }}>
+        {teamBusy ? "Looking across reps…" : `${team ? "Refresh" : "Find"} team patterns · about $0.05`}
+      </button>
 
       <h2>Spotlights vs results</h2>
       {(() => {

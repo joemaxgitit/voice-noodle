@@ -291,6 +291,14 @@ export async function buildReviewInput(opts: {
         ].join("\n")
       : "(not found yet)",
     "",
+    "WHAT THEY'RE TRYING (team-proven patterns picked to fit their style -- a stretch, not a requirement):",
+    h.experiments.filter((e) => e.status === "trying").length
+      ? h.experiments
+          .filter((e) => e.status === "trying")
+          .map((e) => `${e.pattern} (since ${e.started_at.slice(0, 10)})${e.last_check ? ` -- showing in ${e.last_check.showing_in} of ${e.last_check.of} calls, ${e.last_check.effect}` : ""}`)
+          .join("\n") + "\nSay how it's going if the calls show it; never judge them for not adopting it yet."
+      : "(nothing right now)",
+    "",
     "DEAL CLIP (morning month-to-date deals and month-end projection; context on pace, not a coaching topic by itself):",
     h.dealClips.length
       ? h.dealClips
