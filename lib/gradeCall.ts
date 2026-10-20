@@ -1,3 +1,4 @@
+import { jsonrepair } from "jsonrepair";
 import {
   ROADMAP,
   voiceNotes,
@@ -972,6 +973,16 @@ function readGrade(data: { content?: { type: string; text?: string }[] }): Grade
       if (g) return g;
     } catch {
       // try the next repair
+    }
+  }
+  // Last resort: a full JSON repair (unescaped quotes inside quoted client
+  // words, a stray "[" in front, a missing closing bracket, and so on).
+  for (const t of [text, body]) {
+    try {
+      const g = find(JSON.parse(jsonrepair(t)));
+      if (g) return g;
+    } catch {
+      // nothing more to try
     }
   }
   return null;
