@@ -1156,8 +1156,14 @@ export default function CallDetail() {
                     <div className="rx-grid2">
                       <section className="card">
                         <b>Hardship depth</b>{" "}
-                        <span className={`pill ${hardshipBand(hs.moved_on_at)}`}>moved on at {clock(hs.moved_on_at)}</span>{" "}
-                        <small className="muted">target 8–12 min</small>
+                        {g.spotlights.followup?.kind === "followup" && hs.moved_on_at === 0 ? (
+                          <span className="pill">covered before this call</span>
+                        ) : (
+                          <>
+                            <span className={`pill ${hardshipBand(hs.moved_on_at)}`}>moved on at {clock(hs.moved_on_at)}</span>{" "}
+                            <small className="muted">target 8–12 min</small>
+                          </>
+                        )}
                         <p style={{ margin: "8px 0 4px" }}>{hs.read}</p>
                         <small className="muted">
                           About {Math.round(hs.vulnerable_secs / 60)} min of the client opening up{hs.deepest ? ` · ${hs.deepest}` : ""}
