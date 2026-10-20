@@ -105,8 +105,8 @@ button.tr-icon { padding: 7px 10px; min-width: 36px; }
 @media (max-width: 760px) { .tr-day { min-height: 0; } }
 .tr-day.over { border-color: var(--live); background: var(--live-dim); }
 .tr-day.today .tr-day-head b { color: var(--live); }
-.tr-day-head { display: flex; justify-content: space-between; align-items: baseline; padding: 2px 4px 8px; font-size: 13px; }
-.tr-day-head span { color: var(--muted); }
+.tr-day-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 2px 4px 8px; font-size: 13px; }
+.tr-day-head span { color: var(--muted); white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 .tr-day-empty { color: var(--muted); font-size: 12px; padding: 6px 4px; }
 
 .tr-ev {

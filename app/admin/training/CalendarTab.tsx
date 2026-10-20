@@ -402,7 +402,7 @@ export default function CalendarTab({ openTab }: { openTab: (t: string) => void 
               return (
                 <div key={date} className={`tr-day ${over === date ? "over" : ""} ${date === today() ? "today" : ""}`} {...dropProps(date)}>
                   <div className="tr-day-head">
-                    <b>{fmtDate(date, { weekday: "long" })}</b>
+                    <b title={fmtDate(date, { weekday: "long" })}>{fmtDate(date, { weekday: "short" })}</b>
                     <span>
                       {fmtDate(date, { month: "short", day: "numeric" })}{" "}
                       <button className="tr-icon" style={{ padding: "2px 8px", minWidth: 0 }} aria-label={`Add session ${date}`} onClick={() => setDraft(blank(date))}>
