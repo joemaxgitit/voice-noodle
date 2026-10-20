@@ -115,9 +115,24 @@ export default function Calls() {
   const [error, setError] = useState("");
 
   const [file, setFile] = useState<File | null>(null);
+  const [vinNote, setVinNote] = useState("");
   const [repId, setRepId] = useState("");
   const [repName, setRepName] = useState(""); // used when repId is NEW_REP
   const [scriptId, setScriptId] = useState("");
+
+  /*
+    Vindico recordings ("recording-<id>.mp3") are all renew leads: grade them
+    on the Renew script, which picks up the Options Script at Phase 2.
+  */
+  function pickFile(f: File | null) {
+    setFile(f);
+    setVinNote("");
+    if (!f || !/^recording-[0-9a-f]{8}-[0-9a-f]{4}-/i.test(f.name)) return;
+    const renew = scripts.find((x) => /renew/i.test(x.title));
+    if (!renew) return;
+    setScriptId(renew.id);
+    setVinNote(`Vindico recording -- grading against ${renew.title} (it continues on the Options Script at Phase 2). Change it below if this one isn't a renew lead.`);
+  }
   const [client, setClient] = useState("");
   const [callDate, setCallDate] = useState(today());
   // For older calls whose outcome is already known (graduated, 6+ payments, cancelled).
@@ -481,6 +496,7 @@ export default function Calls() {
     }
 
     setFile(null);
+    setVinNote("");
     setClient("");
     setUpStatus("");
     setUpNumber("");
@@ -589,8 +605,9 @@ export default function Calls() {
               ref={fileInput}
               type="file"
               accept="audio/*,.mp3,.wav,.m4a"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              onChange={(e) => pickFile(e.target.files?.[0] || null)}
             />
+            {vinNote && <small className="muted">{vinNote}</small>}
           </label>
           <label className="field">
             <span>Rep</span>
