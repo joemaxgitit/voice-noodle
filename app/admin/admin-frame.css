@@ -252,3 +252,13 @@ body:has(.admin-frame) .site-footer {
     padding: 20px 18px 80px; /* the same as before the sidebar */
   }
 }
+
+button.af-link {
+  width: 100%;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}

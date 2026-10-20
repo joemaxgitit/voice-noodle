@@ -89,6 +89,7 @@ const ICONS = {
   back: "M15 18l-6-6 6-6",
   menu: "M4 6h16M4 12h16M4 18h16",
   close: "M6 6l12 12M18 6L6 18",
+  signout: "M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l-5-5 5-5M5 12h11",
 };
 
 function Icon({ name }: { name: keyof typeof ICONS }) {
@@ -197,6 +198,18 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
             <Icon name="key" />
             Change password
           </Link>
+          <button
+            type="button"
+            className="af-link"
+            onClick={async () => {
+              await createClient().auth.signOut();
+              document.cookie = "vn_repview=; Max-Age=0; path=/";
+              window.location.href = "/login";
+            }}
+          >
+            <Icon name="signout" />
+            Sign out
+          </button>
         </div>
       </aside>
 
