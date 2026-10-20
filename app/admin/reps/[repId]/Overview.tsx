@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { reviewView, skillAverages } from "@/lib/repHistory";
-import { scoreBand } from "@/lib/calls";
+import { scoreBand, callAt } from "@/lib/calls";
 import { LineChart } from "../charts";
 import type { Ctx } from "./page";
 
@@ -13,10 +13,10 @@ export default function Overview({ ctx }: { ctx: Ctx }) {
   const { history: h, openTab, people, superMode } = ctx;
   const now = Date.now();
 
-  const graded = useMemo(() => h.calls.filter((c) => c.status === "graded"), [h.calls]);
+  const graded = useMemo(() => h.calls.filter((c) => c.status === "graded").sort((a, b) => callAt(b) - callAt(a)), [h.calls]);
   const real = graded.filter((c) => c.source !== "roleplay");
   const practice = graded.filter((c) => c.source === "roleplay");
-  const t = (c: { created_at: string; call_date?: string | null }) => new Date(c.call_date || c.created_at).getTime();
+  const t = (c: { created_at: string; call_date?: string | null }) => callAt(c);
   const last30 = graded.filter((c) => t(c) >= now - 30 * DAY);
   const prev30 = graded.filter((c) => t(c) < now - 30 * DAY && t(c) >= now - 60 * DAY);
 

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { OUTCOME_LABEL, scoreBand, type Outcome } from "@/lib/calls";
+import { OUTCOME_LABEL, scoreBand, type Outcome, callAt } from "@/lib/calls";
 import { TAG_LABEL } from "@/lib/repHistory";
 import type { Ctx } from "./page";
 
@@ -28,7 +28,7 @@ export default function Activity({ ctx }: { ctx: Ctx }) {
       const practice = c.source === "roleplay";
       const outcome = (c.outcome_manual || c.outcome) as Outcome | null;
       out.push({
-        at: c.call_date || c.created_at,
+        at: new Date(callAt(c)).toISOString(),
         kind: practice ? "practice" : "real",
         title: practice ? `Practice call with ${h.personas.get(c.persona_id || "") ?? "a mock client"}` : `Client call${c.client_label ? ` -- ${c.client_label}` : ""}`,
         sub: [outcome ? OUTCOME_LABEL[outcome] : "", c.coaching?.[0] ? `Coach: ${c.coaching[0]}` : ""].filter(Boolean).join(" · "),

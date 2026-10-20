@@ -1,5 +1,6 @@
 "use client";
 
+import { callAt } from "@/lib/calls";
 import { pct, pts, reasonsText } from "@/lib/retention";
 import { useEffect, useMemo, useState } from "react";
 import { compareRep, fmtChange, fmtMonth, highlights, monthlyReports, type KpiRow } from "@/lib/kpi";
@@ -52,8 +53,8 @@ export default function OneOnOne({ ctx }: { ctx: Ctx }) {
   const since = useMemo(() => {
     const from = last ? new Date(`${last.session_date}T00:00:00`).getTime() : Date.now() - 30 * 86400000;
     const graded = h.calls.filter((c) => c.status === "graded" && c.slp_score !== null);
-    const after = graded.filter((c) => new Date(c.call_date || c.created_at).getTime() >= from);
-    const before = graded.filter((c) => new Date(c.call_date || c.created_at).getTime() < from).slice(0, 10);
+    const after = graded.filter((c) => callAt(c) >= from);
+    const before = graded.filter((c) => callAt(c) < from).slice(0, 10);
     const avg = (xs: typeof graded) => (xs.length ? Math.round(xs.reduce((s, c) => s + (c.slp_score ?? 0), 0) / xs.length) : null);
     const rowsByReport = new Map<string, KpiRow[]>();
     for (const r of h.kpiRows) rowsByReport.set(r.report_id, [...(rowsByReport.get(r.report_id) ?? []), r]);

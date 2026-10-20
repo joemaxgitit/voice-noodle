@@ -1,5 +1,6 @@
 "use client";
 
+import { callAt } from "@/lib/calls";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import CardView from "@/app/training/CardView";
 import { CARD_KIND, cardWords, RESPONSE_LABEL, type Card, type CardDrill, type CardKind } from "@/lib/cards";
@@ -240,7 +241,7 @@ export default function Cards({ ctx, seed, clearSeed }: { ctx: Ctx; seed: { focu
                   <option value="">None</option>
                   {recentCalls.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {new Date(c.call_date || c.created_at).toLocaleDateString()} · {c.source === "roleplay" ? "practice" : "real"} · SLP {c.slp_score ?? "--"}
+                      {new Date(callAt(c)).toLocaleDateString()} · {c.source === "roleplay" ? "practice" : "real"} · SLP {c.slp_score ?? "--"}
                     </option>
                   ))}
                 </select>

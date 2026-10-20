@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { scoreBand } from "@/lib/calls";
+import { scoreBand, callAt } from "@/lib/calls";
 import { addDays, fmtDate, fmtRange, fmtWeek, MASTERY, MEETING, mycTeacherName, today, weekdayOf, workWeek, type MasteryWeek, type Meeting, type TrainingEvent } from "@/lib/training";
 import IdeaBox from "../IdeaBox";
 import { useMode } from "@/lib/superMode";
@@ -109,7 +109,7 @@ export default function ManagerHome() {
   const attention = useMemo(() => {
     const out: Attn[] = [];
     const now = Date.now();
-    const at = (c: CallLite) => new Date(c.call_date || c.created_at).getTime();
+    const at = (c: CallLite) => callAt(c);
     // Core mode goes by the voice-and-script read of the review only.
     for (const s of slipping) {
       const t = superMode ? s.trajectory : s.core_trajectory;
@@ -268,7 +268,7 @@ export default function ManagerHome() {
           <div className="rx-timeline">
             {recent.map((c) => (
               <Link key={c.id} href={`/admin/calls/${c.id}`} className="rx-ev">
-                <span className="when">{new Date(c.call_date || c.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                <span className="when">{new Date(callAt(c)).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
                 <span className="what">
                   <b>
                     <span className={`rx-kind ${c.source === "roleplay" ? "practice" : "real"}`}>{c.source === "roleplay" ? "Practice" : "Call"}</span>

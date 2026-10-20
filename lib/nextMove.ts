@@ -6,10 +6,13 @@
   other rep.
 */
 
+import { callAt } from "@/lib/calls";
+
 export type MoveModule = { id: string; title: string; script_id: string; kind: string; language: string; sort_order: number; segments: { id: string }[] };
 export type MoveCall = {
   source: string | null;
   created_at: string;
+  call_date?: string | null;
   sections: { section: string; status: string }[] | null;
   slp_score: number | null;
   hardship_at: number | null;
@@ -47,7 +50,7 @@ const POINTS: Record<string, number> = { hit: 1, partial: 0.5, missed: 0 };
 
 export function nextMove(modules: MoveModule[], calls: MoveCall[], attempts: MoveAttempt[], lang: "en" | "es"): NextMove {
   const mods = modules.filter((m) => (m.language || "en") === lang && m.kind !== "loop" && (m.segments?.length ?? 0) > 0).sort((a, b) => a.sort_order - b.sort_order);
-  const recent = [...calls].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 12);
+  const recent = [...calls].sort((a, b) => callAt(b) - callAt(a)).slice(0, 12);
   const segToMod = new Map<string, MoveModule>();
   for (const m of mods) for (const s of m.segments) segToMod.set(s.id, m);
   const recentAttempts = [...attempts].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 80);

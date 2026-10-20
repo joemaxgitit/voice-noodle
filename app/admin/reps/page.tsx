@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { scoreBand } from "@/lib/calls";
+import { scoreBand, callAt } from "@/lib/calls";
 import { fmtKpi, headlineValue, monthlyReports, monthOf, fmtMonth, type KpiReport, type KpiRow } from "@/lib/kpi";
 import DropBox from "./DropBox";
 import { useMode } from "@/lib/superMode";
@@ -127,7 +127,7 @@ export default function Reps() {
       .filter((p) => p.role === "rep" && (showAll || p.active))
       .map((p) => {
         const mine = calls.filter((c) => c.rep_id === p.id && c.status === "graded");
-        const at = (c: CallLite) => new Date(c.call_date || c.created_at).getTime();
+        const at = (c: CallLite) => callAt(c);
         const now30 = mine.filter((c) => at(c) >= now - 30 * DAY);
         const prev30 = mine.filter((c) => at(c) < now - 30 * DAY);
         const slp = avg(now30.map((c) => c.slp_score).filter((x): x is number => x !== null));
