@@ -121,6 +121,8 @@ export type RetentionLite = {
 
 export type DailyLite = { day: string; talk_hours: number | null; calls: number | null; deals: number | null; points: number | null; made: boolean; override_made: boolean | null; status?: string };
 
+export type DealClipLite = { day: string; deals: number; ratio: number | null; clip: number; gone: number; total: number };
+
 export type RepHistory = {
   daily: DailyLite[];
   cards: CardLite[];
@@ -129,6 +131,8 @@ export type RepHistory = {
   earlier: { topic: string; sessions: number }[];
   /** Friday retention lookbacks, newest first (sales side only). */
   retention: RetentionLite[];
+  /** Morning Deal Clip snapshots, newest first: month-to-date deals and the month-end projection. */
+  dealClips: DealClipLite[];
   /** Script practice: recorded line attempts (pace, clarity, pauses) and lines completed. */
   practice: { attempts: { created_at: string; segment: string; pace: number | null; clarity: number | null; pauses: number | null }[]; linesDone: number; lastDone: string | null };
   calls: HistCall[];
@@ -230,6 +234,7 @@ export async function loadRepHistory(
     sessions: rows<CoachingSession>(sessions, [], "sessions"),
     earlier: [],
     retention: [],
+    dealClips: [],
     practice: { attempts: [], linesDone: 0, lastDone: null },
     calls: rows<HistCall>(calls, errors, "calls"),
     notes: rows<RepNote>(notes, errors, "notes"),
@@ -248,6 +253,8 @@ export async function loadRepHistory(
     personas: new Map(rows<{ id: string; name: string; title: string }>(personas, [], "personas").map((p) => [p.id, `${p.name} -- ${p.title}`])),
   };
   // Separate, so a database without this table still loads the profile.
+  const dc = await supabase.from("deal_clips").select("day, deals, ratio, clip, gone, total").eq("rep_id", repId).order("day", { ascending: false }).limit(120);
+  history.dealClips = ((dc.data || []) as DealClipLite[]).map((x) => ({ ...x, deals: Number(x.deals), ratio: x.ratio === null ? null : Number(x.ratio), clip: Number(x.clip) }));
   const eh = await supabase.from("coaching_history").select("topic, sessions").eq("rep_id", repId);
   const rr = await supabase
     .from("retention_reps")

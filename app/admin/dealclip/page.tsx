@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { readSheet } from "@/lib/xlsx";
+import { createClient } from "@/lib/supabase/client";
+import { matchRep } from "@/lib/kpi";
 import { exportDateFromFile } from "@/lib/kpi";
 import { fmtDay } from "@/lib/rotation";
 import { clipOf, exportHour, readClip, round1, throughDay, twoADay, workDays, type ClipRow } from "@/lib/dealclip";
@@ -38,7 +40,8 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 /**
  * Morning Deal Clip. Drop last night's month-to-date Sales Dashboard and
  * get the team ranked by deals with month-end projections, ready to post.
- * Nothing is saved and reps never see this page.
+ * Copying it for the sales chat also saves the morning's numbers onto each
+ * rep's profile (super mode). Reps never see this page.
  */
 export default function DealClip() {
   const [file, setFile] = useState("");
@@ -59,6 +62,7 @@ export default function DealClip() {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [over, setOver] = useState(false);
+  const [saved, setSaved] = useState("");
 
   async function pick(f: File) {
     setError("");
@@ -122,6 +126,41 @@ export default function DealClip() {
     }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+    void snapshot(name);
+  }
+
+  /** Keep this morning's numbers on each rep's profile. Same day again replaces it. */
+  async function snapshot(name: string) {
+    const supabase = createClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session || !through) return;
+    const { data: me } = await supabase.from("profiles").select("org_id").eq("id", session.user.id).single();
+    const { data: people } = await supabase.from("profiles").select("id, full_name, kpi_name").eq("org_id", me?.org_id ?? "");
+    const payload = ranked.map((r) => ({
+      org_id: me?.org_id,
+      day: through,
+      rep_id: matchRep(r.name, (people || []) as { id: string; full_name: string | null; kpi_name: string | null }[]),
+      salesman: r.name,
+      deals: r.deals,
+      ratio: r.ratio,
+      clip: Math.round(r.clip * 10) / 10,
+      two_a_day: Math.round(r.two * 10) / 10,
+      gone,
+      total,
+      team_name: name,
+      saved_by: session.user.id,
+    }));
+    const { error } = await supabase.from("deal_clips").upsert(payload, { onConflict: "org_id,day,salesman" });
+    setSaved(
+      error
+        ? /deal_clips|does not exist/i.test(error.message)
+          ? "Copied. Not saved to profiles yet -- run supabase/deal-clips.sql."
+          : `Copied, but not saved to profiles: ${error.message}`
+        : "Copied and saved to each rep's profile."
+    );
+    setTimeout(() => setSaved(""), 5000);
   }
 
   return (
@@ -130,10 +169,11 @@ export default function DealClip() {
       <h1>Deal Clip</h1>
       <p className="muted" style={{ maxWidth: "66ch" }}>
         Each morning, drop last night&rsquo;s month-to-date Sales Dashboard. The team is ranked by deals with a month-end projection. The clip is
-        deals per work day so far × work days in the month. Switch on &ldquo;If Two a Day&rdquo; when you want it: deals so far + 2 per work day left. Only managers
-        see this page and nothing is saved.
+        deals per work day so far × work days in the month. Switch on &ldquo;If Two a Day&rdquo; when you want it: deals so far + 2 per work day left. Copying it
+        also saves the morning&rsquo;s numbers to each rep&rsquo;s profile.
       </p>
       {error && <div className="error">{error}</div>}
+      {saved && <div className="status">{saved}</div>}
 
       {!rows ? (
         <label

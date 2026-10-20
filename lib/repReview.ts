@@ -251,6 +251,15 @@ export async function buildReviewInput(opts: {
           .join("\n")
       : "(none)",
     "",
+    "DEAL CLIP (morning month-to-date deals and month-end projection; context on pace, not a coaching topic by itself):",
+    h.dealClips.length
+      ? h.dealClips
+          .filter((c, i, all) => i === 0 || c.day.slice(0, 7) !== all[i - 1].day.slice(0, 7) || i % 5 === 0)
+          .slice(0, 12)
+          .map((c) => `${c.day}: ${c.deals} deals, close ${c.ratio === null ? "?" : Math.round(c.ratio * 100) + "%"}, projected ${Math.round(c.clip)} for the month`)
+          .join("\n")
+      : "(none)",
+    "",
     "RETENTION LOOKBACKS (Friday report; cancelled before the 1st payment traces back to the sale. Point-of-sale reasons are why this rep's clients cancelled in ways the sale could have prevented. Rates are a floor while first payments are pending; the change is directional):",
     h.retention.length
       ? h.retention

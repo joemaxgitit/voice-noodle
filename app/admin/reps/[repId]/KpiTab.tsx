@@ -124,6 +124,50 @@ export default function KpiTab({
   }
 
   // Friday retention lookbacks: cancels before the 1st payment trace back to the sale.
+  // Morning Deal Clip snapshots for the latest month on record.
+  const clipMonth = history.dealClips[0]?.day.slice(0, 7);
+  const clips = history.dealClips.filter((c) => c.day.slice(0, 7) === clipMonth);
+  const clipCard = clips.length ? (
+    <section className="card" style={{ marginBottom: 14 }}>
+      <h3 className="rx-sec-title">Deal Clip, {new Date(`${clipMonth}-15T12:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" })}</h3>
+      <p className="hint" style={{ marginTop: 0 }}>
+        Month-end projection each morning: <b>{Math.round(clips[clips.length - 1].clip)}</b> on {new Date(`${clips[clips.length - 1].day}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+        {clips.length > 1 && (
+          <>
+            {" "}
+            &rarr; <b>{Math.round(clips[0].clip)}</b> on {new Date(`${clips[0].day}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+          </>
+        )}
+      </p>
+      <div className="rx-scroll">
+        <table className="rx-table">
+          <thead>
+            <tr>
+              <th>Through</th>
+              <th className="num">Deals</th>
+              <th className="num">Close %</th>
+              <th className="num">Clip</th>
+              <th className="num">Days left</th>
+            </tr>
+          </thead>
+          <tbody>
+            {clips.slice(0, 10).map((c) => (
+              <tr key={c.day}>
+                <td>{new Date(`${c.day}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</td>
+                <td className="num">{c.deals}</td>
+                <td className="num">{c.ratio === null ? "--" : `${Math.round(c.ratio * 100)}%`}</td>
+                <td className="num">
+                  <b>{Math.round(c.clip)}</b>
+                </td>
+                <td className="num">{Math.max(0, c.total - c.gone)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  ) : null;
+
   const ret = history.retention.slice(0, 6);
   const retentionCard = ret.length ? (
     <section className="card" style={{ marginBottom: 14 }}>
@@ -168,6 +212,7 @@ export default function KpiTab({
   if (!months.length)
     return (
       <div>
+      {clipCard}
       {retentionCard}
       <div className="card">
         <p style={{ marginTop: 0 }}>No sales reports for {repName} yet.</p>
@@ -189,6 +234,7 @@ export default function KpiTab({
 
   return (
     <div>
+      {clipCard}
       {retentionCard}
       <div className="rx-head rx-noprint" style={{ marginBottom: 12 }}>
         <label className="field" style={{ margin: 0 }}>

@@ -28,7 +28,7 @@ export default function SuperModeList({ supabase }: { supabase: SupabaseClient }
       const { data } = await supabase.from("profiles").select("id, full_name, email, role, team").in("role", ["admin", "manager"]).eq("active", true).order("full_name");
       setPeople((data || []) as Person[]);
       const sm = await supabase.from("profiles").select("id, super_mode").eq("super_mode", true);
-      if (sm.error) setError(/super_mode/.test(sm.error.message) ? "Run supabase/super-mode.sql first." : sm.error.message);
+      if (sm.error) setError(`Couldn't read super mode: ${sm.error.message}`);
       setOn(new Set(((sm.data || []) as { id: string }[]).map((x) => x.id)));
     })();
   }, [supabase]);
