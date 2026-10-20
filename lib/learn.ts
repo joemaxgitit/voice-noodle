@@ -57,6 +57,9 @@ export type Profile = {
   decision: string;
   opened_up?: string;
   turndown?: string;
+  stall_stated?: string;
+  stall_real?: string;
+  stall_moved?: string;
 };
 
 export type ClientInsight = {
@@ -97,6 +100,8 @@ export type RealVoice = {
   triggers: string[];
   /** What real reps did that won a client back. */
   winners: string[];
+  /** How real clients put off deciding, what was really behind it, and what got past it. */
+  stalls?: { stated: string; real: string; moved: string }[];
 };
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -137,12 +142,17 @@ export function realVoice(insights: ClientInsight[], lang: "en" | "es", cutoff =
     pool.flatMap((i) => (i.moments?.warm || []).map((m) => m.rep_did)),
     8
   );
-  return { lines, triggers, winners };
+  const stalls = mine
+    .map((i) => i.profile)
+    .filter((p) => p?.stall_stated)
+    .slice(0, 8)
+    .map((p) => ({ stated: clip(p!.stall_stated!.trim(), 140), real: clip((p!.stall_real || "").trim(), 120), moved: clip((p!.stall_moved || "").trim(), 120) }));
+  return { lines, triggers, winners, stalls };
 }
 
 /** The part of a practice client's instructions that comes from real calls. Empty when there's nothing yet. */
 export function realVoiceSection(rv: RealVoice | null | undefined, lang: "en" | "es"): string {
-  if (!rv || (!rv.lines.length && !rv.triggers.length && !rv.winners.length)) return "";
+  if (!rv || (!rv.lines.length && !rv.triggers.length && !rv.winners.length && !rv.stalls?.length)) return "";
   const out: string[] = ["", "# What real clients like you have said (from real Lionside calls)"];
   if (rv.lines.length) {
     out.push(
@@ -155,6 +165,10 @@ export function realVoiceSection(rv: RealVoice | null | undefined, lang: "en" | 
   if (rv.triggers.length) {
     out.push("", "Real clients went cold or hung up when the rep did things like:");
     for (const t of rv.triggers) out.push(`- ${t}`);
+  }
+  if (rv.stalls?.length) {
+    out.push("", "How real clients put off deciding (for a follow-up call, one of these that fits you is what you told the rep last time):");
+    for (const st of rv.stalls) out.push(`- "${st.stated}"${st.real ? ` -- really: ${st.real}` : ""}${st.moved ? ` -- what got past it: ${st.moved}` : ""}`);
   }
   if (rv.winners.length) {
     out.push("", "Real clients warmed up when the rep did things like:");

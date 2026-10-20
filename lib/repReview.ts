@@ -103,6 +103,8 @@ export function callLine(c: HistCall, personas: Map<string, string>): string {
     c.close_quality && c.close_quality !== "n/a" ? `close ${c.close_quality}` : "",
     c.duration_secs ? `${Math.round(Number(c.duration_secs) / 60)} min` : "",
     c.spotlights?.hardship ? `hardship moved on at ${Math.round(c.spotlights.hardship.moved_on_at / 60)} min (target 8-12)` : "",
+    c.spotlights?.followup?.kind === "followup" ? `FOLLOW-UP call (rebuilt pain & certainty: ${c.spotlights.followup.rebuilt})` : "",
+    c.spotlights?.followup?.ended_open && c.spotlights.followup.stall_stated ? `didn't close: client said "${c.spotlights.followup.stall_stated}", rep got to the bottom: ${c.spotlights.followup.got_to_bottom}, next step ${c.spotlights.followup.next_step}` : "",
     c.spotlights?.turndown?.happened ? `loan turndown pickup ${c.spotlights.turndown.pickup}, options even ${c.spotlights.turndown.options_even}, client back up ${c.spotlights.turndown.recovered}` : "",
   ].filter(Boolean);
   const lines = [parts.join(" | ")];

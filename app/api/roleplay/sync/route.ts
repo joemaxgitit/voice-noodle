@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     supabase.from("roleplay_persona_secrets").select("*"),
   ]);
   // Real-call wording and hang-up triggers (empty until real calls have been learned from).
-  const { data: ins } = await supabase.from("client_insights").select("id, lang, kind, objections, moments, ending, created_at, calls(retention)").order("created_at", { ascending: false }).limit(400);
+  const { data: ins } = await supabase.from("client_insights").select("id, lang, kind, profile, objections, moments, ending, created_at, calls(retention)").order("created_at", { ascending: false }).limit(400);
   const pool = (ins || []) as unknown as ClientInsight[];
   const real = pool.length ? { en: realVoice(pool, "en"), es: realVoice(pool, "es") } : null;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

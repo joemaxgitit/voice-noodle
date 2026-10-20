@@ -21,8 +21,8 @@ const SCHEMA = {
     profile: {
       type: "object",
       additionalProperties: false,
-      required: ["situation", "hardship", "debts", "personality", "speech", "wanted", "decision", "opened_up", "turndown"],
-      properties: { situation: str, hardship: str, debts: str, personality: str, speech: str, wanted: str, decision: str, opened_up: str, turndown: str },
+      required: ["situation", "hardship", "debts", "personality", "speech", "wanted", "decision", "opened_up", "turndown", "stall_stated", "stall_real", "stall_moved"],
+      properties: { situation: str, hardship: str, debts: str, personality: str, speech: str, wanted: str, decision: str, opened_up: str, turndown: str, stall_stated: str, stall_real: str, stall_moved: str },
     },
     objections: {
       type: "array",
@@ -57,6 +57,7 @@ Rules:
 - profile fields: short, plain English. speech = how they talk (pace, fillers, slang, formality, Spanish/English mix). decision = who decides and how (alone, with spouse, needs time).
 - opened_up: how the client's hardship came out -- the surface version first, what deeper thing they shared, roughly when, and what the rep did that got them there (or cut it off).
 - turndown: if the loan was declined, how the client took it and what the rep did in the next minute that lifted them back up or lost them; "" if there was no decline.
+- stall_stated: if the client put off deciding, how they put it, in their own words, anonymized ("let me talk to my husband first"); else "". stall_real: what was really behind it; else "". stall_moved: what the rep did that got past it (now or on a later call), or "" if nothing did.
 - usable: false if this is not a real sales conversation with a client (voicemail, wrong number, internal call, mostly silence).
 Return the JSON only.`;
 

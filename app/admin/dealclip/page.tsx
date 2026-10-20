@@ -63,6 +63,17 @@ export default function DealClip() {
   const [copied, setCopied] = useState(false);
   const [over, setOver] = useState(false);
   const [saved, setSaved] = useState("");
+  const [vindico, setVindico] = useState<{ id: string; full_name: string | null; kpi_name: string | null }[]>([]);
+  useEffect(() => {
+    const supabase = createClient();
+    void (async () => {
+      const { data: v } = await supabase.from("profiles").select("id").eq("on_vindico", true);
+      const ids = (v || []).map((x) => x.id as string);
+      if (!ids.length) return;
+      const { data } = await supabase.from("profiles").select("id, full_name, kpi_name").in("id", ids);
+      setVindico((data || []) as { id: string; full_name: string | null; kpi_name: string | null }[]);
+    })();
+  }, []);
 
   async function pick(f: File) {
     setError("");
@@ -102,7 +113,10 @@ export default function DealClip() {
   const pct = (r: number | null) => (r === null ? "--" : `${Math.round(r * 100)}%`);
 
   const COLS = ["Deals", "Closing Ratio", "Deal Clip", "Days Remaining", ...(showTwo ? ["If Two a Day"] : [])];
-  const cells = (r: (typeof ranked)[number]) => [String(r.deals), pct(r.ratio), round1(r.clip), String(left), ...(showTwo ? [round1(r.two)] : [])];
+  // Reps on the Vindico auto dialer: their closing ratio isn't comparable, so it's left blank.
+  const onVin = (name: string) => vindico.some((p) => matchRep(name, [p]));
+  const ratioOf = (r: (typeof ranked)[number]) => (onVin(r.name) ? "" : pct(r.ratio));
+  const cells = (r: (typeof ranked)[number]) => [String(r.deals), ratioOf(r), round1(r.clip), String(left), ...(showTwo ? [round1(r.two)] : [])];
 
   /** Copies the clip as a table (for chats that take one) with a plain-text version underneath for the rest. */
   async function copy() {
@@ -112,7 +126,7 @@ export default function DealClip() {
     }
     setError("");
     const name = title.trim();
-    const text = [name, `Through ${fmtDay(through, true)} · ${left} work days left`, "", ...ranked.map((r, i) => `${i + 1}. ${r.name}: ${r.deals} deals · ${pct(r.ratio)} · clip ${round1(r.clip)}${showTwo ? ` · two a day ${round1(r.two)}` : ""}`)].join("\n");
+    const text = [name, `Through ${fmtDay(through, true)} · ${left} work days left`, "", ...ranked.map((r, i) => `${i + 1}. ${r.name}: ${r.deals} deals${ratioOf(r) ? ` · ${ratioOf(r)}` : ""} · clip ${round1(r.clip)}${showTwo ? ` · two a day ${round1(r.two)}` : ""}`)].join("\n");
     const td = "border:1px solid #bbb;padding:4px 8px";
     const html =
       `<table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px">` +

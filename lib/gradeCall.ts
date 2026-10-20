@@ -196,7 +196,13 @@ export async function prepareGrade(
     const { data: secret } = await supabase.rpc("roleplay_reveal", { p_call: callId }).maybeSingle();
     const rp = (call.roleplay as { persona?: string; lang?: string } | null) || {};
     practice = practiceNote(rp.persona || "the client", (secret as PersonaSecret | null) ?? null);
+    const mode = (call.roleplay as { mode?: string; previous?: string | null } | null) || {};
+    if (mode.mode === "followup")
+      practice += `\nThis practice call was a FOLLOW-UP: the client had spoken with Lionside before and put it off.${mode.previous ? ` What the client was told about last time: ${mode.previous}` : ""} Grade it as a follow-up: stages that belonged to that earlier call are "not_reached" with evidence starting "Covered earlier (practice set-up)", skills with no fair chance for that reason score null, set spotlights.followup.kind to "followup", and judge how the rep re-opened and whether they got to the bottom of the stall.\n`;
   }
+
+  // A real call in a client journey: earlier calls with the same client ID, so a follow-up isn't marked down for stages done before.
+  if (!isPractice) practice = await journeyNote(supabase, callId, script?.title ?? "");
 
   // After the claim: a rep grading their own practice call can only read
   // the managers' lessons while that call is marked as grading.
@@ -239,6 +245,64 @@ export async function prepareGrade(
         cost: (call.cost as CallCost | null) || {},
       }),
   };
+}
+
+/*
+  Where this call sits in the client's journey, for the grader. Earlier calls
+  with the same client ID are summarised so a follow-up is graded fairly:
+  stages done on an earlier call are left out of the scores ("covered
+  earlier"), and stages from an earlier call that isn't uploaded are "not on
+  record" -- neutral. Everything that happened on this call is graded as normal.
+*/
+async function journeyNote(supabase: Supa, callId: string, scriptTitle: string): Promise<string> {
+  const { data: me } = await supabase.from("calls").select("id, org_id, client_label, call_date, created_at").eq("id", callId).single();
+  const label = (me?.client_label as string | null)?.trim();
+  // The manager's call number and handoff (separate, so grading works before those columns exist).
+  const extra = await supabase.from("calls").select("call_number, handoff").eq("id", callId).maybeSingle();
+  const myNumber = (extra.data as { call_number?: number | null } | null)?.call_number ?? null;
+  const handoff = (extra.data as { handoff?: string | null } | null)?.handoff ?? null;
+  const renew = /renew/i.test(scriptTitle) || handoff === "renew";
+  const lines: string[] = [];
+  let earlier: { id: string; call_date: string | null; created_at: string; grade: Grade | null; outcome: string | null; outcome_manual: string | null; rep_name?: string | null; profiles?: { full_name: string | null } | null }[] = [];
+  if (label) {
+    const { data } = await supabase
+      .from("calls")
+      .select("id, call_date, created_at, grade, outcome, outcome_manual, rep_name, profiles:rep_id(full_name)")
+      .eq("org_id", me!.org_id)
+      .ilike("client_label", label)
+      .neq("id", callId)
+      .neq("source", "roleplay");
+    const mine = (me!.call_date as string | null) || String(me!.created_at).slice(0, 10);
+    earlier = ((data || []) as unknown as typeof earlier)
+      .filter((c) => (c.call_date || c.created_at.slice(0, 10)) < mine || ((c.call_date || c.created_at.slice(0, 10)) === mine && c.created_at < String(me!.created_at)))
+      .sort((a, b) => (a.call_date || a.created_at).localeCompare(b.call_date || b.created_at));
+  }
+  const n = myNumber ?? earlier.length + 1;
+  if (n <= 1 && !earlier.length) {
+    if (!renew)
+      return `\n<client_journey>\nThis is the first call on record with this client. If the call itself clearly sounds like a follow-up (it refers back to an earlier conversation or picks up mid-process), treat it as one: stages that would have happened on that earlier call are NOT ON RECORD -- mark those script sections "not_reached" and those roadmap stages landed "not_reached" with evidence starting "Not on record", score Straight Line skills that had no fair chance on this call as null, and set spotlights.followup.kind to "followup".\n</client_journey>\n`;
+  }
+  lines.push(`This is call #${n} with this client${label ? ` (client ID ${label})` : ""}.`);
+  if (renew) lines.push(`It is a RENEW call: the lead was worked before, possibly by a different rep, and came back around.`);
+  if (handoff === "coverage") lines.push(`This rep took the call to cover for the client's usual rep, who was out.`);
+  if (earlier.length) {
+    lines.push(`Earlier calls on record, oldest first:`);
+    earlier.forEach((c, i) => {
+      const g = c.grade;
+      const who = c.profiles?.full_name || c.rep_name || "a rep";
+      lines.push(
+        `- Call ${i + 1} (${c.call_date || c.created_at.slice(0, 10)}, ${who}): ${g?.summary ?? "not graded"} Ended: ${g?.furthest_point ?? "?"}; outcome ${c.outcome_manual || c.outcome || "?"}.` +
+          (g?.spotlights?.hardship?.read ? ` Hardship: ${g.spotlights.hardship.read}` : "") +
+          (g?.spotlights?.turndown?.happened ? ` Turndown: ${g.spotlights.turndown.read}` : "") +
+          (g?.spotlights?.followup?.stall_stated ? ` Stall: "${g.spotlights.followup.stall_stated}"${g.spotlights.followup.stall_real ? ` (really: ${g.spotlights.followup.stall_real})` : ""}.` : "")
+      );
+    });
+  }
+  if (n > 1 && earlier.length < n - 1) lines.push(`${n - 1 - earlier.length} earlier call${n - 1 - earlier.length === 1 ? " is" : "s are"} not uploaded.`);
+  lines.push(
+    `Grade it as a FOLLOW-UP: script sections and roadmap stages that belonged to an earlier call and weren't needed again on this one -> section status "not_reached" and roadmap landed "not_reached", with evidence starting "Covered earlier (call K)" when the earlier call is listed above, or "Not on record" when it isn't. Straight Line skills that had no fair chance on this call for that reason -> score null. Everything that actually happened on this call is graded exactly as normal -- including whether the rep re-anchored the pain and certainty before asking again, which a strong follow-up does. For the hardship spotlight, if hardship was covered earlier, set moved_on_at 0 and start its read with "Covered earlier" or "Not on record". Set spotlights.followup.kind to "followup" and use the earlier calls to judge repeat_stall.`
+  );
+  return `\n<client_journey>\n${lines.join("\n")}\n</client_journey>\n`;
 }
 
 const CORRECTIONS_IN_PROMPT = 30;
@@ -433,6 +497,8 @@ spotlights: two moments that decide most sales on this team. They are EXTRA awar
 - hardship: the hardship / intelligence-gathering stretch. On this team the strongest calls keep the client talking about personal, vulnerable things (what happened, how it hits their family, how they feel about it) until roughly 8-12 minutes from the START of the call before moving on to the loan, credit report or options. moved_on_at: seconds from the start of the call when the rep moved off hardship (0 if the call never reached hardship; the call's end if they never moved on). vulnerable_secs: about how many seconds the client spent on genuinely personal, vulnerable talk. deepest: what the client opened up about, in a few words, no names. best_question: the rep's best follow-up that took it deeper (a quote), or "". cut_short and cut_short_time: the moment the rep cut it short while the client was still opening up (a quote, and seconds), or "" and 0. read: one plain sentence.
 - turndown: the moment the SuperMoney loan comes back declined (the Hopeless stage). happened: false if there was no decline on this call (then the rest is "" / 0 / "n/a"). at: seconds. client_reaction: how the client took it, in a few words. pickup: the rep's next 60-90 seconds -- "strong" if they came back with real, positive certainty and energy that lifted the client out of despair (use the voice measurements in braces when present: energy and pitch up against the rep's own level, steady pace, no rush), "ok", or "flat" if they sounded deflated, unsure, apologetic or rushed. pickup_evidence: a quote or measurement. options_even: the three options exactly as the script presents them (credit counseling, debt settlement, financial wellness -- use the script's own wording and order) -- "yes" if all three were first laid out evenly and without bias, "partly", "no" if the rep steered before presenting all three neutrally, "n/a" if options were never reached. Steering toward one AFTER all three were presented evenly is fine and expected -- never count it against them. options_note: one short sentence. recovered: "yes", "partly", "no" or "n/a" -- did the client come back up afterwards, judged by what they said next. read: one plain sentence.
 
+- followup: the follow-up game. More than half of this team's enrollments take more than one call, so how a rep handles a call that doesn't close, and how they re-open a follow-up, matters. kind: "followup" if this call picks up a conversation from an earlier call (see the client journey note, or clear cues in the call itself like "as we talked about", jumping straight into the application), "one_call" if the whole sale happened on this call, otherwise "first". ended_open: true if the call ended without an enrollment. stall_stated: the reason the client gave for not going ahead today ("need to talk to my wife", "call me Friday"), or "". stall_real: what was really underneath it, as far as the call shows, or "". got_to_bottom: "yes" if the rep found the real reason and dealt with it, "partly", "no" if they accepted the brush-off, "n/a" if there was no stall. next_step: "set" if a specific next step was agreed (a time, who needs to be on the call, what the client will have ready), "vague", "none", or "n/a" if the call enrolled. next_step_detail: a few words. reopen: on a follow-up, how the rep opened -- did they bring the pain and certainty back first, or jump straight to paperwork -- one sentence, else "". rebuilt: on a follow-up, "yes", "partly" or "no" for whether they rebuilt pain and certainty before asking again, else "n/a". repeat_stall: true if the client raised the same stall as on an earlier call. read: one plain sentence.
+
 furthest_point: one short phrase for where the call ended (for example "Enrolled and handed to account manager" or "Client hung up during options").
 summary: 2-3 plain sentences a busy manager can read in ten seconds.
 strengths: 2-4 short items. coaching_priorities: the top 3 things for this rep to work on, most important first -- draw on the roadmap stage where the arc broke first, the Straight Line scorecard, the script sections and the flags together.
@@ -621,7 +687,7 @@ const GRADE_SCHEMA = {
     // Two moments that decide most sales. Extra awareness only: never part of either score.
     spotlights: {
       type: "object",
-      required: ["hardship", "turndown"],
+      required: ["hardship", "turndown", "followup"],
       additionalProperties: false,
       properties: {
         hardship: {
@@ -635,6 +701,24 @@ const GRADE_SCHEMA = {
             best_question: { type: "string" },
             cut_short: { type: "string" },
             cut_short_time: { type: "number" },
+            read: { type: "string" },
+          },
+        },
+        followup: {
+          type: "object",
+          required: ["kind", "ended_open", "stall_stated", "stall_real", "got_to_bottom", "next_step", "next_step_detail", "reopen", "rebuilt", "repeat_stall", "read"],
+          additionalProperties: false,
+          properties: {
+            kind: { type: "string" },
+            ended_open: { type: "boolean" },
+            stall_stated: { type: "string" },
+            stall_real: { type: "string" },
+            got_to_bottom: { type: "string" },
+            next_step: { type: "string" },
+            next_step_detail: { type: "string" },
+            reopen: { type: "string" },
+            rebuilt: { type: "string" },
+            repeat_stall: { type: "boolean" },
             read: { type: "string" },
           },
         },
@@ -811,6 +895,12 @@ function clean(g: Grade) {
     sp.hardship.moved_on_at = t(sp.hardship.moved_on_at) ?? 0;
     sp.hardship.cut_short_time = t(sp.hardship.cut_short_time) ?? 0;
     sp.hardship.vulnerable_secs = Math.max(0, Math.round(Number(sp.hardship.vulnerable_secs) || 0));
+  }
+  if (sp?.followup) {
+    sp.followup.kind = one(String(sp.followup.kind).toLowerCase(), ["first", "followup", "one_call"] as const, "first");
+    sp.followup.got_to_bottom = one(String(sp.followup.got_to_bottom).toLowerCase(), ["yes", "partly", "no", "n/a"] as const, "n/a");
+    sp.followup.next_step = one(String(sp.followup.next_step).toLowerCase(), ["set", "vague", "none", "n/a"] as const, "n/a");
+    sp.followup.rebuilt = one(String(sp.followup.rebuilt).toLowerCase(), ["yes", "partly", "no", "n/a"] as const, "n/a");
   }
   if (sp?.turndown) {
     sp.turndown.at = t(sp.turndown.at) ?? 0;

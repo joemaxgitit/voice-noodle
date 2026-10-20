@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireMember, signedUrl, xiKey } from "@/lib/roleplayServer";
-import type { Persona, RoleplayInfo, RoleplayLang } from "@/lib/roleplay";
+import { callModeText, type Persona, type RoleplayInfo, type RoleplayLang, type RoleplayMode } from "@/lib/roleplay";
 
 export const runtime = "nodejs";
 
@@ -18,7 +18,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Practice calls are not set up on the server yet (no ElevenLabs key)." }, { status: 500 });
   }
 
-  const body = (await request.json().catch(() => ({}))) as { personaId?: string; lang?: string };
+  const body = (await request.json().catch(() => ({}))) as { personaId?: string; lang?: string; mode?: string };
+  const mode: RoleplayMode = body.mode === "followup" ? "followup" : "first";
   const lang: RoleplayLang = body.lang === "es" ? "es" : "en";
   if (!body.personaId) return NextResponse.json({ error: "Pick a client first." }, { status: 400 });
 
@@ -47,7 +48,26 @@ export async function POST(request: Request) {
     );
   }
 
+  // A follow-up picks up from this rep's last practice call with this client, if there was one.
+  let previous: string | null = null;
+  if (mode === "followup") {
+    const { data: last } = await supabase
+      .from("calls")
+      .select("grade, created_at")
+      .eq("rep_id", userId)
+      .eq("persona_id", persona.id)
+      .eq("source", "roleplay")
+      .eq("status", "graded")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const g = last?.grade as { summary?: string; furthest_point?: string } | null;
+    if (g?.summary) previous = `${g.summary} It ended: ${g.furthest_point ?? "without a decision"}.`;
+  }
+
   const info: RoleplayInfo = {
+    mode,
+    previous,
     persona: persona.name,
     persona_title: persona.title,
     lang,
@@ -78,7 +98,7 @@ export async function POST(request: Request) {
 
   try {
     const url = await signedUrl(agentId);
-    return NextResponse.json({ callId: call.id, signedUrl: url, info });
+    return NextResponse.json({ callId: call.id, signedUrl: url, info, dynamicVariables: { call_mode: callModeText(mode, previous) } });
   } catch (e) {
     await supabase.from("calls").delete().eq("id", call.id);
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 502 });

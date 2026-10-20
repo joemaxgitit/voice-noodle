@@ -149,6 +149,19 @@ export type TurningPoint = {
 };
 
 export type Spotlights = {
+  followup?: {
+    kind: "first" | "followup" | "one_call";
+    ended_open: boolean;
+    stall_stated: string;
+    stall_real: string;
+    got_to_bottom: "yes" | "partly" | "no" | "n/a";
+    next_step: "set" | "vague" | "none" | "n/a";
+    next_step_detail: string;
+    reopen: string;
+    rebuilt: "yes" | "partly" | "no" | "n/a";
+    repeat_stall: boolean;
+    read: string;
+  };
   hardship: { moved_on_at: number; vulnerable_secs: number; deepest: string; best_question: string; cut_short: string; cut_short_time: number; read: string };
   turndown: {
     happened: boolean;

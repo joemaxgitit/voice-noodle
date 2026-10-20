@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { clientKey, numbered } from "@/lib/journey";
 import { TEAM_MIN_REPS, type TeamPattern } from "@/lib/fingerprint";
 import { okToSpend } from "@/lib/spend";
 import { asProven, compare, favouring, formatValue, MIN_FOR_FINDINGS, type InsightCall, type Metric } from "@/lib/insights";
@@ -76,6 +77,25 @@ export default function Insights() {
     if (!res?.ok) return setError(b?.error || "Couldn't find team patterns.");
     await loadTeam();
   }
+
+  // The follow-up game: journeys by client ID.
+  type FCall = { id: string; client_label: string | null; call_date: string | null; created_at: string; outcome: string | null; outcome_manual: string | null; retention: string | null; call_number?: number | null; kind: string | null; gtb: string | null; next: string | null; repeat: boolean | null; ended_open: boolean | null };
+  const [fcalls, setFcalls] = useState<FCall[]>([]);
+  useEffect(() => {
+    void (async () => {
+      const { data } = await supabase
+        .from("calls")
+        .select("id, client_label, call_date, created_at, outcome, outcome_manual, retention, kind:grade->spotlights->followup->>kind, gtb:grade->spotlights->followup->>got_to_bottom, next:grade->spotlights->followup->>next_step, repeat:grade->spotlights->followup->repeat_stall, ended_open:grade->spotlights->followup->ended_open")
+        .neq("source", "roleplay")
+        .eq("status", "graded")
+        .not("client_label", "is", null)
+        .limit(2000);
+      const nums = await supabase.from("calls").select("id, call_number").not("call_number", "is", null).limit(2000);
+      const num = new Map(((nums.data || []) as { id: string; call_number: number }[]).map((x) => [x.id, x.call_number]));
+      setFcalls(((data || []) as unknown as FCall[]).map((c) => ({ ...c, call_number: num.get(c.id) ?? null })));
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Spotlights vs results: does time in hardship and the turndown pickup line up with enrollments on real calls?
   const [spot, setSpot] = useState<{ outcome: string | null; manual: string | null; hs: number | null; pickup: string | null; even: string | null }[]>([]);
@@ -240,6 +260,78 @@ export default function Insights() {
       <button onClick={() => void findTeam()} disabled={teamBusy} style={{ marginTop: 8 }}>
         {teamBusy ? "Looking across reps…" : `${team ? "Refresh" : "Find"} team patterns · about $0.05`}
       </button>
+
+      <h2>The follow-up game</h2>
+      {(() => {
+        const byClient = new Map<string, FCall[]>();
+        for (const c of fcalls) {
+          const k = clientKey(c.client_label);
+          if (!k) continue;
+          byClient.set(k, [...(byClient.get(k) || []), c]);
+        }
+        const won = (c: FCall) => (c.outcome_manual || c.outcome) === "enrolled";
+        const journeys = [...byClient.values()].map((cs) => numbered(cs.map((c) => ({ ...c, rep_id: null, status: "graded", score: null, slp_score: null }))));
+        const closes = journeys.flatMap((j) => j.filter((c) => won(c as unknown as FCall)));
+        const at = (lo: number, hi: number) => closes.filter((c) => c.n >= lo && c.n <= hi);
+        const proven = (xs: typeof closes) => xs.filter((c) => c.retention === "graduated" || c.retention === "paid6").length;
+        const cancelled = (xs: typeof closes) => xs.filter((c) => c.retention === "cancelled").length;
+        // Calls that ended open, and whether that client enrolled later.
+        const open = journeys.flatMap((j) => j.filter((c) => (c as unknown as FCall).ended_open).map((c) => ({ c: c as unknown as FCall, later: j.some((x) => x.n > c.n && won(x as unknown as FCall)) })));
+        const rate = (xs: typeof open) => (xs.length ? `${Math.round((xs.filter((x) => x.later).length / xs.length) * 100)}%` : "--");
+        if (!closes.length && !open.length)
+          return <p className="muted">Give calls a client ID (and a Call # if you know it). As journeys build up, this shows which call enrollments happen on, whether they last, and what in a call that doesn&rsquo;t close leads to a yes later.</p>;
+        const row = (label: string, xs: typeof open) => (
+          <tr key={label}>
+            <td>{label}</td>
+            <td className="num">{xs.length} calls</td>
+            <td className="num">
+              <b>{rate(xs)}</b> enrolled later
+            </td>
+          </tr>
+        );
+        return (
+          <div className="rx-grid2">
+            <section className="card">
+              <b>Which call the enrollment happened on</b>
+              <table className="rx-table" style={{ marginTop: 6 }}>
+                <tbody>
+                  {[
+                    ["Call 1 (one-call close)", 1, 1],
+                    ["Call 2", 2, 2],
+                    ["Call 3", 3, 3],
+                    ["Call 4+", 4, 99],
+                  ].map(([label, lo, hi]) => {
+                    const xs = at(lo as number, hi as number);
+                    return (
+                      <tr key={label as string}>
+                        <td>{label}</td>
+                        <td className="num">
+                          <b>{xs.length}</b> enrolled
+                        </td>
+                        <td className="num">
+                          {proven(xs)} proven · {cancelled(xs)} cancelled
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </section>
+            <section className="card">
+              <b>Calls that didn&rsquo;t close -- what led to a yes later</b>
+              <table className="rx-table" style={{ marginTop: 6 }}>
+                <tbody>
+                  {row("Rep got to the bottom of the stall", open.filter((x) => x.c.gtb === "yes"))}
+                  {row("Rep accepted the brush-off", open.filter((x) => x.c.gtb === "no"))}
+                  {row("A specific next step was set", open.filter((x) => x.c.next === "set"))}
+                  {row("Next step vague or none", open.filter((x) => x.c.next === "vague" || x.c.next === "none"))}
+                  {row("Same stall as an earlier call", open.filter((x) => x.c.repeat))}
+                </tbody>
+              </table>
+            </section>
+          </div>
+        );
+      })()}
 
       <h2>Spotlights vs results</h2>
       {(() => {

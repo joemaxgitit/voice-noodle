@@ -48,6 +48,8 @@ export default function Roleplay() {
   const [scripts, setScripts] = useState<Record<string, string>>({});
   const [history, setHistory] = useState<PastCall[]>([]);
   const [lang, setLang] = useState<RoleplayLang>("en");
+  // A first call, or a follow-up with a client who put it off last time.
+  const [callMode, setCallMode] = useState<"first" | "followup">("first");
   const [phase, setPhase] = useState<Phase>("pick");
   const [persona, setPersona] = useState<Persona | null>(null);
   // A training card can point here with ?persona=<id>: that client goes first.
@@ -232,7 +234,7 @@ export default function Roleplay() {
     const res = await fetch("/api/roleplay/start", {
       method: "POST",
       headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ personaId: p.id, lang }),
+      body: JSON.stringify({ personaId: p.id, lang, mode: callMode }),
     }).catch(() => null);
     const body = res ? await res.json().catch(() => ({})) : {};
     if (!res || !res.ok) {
@@ -248,6 +250,7 @@ export default function Roleplay() {
       const { VoiceConversation } = await import("@elevenlabs/client");
       const c = await VoiceConversation.startSession({
         signedUrl: body.signedUrl,
+        dynamicVariables: body.dynamicVariables ?? { call_mode: "This is the FIRST call. You've never spoken with this rep or Lionside before." },
         connectionType: "websocket",
         onConnect: ({ conversationId }) => {
           convId.current = conversationId;
@@ -469,7 +472,22 @@ export default function Roleplay() {
               <button aria-pressed={!es} onClick={() => setLang("en")}>English</button>
               <button aria-pressed={es} onClick={() => setLang("es")}>Español</button>
             </div>
+            <div className="unit-switch" role="group" aria-label="Which call">
+              <button aria-pressed={callMode === "first"} onClick={() => setCallMode("first")}>
+                {es ? "Primera llamada" : "First call"}
+              </button>
+              <button aria-pressed={callMode === "followup"} onClick={() => setCallMode("followup")}>
+                {es ? "Seguimiento" : "Follow-up"}
+              </button>
+            </div>
           </div>
+          {callMode === "followup" && (
+            <p className="hint" style={{ maxWidth: "62ch" }}>
+              {es
+                ? "El cliente ya habló con Lionside y lo pospuso. Reconecta con lo que está viviendo y llega al fondo de su duda antes de pedirle que avance."
+                : "The client already spoke with Lionside and put it off. Reconnect with what they're going through and get to the bottom of the hesitation before asking again."}
+            </p>
+          )}
 
           {error && <div className="error" style={{ marginTop: 12 }}>{error}</div>}
 

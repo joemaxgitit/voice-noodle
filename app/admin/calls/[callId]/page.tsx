@@ -40,6 +40,7 @@ import { decodeMono } from "@/lib/shrinkAudio";
 import { measureVoice } from "@/lib/voice";
 import { cleanRecording as cleanRecordingFor } from "@/lib/cleanRecording";
 import type { RoleplayInfo } from "@/lib/roleplay";
+import JourneyBox from "./JourneyBox";
 import "../calls.css";
 import "../../reps/reps.css";
 
@@ -1140,7 +1141,7 @@ export default function CallDetail() {
                 return (
                   <>
                     <h2>Spotlights</h2>
-                    <p className="hint" style={{ marginTop: -4 }}>Two moments that decide most sales. Extra awareness only -- they don&rsquo;t change either score.</p>
+                    <p className="hint" style={{ marginTop: -4 }}>The moments that decide most sales, and the follow-up game. Extra awareness only -- they don&rsquo;t change either score.</p>
                     <div className="rx-grid2">
                       <section className="card">
                         <b>Hardship depth</b>{" "}
@@ -1176,6 +1177,28 @@ export default function CallDetail() {
                         )}
                       </section>
                     </div>
+                    {g.spotlights.followup && (g.spotlights.followup.kind === "followup" || g.spotlights.followup.ended_open) && (() => {
+                      const f = g.spotlights.followup!;
+                      return (
+                        <section className="card" style={{ marginTop: 12 }}>
+                          <b>{f.kind === "followup" ? "Follow-up call" : "Didn't close today"}</b>{" "}
+                          {f.ended_open && f.got_to_bottom !== "n/a" && (
+                            <span className={`pill ${pill(f.got_to_bottom, ["yes"], ["partly"])}`}>got to the bottom: {f.got_to_bottom}</span>
+                          )}{" "}
+                          {f.ended_open && f.next_step !== "n/a" && <span className={`pill ${pill(f.next_step, ["set"], ["vague"])}`}>next step: {f.next_step}</span>}{" "}
+                          {f.kind === "followup" && f.rebuilt !== "n/a" && <span className={`pill ${pill(f.rebuilt, ["yes"], ["partly"])}`}>rebuilt pain &amp; certainty: {f.rebuilt}</span>}{" "}
+                          {f.repeat_stall && <span className="pill poor">same stall as before</span>}
+                          <p style={{ margin: "8px 0 4px" }}>{f.read}</p>
+                          {f.stall_stated && (
+                            <p style={{ margin: "4px 0" }}>
+                              Client said: &ldquo;{f.stall_stated}&rdquo;{f.stall_real ? <span className="muted"> -- really: {f.stall_real}</span> : null}
+                            </p>
+                          )}
+                          {f.next_step_detail && <small className="muted">Next step: {f.next_step_detail}</small>}
+                          {f.reopen && <p style={{ margin: "6px 0 0" }}>Opened with: {f.reopen}</p>}
+                        </section>
+                      );
+                    })()}
                   </>
                 );
               })()}
@@ -1644,6 +1667,8 @@ export default function CallDetail() {
       )}
 
       <div className="no-print">
+      <JourneyBox supabase={supabase} callId={call.id} clientLabel={call.client_label} source={call.source} />
+
       <h2>Settings</h2>
       {call.audio_path && call.audio_redact_state === "done" && call.audio_redact_note && (
         <p className="muted" style={{ marginTop: 0 }}>

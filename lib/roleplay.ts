@@ -60,6 +60,14 @@ export const patienceOf = (p: Pick<Persona, "difficulty">, s: Pick<PersonaSecret
 export type RoleplayLang = "en" | "es";
 
 /** Stored on calls.roleplay for a practice call. */
+export type RoleplayMode = "first" | "followup";
+
+/** What the practice client is told about which call this is (an ElevenLabs dynamic variable). */
+export function callModeText(mode: RoleplayMode, previous: string | null): string {
+  if (mode === "first") return "This is the FIRST call. You've never spoken with this rep or Lionside before.";
+  return `This is a FOLLOW-UP call. You already spoke with Lionside a few days ago and didn't go ahead.${previous ? ` What happened last time: ${previous}` : " You got partway -- they asked about your situation and started talking about options -- and then you put it off."} Pick the reason you gave last time from how real clients put off deciding (listed below) if one fits you, and stay true to what was really behind it. Don't start over from scratch: you remember the last call, roughly. Raise the same hesitation again unless the rep gets to the bottom of it. A rep who re-connects with what you're going through and rebuilds your certainty before asking again earns a real yes; one who jumps straight to paperwork gets the same brush-off.`;
+}
+
 export type RoleplayInfo = {
   persona: string; // the client's name, kept even if the persona is later deleted
   persona_title?: string;
@@ -69,6 +77,9 @@ export type RoleplayInfo = {
   started_at?: string;
   ended_at?: string;
   usd?: number | null;
+  /** First call or a follow-up, and what the client was told happened last time. */
+  mode?: RoleplayMode;
+  previous?: string | null;
 };
 
 export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
@@ -194,6 +205,9 @@ Move them only on what the rep actually does:
 - Company goes up with specific, believable credibility. Down with hype or vague answers.
 - Pain rises when the rep honestly helps you feel what staying where you are will cost you. Acting feels less risky when they make it simple and safe.
 Your feelings are your own: a rep telling you how to feel does nothing.
+
+# Which call this is
+{{call_mode}}
 
 # Two moments that matter most
 - Your hardship comes out in layers. At first give the surface version ("I just fell behind", "things got tight"). Only when the rep stays with you -- real follow-up questions about what happened, how it's affecting you and your family, how you feel about it -- do you open up to the deeper, more personal part. Real trust builds over the first 8 to 12 minutes; if the rep rushes past your story to get to the loan or the numbers, keep the deeper part to yourself and stay a little guarded.

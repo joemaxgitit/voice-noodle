@@ -121,6 +121,9 @@ export default function Calls() {
   const [callDate, setCallDate] = useState(today());
   // For older calls whose outcome is already known (graduated, 6+ payments, cancelled).
   const [upStatus, setUpStatus] = useState("");
+  // Which call this is with the client (empty = numbered by date from the client ID), and whether another rep took it.
+  const [upNumber, setUpNumber] = useState("");
+  const [upHandoff, setUpHandoff] = useState("");
   const [busy, setBusy] = useState("");
   const [filterRep, setFilterRep] = useState("");
   const [filterOutcome, setFilterOutcome] = useState("");
@@ -375,6 +378,8 @@ export default function Calls() {
         client_label: client.trim() || null,
         call_date: callDate || null,
         ...(upStatus ? { retention: upStatus } : {}),
+        ...(upNumber ? { call_number: Number(upNumber) } : {}),
+        ...(upHandoff ? { handoff: upHandoff } : {}),
         file_name: file.name,
         duration_secs: seconds,
         voice,
@@ -420,6 +425,8 @@ export default function Calls() {
     setFile(null);
     setClient("");
     setUpStatus("");
+    setUpNumber("");
+    setUpHandoff("");
     setRepName("");
     if (fileInput.current) fileInput.current.value = "";
     router.push(`/admin/calls/${row.id}`);
@@ -579,6 +586,25 @@ export default function Calls() {
               <option value="cancelled">Cancelled</option>
               <option value="paid6">Made 6+ payments</option>
               <option value="graduated">Graduated</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Call # with this client</span>
+            <select value={upNumber} onChange={(e) => setUpNumber(e.target.value)}>
+              <option value="">Auto (from the client ID)</option>
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  Call {n}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Taken by another rep?</span>
+            <select value={upHandoff} onChange={(e) => setUpHandoff(e.target.value)}>
+              <option value="">No</option>
+              <option value="renew">Renew lead</option>
+              <option value="coverage">Covering for an absent rep</option>
             </select>
           </label>
         </div>
