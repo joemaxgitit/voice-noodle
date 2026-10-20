@@ -172,6 +172,9 @@ export default function RoleplayAdmin() {
   const [insights, setInsights] = useState<ClientInsight[] | null>(null);
   const [suggesting, setSuggesting] = useState(false);
   const [tuning, setTuning] = useState(false);
+  // Learning from calls already on record, right here, with progress.
+  const [waiting, setWaiting] = useState<string[] | null>(null);
+  const [learnRun, setLearnRun] = useState<{ done: number; total: number; failed: number; error: string } | null>(null);
   const [review, setReview] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -278,6 +281,11 @@ export default function RoleplayAdmin() {
     // The real-call library (separate, so the page works before its table exists).
     const ins = await supabase.from("client_insights").select("id, call_id, lang, kind, outcome, objections, moments, ending, used_in, created_at, calls(retention)").order("created_at", { ascending: false }).limit(400);
     setInsights(ins.error ? null : ((ins.data || []) as unknown as ClientInsight[]));
+    if (!ins.error) {
+      const graded = await supabase.from("calls").select("id").neq("source", "roleplay").eq("status", "graded").order("created_at", { ascending: false }).limit(1000);
+      const have = new Set(((await supabase.from("client_insights").select("call_id")).data || []).map((x) => x.call_id as string));
+      setWaiting(((graded.data || []) as { id: string }[]).map((x) => x.id).filter((id) => !have.has(id)));
+    }
     setLoading(false);
   }, [supabase]);
 
@@ -416,6 +424,30 @@ export default function RoleplayAdmin() {
     setSuggesting(false);
     if (!res?.ok) return setError(b?.error || "Could not draft new clients.");
     setNotice(b.made ? `Drafted ${b.made} new practice client${b.made === 1 ? "" : "s"} from real calls. They're hidden until you check them and switch them on.` : "Nothing new to draft yet.");
+    await load();
+  }
+
+  async function learnPast() {
+    if (!waiting?.length) return;
+    const ids = [...waiting];
+    let failed = 0;
+    let error = "";
+    setLearnRun({ done: 0, total: ids.length, failed: 0, error: "" });
+    for (let i = 0; i < ids.length; i++) {
+      const res = await fetch("/api/calls/learn", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${await token()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ callId: ids[i] }),
+      }).catch(() => null);
+      const b = res ? await res.json().catch(() => ({})) : {};
+      if (!res?.ok) {
+        failed++;
+        error = b?.error || `Request failed${res ? ` (${res.status})` : ""}.`;
+      }
+      setLearnRun({ done: i + 1, total: ids.length, failed, error });
+      // Something is wrong for every call: stop rather than keep paying.
+      if (failed >= 3 && failed === i + 1) break;
+    }
     await load();
   }
 
@@ -619,6 +651,17 @@ export default function RoleplayAdmin() {
                 {fresh >= 3 ? ` ${fresh} calls haven't been used for a new client yet.` : ""}
               </span>
               <span className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                {!!waiting?.length && !learnRun && (
+                  <button className="primary" onClick={() => void learnPast()}>
+                    Learn from {waiting.length} graded call{waiting.length === 1 ? "" : "s"} · about ${Math.max(0.01, waiting.length * 0.004).toFixed(2)}
+                  </button>
+                )}
+                {learnRun && (
+                  <small>
+                    {learnRun.done < learnRun.total ? `Learning… ${learnRun.done} of ${learnRun.total}` : `Learned from ${learnRun.done - learnRun.failed} of ${learnRun.total}.`}
+                    {learnRun.failed ? ` ${learnRun.failed} failed: ${learnRun.error}` : ""}
+                  </small>
+                )}
                 {insights.length >= 3 && personas.length > 0 && (
                   <button className="primary" onClick={() => void tune()} disabled={tuning}>
                     {tuning ? "Tuning…" : "Tune our clients from real calls · about $0.10"}
