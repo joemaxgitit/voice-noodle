@@ -787,8 +787,13 @@ function readGrade(data: { content?: { type: string; text?: string }[] }): Grade
   ];
   for (const t of tries) {
     try {
-      const g = JSON.parse(t) as Grade;
-      if (g && typeof g === "object") return g;
+      const g = JSON.parse(t) as Record<string, unknown>;
+      if (!g || typeof g !== "object") continue;
+      // A real grade has sections and a summary; sometimes it comes wrapped one level down ({"grade": {...}}).
+      const real = (x: unknown): x is Grade => !!x && typeof x === "object" && Array.isArray((x as Grade).sections) && (x as Grade).sections.length > 0;
+      if (real(g)) return g;
+      const inner = Object.values(g).find(real);
+      if (inner) return inner;
     } catch {
       // try the next repair
     }
