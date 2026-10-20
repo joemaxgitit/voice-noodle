@@ -863,7 +863,14 @@ async function grade(
           };
       }
     }
-    if (!result) throw new Error("The grader returned something unreadable twice. Try again in a few minutes.");
+    if (!result) {
+      // Say what actually came back, so the cause can be fixed rather than guessed.
+      const raw = (data.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("");
+      const types = (data.content || []).map((c) => c.type).join(",") || "none";
+      throw new Error(
+        `The grader returned something unreadable. [stop: ${data.stop_reason ?? "?"}; blocks: ${types}; ${raw.length} chars; out ${data.usage?.output_tokens ?? "?"} tokens; starts: ${JSON.stringify(raw.slice(0, 160))}; ends: ${JSON.stringify(raw.slice(-80))}]`
+      );
+    }
 
     result.sections ||= [];
     result.compliance ||= [];
