@@ -23,7 +23,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
     title: "Team",
     items: [
       { href: "/admin/reps", label: "Reps", icon: "people", match: (p) => p.startsWith("/admin/reps") },
-      { href: "/admin/rotation", label: "Rotation", icon: "rotate", match: (p) => p.startsWith("/admin/rotation"), salesOnly: true },
+      { href: "/admin/rotation", label: "Rotation", icon: "rotate", match: (p) => p.startsWith("/admin/rotation"), salesOnly: true, superOnly: true },
       { href: "/admin/dealclip", label: "Deal Clip", icon: "chart", match: (p) => p.startsWith("/admin/dealclip"), salesOnly: true, superOnly: true },
       // Coaching trends (/admin/coaching) is hidden for now; the page still works by its address.
       //       { href: "/admin/coaching", label: "Coaching trends", icon: "chart", match: (p) => p.startsWith("/admin/coaching") },

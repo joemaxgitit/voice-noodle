@@ -101,8 +101,8 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // The Deal Clip is the super admin's alone.
-    if (path.startsWith("/admin/dealclip")) {
+    // Rotation and the Deal Clip are the super admin's alone.
+    if (path.startsWith("/admin/dealclip") || path.startsWith("/admin/rotation")) {
       const { data: sa } = await supabase.from("profiles").select("super_admin").eq("id", user.id).maybeSingle();
       if (!(sa as { super_admin?: boolean } | null)?.super_admin) {
         const url = request.nextUrl.clone();
