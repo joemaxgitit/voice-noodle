@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { compare, favouring, formatValue, MIN_FOR_FINDINGS, type InsightCall, type Metric } from "@/lib/insights";
 import "../calls.css";
+import "../../reps/reps.css";
 
 type Correction = {
   id: string;
@@ -46,6 +47,8 @@ export default function Insights() {
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  // Spotlights vs results: does time in hardship and the turndown pickup line up with enrollments on real calls?
+  const [spot, setSpot] = useState<{ outcome: string | null; manual: string | null; hs: number | null; pickup: string | null; even: string | null }[]>([]);
 
   const load = useCallback(async () => {
     const [c, f, g] = await Promise.all([
@@ -75,7 +78,16 @@ export default function Insights() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+    void supabase
+      .from("calls")
+      .select("outcome, outcome_manual, hs:grade->spotlights->hardship->moved_on_at, pickup:grade->spotlights->turndown->>pickup, even:grade->spotlights->turndown->>options_even")
+      .neq("source", "roleplay")
+      .eq("status", "graded")
+      .not("grade->spotlights", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1000)
+      .then(({ data }) => setSpot(((data || []) as { outcome: string | null; outcome_manual: string | null; hs: number | null; pickup: string | null; even: string | null }[]).map((x) => ({ ...x, manual: x.outcome_manual }))));
+  }, [load, supabase]);
 
   const nG = calls.filter((c) => c.retention === "graduated").length;
   const nC = calls.filter((c) => c.retention === "cancelled").length;
@@ -174,6 +186,81 @@ export default function Insights() {
       </p>
       {error && <div className="error">{error}</div>}
       {note && <div className="note">{note}</div>}
+
+      <h2>Spotlights vs results</h2>
+      {(() => {
+        const won = (x: (typeof spot)[number]) => (x.manual || x.outcome) === "enrolled";
+        const rate = (xs: typeof spot) => (xs.length ? `${Math.round((xs.filter(won).length / xs.length) * 100)}%` : "--");
+        const bands = [
+          { label: "Under 5 min", f: (m: number) => m < 5 },
+          { label: "5–8 min", f: (m: number) => m >= 5 && m < 8 },
+          { label: "8–12 min (target)", f: (m: number) => m >= 8 && m <= 12 },
+          { label: "Over 12 min", f: (m: number) => m > 12 },
+        ];
+        const withHs = spot.filter((x) => typeof x.hs === "number" && x.hs > 0);
+        const td = spot.filter((x) => x.pickup && x.pickup !== "n/a");
+        if (!withHs.length)
+          return <p className="muted">Real calls graded from now on show how long the rep stayed in hardship and how they picked the client up after the loan turndown. Once there are some, this shows which actually goes with enrollments on your calls.</p>;
+        return (
+          <>
+            <p className="muted" style={{ marginTop: 0 }}>
+              From {spot.length} graded real call{spot.length === 1 ? "" : "s"}. This only measures -- it never changes a grade -- so your own calls show whether the 8–12 minute target and a strong pickup hold up.
+            </p>
+            <div className="rx-grid2">
+              <section className="card">
+                <b>Time in hardship before moving on</b>
+                <table className="rx-table" style={{ marginTop: 6 }}>
+                  <tbody>
+                    {bands.map((b) => {
+                      const xs = withHs.filter((x) => b.f((x.hs as number) / 60));
+                      return (
+                        <tr key={b.label}>
+                          <td>{b.label}</td>
+                          <td className="num">{xs.length} calls</td>
+                          <td className="num">
+                            <b>{rate(xs)}</b> enrolled
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </section>
+              <section className="card">
+                <b>After the loan turndown</b>
+                <table className="rx-table" style={{ marginTop: 6 }}>
+                  <tbody>
+                    {(["strong", "ok", "flat"] as const).map((k) => {
+                      const xs = td.filter((x) => x.pickup === k);
+                      return (
+                        <tr key={k}>
+                          <td>Pickup {k}</td>
+                          <td className="num">{xs.length} calls</td>
+                          <td className="num">
+                            <b>{rate(xs)}</b> enrolled
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {(["yes", "no"] as const).map((k) => {
+                      const xs = td.filter((x) => x.even === k);
+                      return (
+                        <tr key={`e${k}`}>
+                          <td>Options laid out evenly: {k}</td>
+                          <td className="num">{xs.length} calls</td>
+                          <td className="num">
+                            <b>{rate(xs)}</b> enrolled
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </section>
+            </div>
+          </>
+        );
+      })()}
 
       <h2>Graduates vs cancels</h2>
       {nG === 0 || nC === 0 ? (

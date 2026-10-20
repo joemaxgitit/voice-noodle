@@ -144,6 +144,25 @@ export type TurningPoint = {
   why: string;
 };
 
+export type Spotlights = {
+  hardship: { moved_on_at: number; vulnerable_secs: number; deepest: string; best_question: string; cut_short: string; cut_short_time: number; read: string };
+  turndown: {
+    happened: boolean;
+    at: number;
+    client_reaction: string;
+    pickup: "strong" | "ok" | "flat" | "n/a";
+    pickup_evidence: string;
+    options_even: "yes" | "partly" | "no" | "n/a";
+    options_note: string;
+    recovered: "yes" | "partly" | "no" | "n/a";
+    read: string;
+  };
+};
+
+/** The hardship target on this team: keep the client on vulnerable topics until 8-12 minutes from the start of the call. */
+export const HARDSHIP_TARGET = { from: 8 * 60, to: 12 * 60 };
+export const hardshipBand = (secs: number) => (secs >= HARDSHIP_TARGET.from ? "good" : secs >= 5 * 60 ? "fair" : "poor");
+
 export type Grade = {
   speaker_roles: { speaker: string; role: Role }[];
   summary: string;
@@ -165,6 +184,8 @@ export type Grade = {
   turning_points?: TurningPoint[];
   close_quality?: "solid" | "fragile" | "n/a";
   close_quality_reason?: string;
+  /** Hardship depth and the loan-turndown pickup. Extra awareness only; never in either score. */
+  spotlights?: Spotlights;
   model?: string;
   graded_at?: string;
 };

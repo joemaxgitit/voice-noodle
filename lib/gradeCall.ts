@@ -429,6 +429,10 @@ turning_points: the 2 or 3 moments that most moved the client toward yes or away
 
 close_quality: only for an enrolled call, otherwise "n/a". "solid" if the client clearly understood what they agreed to (not a loan, not settlement, payments go to Bolton, accounts go to collections, participation required) and chose it freely. "fragile" if they signed while confused, pressured, unable to afford the payment, or after the rep contradicted the acknowledgements -- a fragile close is a cancellation risk. close_quality_reason: one sentence, or "".
 
+spotlights: two moments that decide most sales on this team. They are EXTRA awareness only. Grade everything else exactly as described above, and never let these change any other field or either score.
+- hardship: the hardship / intelligence-gathering stretch. On this team the strongest calls keep the client talking about personal, vulnerable things (what happened, how it hits their family, how they feel about it) until roughly 8-12 minutes from the START of the call before moving on to the loan, credit report or options. moved_on_at: seconds from the start of the call when the rep moved off hardship (0 if the call never reached hardship; the call's end if they never moved on). vulnerable_secs: about how many seconds the client spent on genuinely personal, vulnerable talk. deepest: what the client opened up about, in a few words, no names. best_question: the rep's best follow-up that took it deeper (a quote), or "". cut_short and cut_short_time: the moment the rep cut it short while the client was still opening up (a quote, and seconds), or "" and 0. read: one plain sentence.
+- turndown: the moment the SuperMoney loan comes back declined (the Hopeless stage). happened: false if there was no decline on this call (then the rest is "" / 0 / "n/a"). at: seconds. client_reaction: how the client took it, in a few words. pickup: the rep's next 60-90 seconds -- "strong" if they came back with real, positive certainty and energy that lifted the client out of despair (use the voice measurements in braces when present: energy and pitch up against the rep's own level, steady pace, no rush), "ok", or "flat" if they sounded deflated, unsure, apologetic or rushed. pickup_evidence: a quote or measurement. options_even: the three options exactly as the script presents them (credit counseling, debt settlement, financial wellness -- use the script's own wording and order) -- "yes" if all three were first laid out evenly and without bias, "partly", "no" if the rep steered before presenting all three neutrally, "n/a" if options were never reached. Steering toward one AFTER all three were presented evenly is fine and expected -- never count it against them. options_note: one short sentence. recovered: "yes", "partly", "no" or "n/a" -- did the client come back up afterwards, judged by what they said next. read: one plain sentence.
+
 furthest_point: one short phrase for where the call ended (for example "Enrolled and handed to account manager" or "Client hung up during options").
 summary: 2-3 plain sentences a busy manager can read in ten seconds.
 strengths: 2-4 short items. coaching_priorities: the top 3 things for this rep to work on, most important first -- draw on the roadmap stage where the arc broke first, the Straight Line scorecard, the script sections and the flags together.
@@ -515,6 +519,7 @@ const GRADE_SCHEMA = {
     "turning_points",
     "close_quality",
     "close_quality_reason",
+    "spotlights",
   ],
   additionalProperties: false,
   properties: {
@@ -613,6 +618,44 @@ const GRADE_SCHEMA = {
     },
     close_quality: { type: "string" },
     close_quality_reason: { type: "string" },
+    // Two moments that decide most sales. Extra awareness only: never part of either score.
+    spotlights: {
+      type: "object",
+      required: ["hardship", "turndown"],
+      additionalProperties: false,
+      properties: {
+        hardship: {
+          type: "object",
+          required: ["moved_on_at", "vulnerable_secs", "deepest", "best_question", "cut_short", "cut_short_time", "read"],
+          additionalProperties: false,
+          properties: {
+            moved_on_at: { type: "number" },
+            vulnerable_secs: { type: "number" },
+            deepest: { type: "string" },
+            best_question: { type: "string" },
+            cut_short: { type: "string" },
+            cut_short_time: { type: "number" },
+            read: { type: "string" },
+          },
+        },
+        turndown: {
+          type: "object",
+          required: ["happened", "at", "client_reaction", "pickup", "pickup_evidence", "options_even", "options_note", "recovered", "read"],
+          additionalProperties: false,
+          properties: {
+            happened: { type: "boolean" },
+            at: { type: "number" },
+            client_reaction: { type: "string" },
+            pickup: { type: "string" },
+            pickup_evidence: { type: "string" },
+            options_even: { type: "string" },
+            options_note: { type: "string" },
+            recovered: { type: "string" },
+            read: { type: "string" },
+          },
+        },
+      },
+    },
     speaker_roles: {
       type: "array",
       items: {
@@ -763,6 +806,18 @@ function clean(g: Grade) {
   }
   g.outcome = one(g.outcome, ["enrolled", "callback", "not_interested", "hung_up", "other"] as const, "other");
   g.close_quality = one(g.close_quality, ["solid", "fragile", "n/a"] as const, "n/a");
+  const sp = g.spotlights;
+  if (sp?.hardship) {
+    sp.hardship.moved_on_at = t(sp.hardship.moved_on_at) ?? 0;
+    sp.hardship.cut_short_time = t(sp.hardship.cut_short_time) ?? 0;
+    sp.hardship.vulnerable_secs = Math.max(0, Math.round(Number(sp.hardship.vulnerable_secs) || 0));
+  }
+  if (sp?.turndown) {
+    sp.turndown.at = t(sp.turndown.at) ?? 0;
+    sp.turndown.pickup = one(String(sp.turndown.pickup).toLowerCase(), ["strong", "ok", "flat", "n/a"] as const, "n/a");
+    sp.turndown.options_even = one(String(sp.turndown.options_even).toLowerCase(), ["yes", "partly", "no", "n/a"] as const, "n/a");
+    sp.turndown.recovered = one(String(sp.turndown.recovered).toLowerCase(), ["yes", "partly", "no", "n/a"] as const, "n/a");
+  }
 }
 
 type Usage = {

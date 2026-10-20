@@ -55,6 +55,8 @@ export type Profile = {
   speech: string;
   wanted: string;
   decision: string;
+  opened_up?: string;
+  turndown?: string;
 };
 
 export type ClientInsight = {

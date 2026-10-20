@@ -110,6 +110,24 @@ export default function Overview({ ctx }: { ctx: Ctx }) {
             </div>
           );
         })()}
+        {(() => {
+          // Spotlights on real calls, last 30 days: how long hardship ran, and the turndown pickup.
+          const sp = real.filter((c) => t(c) >= now - 30 * DAY && c.spotlights);
+          if (!sp.length) return null;
+          const mins = sp.map((c) => c.spotlights!.hardship.moved_on_at / 60).filter((m) => m > 0);
+          const avgMin = mins.length ? mins.reduce((a, b) => a + b, 0) / mins.length : null;
+          const td = sp.filter((c) => c.spotlights!.turndown.happened);
+          const strong = td.filter((c) => c.spotlights!.turndown.pickup === "strong").length;
+          return (
+            <div className="rx-tile" title="Hardship: target 8-12 minutes from the start of the call before moving on. Pickup: confidence after the loan turndown.">
+              <div className="k">Hardship &amp; pickup, 30 days</div>
+              <div className="v">{avgMin === null ? "--" : `${avgMin.toFixed(1)}m`}</div>
+              <div className="d">
+                avg time in hardship (target 8–12m){td.length ? ` · strong pickup ${strong}/${td.length}` : ""}
+              </div>
+            </div>
+          );
+        })()}
         <div className="rx-tile">
           <div className="k">Knowledge checks</div>
           <div className="v">{quizPassRate === null ? "--" : `${quizPassRate}%`}</div>

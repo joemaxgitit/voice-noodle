@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Flag, SlpSkill, ThreeTens, ComplianceResult, SectionResult } from "@/lib/calls";
+import type { Flag, SlpSkill, ThreeTens, ComplianceResult, SectionResult, Spotlights } from "@/lib/calls";
 import type { KpiReport, KpiRow, MetricPref } from "@/lib/kpi";
 import type { CoachingSession } from "@/lib/coaching";
 
@@ -33,6 +33,7 @@ export type HistCall = {
   three_tens: ThreeTens | null;
   tonality: string | null;
   close_quality: string | null;
+  spotlights?: Spotlights | null;
 };
 
 export type RepNote = {
@@ -184,6 +185,7 @@ const CALL_COLS = [
   "three_tens:grade->three_tens",
   "tonality:grade->tonality->>summary",
   "close_quality:grade->>close_quality",
+  "spotlights:grade->spotlights",
 ].join(", ");
 
 /** Supabase returns an error for a missing table; treat those as empty so one gap doesn't blank the page. */

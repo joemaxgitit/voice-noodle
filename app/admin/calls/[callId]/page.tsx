@@ -34,12 +34,14 @@ import {
   translationStuck,
   type CallCost,
   type GradeVersion,
+  hardshipBand,
 } from "@/lib/calls";
 import { decodeMono } from "@/lib/shrinkAudio";
 import { measureVoice } from "@/lib/voice";
 import { cleanRecording as cleanRecordingFor } from "@/lib/cleanRecording";
 import type { RoleplayInfo } from "@/lib/roleplay";
 import "../calls.css";
+import "../../reps/reps.css";
 
 type Call = {
   id: string;
@@ -1127,6 +1129,53 @@ export default function CallDetail() {
                   </div>
                 )}
               </div>
+
+              {g.spotlights && (() => {
+                const hs = g.spotlights.hardship;
+                const td = g.spotlights.turndown;
+                const pill = (v: string, good: string[], fair: string[]) => (good.includes(v) ? "good" : fair.includes(v) ? "fair" : v === "n/a" ? "" : "poor");
+                return (
+                  <>
+                    <h2>Spotlights</h2>
+                    <p className="hint" style={{ marginTop: -4 }}>Two moments that decide most sales. Extra awareness only -- they don&rsquo;t change either score.</p>
+                    <div className="rx-grid2">
+                      <section className="card">
+                        <b>Hardship depth</b>{" "}
+                        <span className={`pill ${hardshipBand(hs.moved_on_at)}`}>moved on at {clock(hs.moved_on_at)}</span>{" "}
+                        <small className="muted">target 8–12 min</small>
+                        <p style={{ margin: "8px 0 4px" }}>{hs.read}</p>
+                        <small className="muted">
+                          About {Math.round(hs.vulnerable_secs / 60)} min of the client opening up{hs.deepest ? ` · ${hs.deepest}` : ""}
+                        </small>
+                        {hs.best_question && <p style={{ margin: "6px 0 0" }}>Best question: &ldquo;{hs.best_question}&rdquo;</p>}
+                        {hs.cut_short && (
+                          <p style={{ margin: "6px 0 0" }}>
+                            Cut short at {clock(hs.cut_short_time)}: &ldquo;{hs.cut_short}&rdquo;
+                          </p>
+                        )}
+                      </section>
+                      <section className="card">
+                        <b>Loan turndown pickup</b>{" "}
+                        {td.happened ? (
+                          <>
+                            <span className={`pill ${pill(td.pickup, ["strong"], ["ok"])}`}>pickup {td.pickup}</span>{" "}
+                            <span className={`pill ${pill(td.options_even, ["yes"], ["partly"])}`}>options even: {td.options_even}</span>{" "}
+                            <span className={`pill ${pill(td.recovered, ["yes"], ["partly"])}`}>client back up: {td.recovered}</span>
+                            <p style={{ margin: "8px 0 4px" }}>{td.read}</p>
+                            <small className="muted">
+                              Declined at {clock(td.at)} · {td.client_reaction}
+                            </small>
+                            {td.pickup_evidence && <p style={{ margin: "6px 0 0" }}>{td.pickup_evidence}</p>}
+                            {td.options_note && <p style={{ margin: "6px 0 0" }}>{td.options_note}</p>}
+                          </>
+                        ) : (
+                          <p className="hint">No loan decline on this call.</p>
+                        )}
+                      </section>
+                    </div>
+                  </>
+                );
+              })()}
 
               {(g.turning_points?.length ?? 0) > 0 && (
                 <>
