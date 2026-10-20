@@ -431,7 +431,7 @@ export default function Calls() {
           (!filterOutcome ||
             (filterOutcome === "fragile"
               ? c.close_quality === "fragile"
-              : filterOutcome === "cancelled" || filterOutcome === "graduated"
+              : filterOutcome === "cancelled" || filterOutcome === "graduated" || filterOutcome === "paid6"
                 ? c.retention === filterOutcome
                 : outcomeOf(c) === filterOutcome))
       ),
@@ -469,7 +469,7 @@ export default function Calls() {
     return {
       closes: closes.length,
       cancelled: closes.filter((c) => c.retention === "cancelled").length,
-      graduated: closes.filter((c) => c.retention === "graduated").length,
+      graduated: closes.filter((c) => c.retention === "graduated" || c.retention === "paid6").length,
     };
   };
 
@@ -601,6 +601,7 @@ export default function Calls() {
           ))}
           <option value="fragile">Fragile closes</option>
           <option value="cancelled">Cancelled</option>
+          <option value="paid6">Made 6+ payments</option>
           <option value="graduated">Graduated</option>
         </select>
         {repsWithCalls.length > 1 && (
@@ -619,7 +620,7 @@ export default function Calls() {
                   {(() => {
                     const k = cancelsFor(r.key);
                     return k.closes
-                      ? ` \u00b7 ${k.cancelled}/${k.closes} cancelled${k.graduated ? `, ${k.graduated} graduated` : ""}`
+                      ? ` \u00b7 ${k.cancelled}/${k.closes} cancelled${k.graduated ? `, ${k.graduated} proven` : ""}`
                       : "";
                   })()}
                 </option>
@@ -659,6 +660,7 @@ export default function Calls() {
                     {c.close_quality === "fragile" && <span className="danger">{" · fragile close"}</span>}
                     {c.retention === "cancelled" && <strong className="danger">{" · cancelled"}</strong>}
                     {c.retention === "graduated" && <strong className="good-text">{" · graduated"}</strong>}
+                    {c.retention === "paid6" && <strong className="good-text">{" · 6+ payments"}</strong>}
                     {c.redaction_count > 0 && c.audio_path && c.audio_redact_state !== "done" && (
                       <span className="danger">{" · numbers still in recording"}</span>
                     )}

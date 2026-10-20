@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { compare, favouring, formatValue, MIN_FOR_FINDINGS, type InsightCall, type Metric } from "@/lib/insights";
+import { asProven, compare, favouring, formatValue, MIN_FOR_FINDINGS, type InsightCall, type Metric } from "@/lib/insights";
 import "../calls.css";
 import "../../reps/reps.css";
 
@@ -55,7 +55,7 @@ export default function Insights() {
       supabase
         .from("calls")
         .select("id, retention, score, slp_score, grade")
-        .in("retention", ["graduated", "cancelled"])
+        .in("retention", ["graduated", "paid6", "cancelled"])
         .not("grade", "is", null)
         .order("created_at", { ascending: false })
         .limit(400),
@@ -68,7 +68,8 @@ export default function Insights() {
     ]);
     if (c.error) setError(c.error.message);
     else if (f.error) setError(`${f.error.message} -- has the calls-learning SQL been run?`);
-    setCalls((c.data || []) as unknown as InsightCall[]);
+    // "Made 6+ payments" counts as a proven sale, the same as graduated.
+    setCalls(asProven((c.data || []) as unknown as (InsightCall & { retention: string })[]) as InsightCall[]);
     setFixes((f.data || []) as Correction[]);
     const lessons = (g.data?.lessons as string | null) ?? "";
     setSaved(lessons);
@@ -177,11 +178,11 @@ export default function Insights() {
     <main className="shell calls-shell">
 
       <div className="eyebrow">
-        {nG} graduated &middot; {nC} cancelled &middot; {fixes.length} correction{fixes.length === 1 ? "" : "s"}
+        {nG} proven (graduated or 6+ payments) &middot; {nC} cancelled &middot; {fixes.length} correction{fixes.length === 1 ? "" : "s"}
       </div>
       <h1>Insights &amp; tuning</h1>
       <p className="muted">
-        What was different about the enrollment calls of clients who graduated and clients who cancelled, and what the
+        What was different about the enrollment calls of proven sales (graduated or made 6+ payments) and clients who cancelled, and what the
         grader has been taught. Approved lessons and corrections are added to every grade.
       </p>
       {error && <div className="error">{error}</div>}
@@ -262,18 +263,18 @@ export default function Insights() {
         );
       })()}
 
-      <h2>Graduates vs cancels</h2>
+      <h2>Proven sales vs cancels</h2>
       {nG === 0 || nC === 0 ? (
         <p className="muted">
-          Upload enrollment calls of clients who graduated and clients who cancelled, grade them, then set Retention on
-          each call to <strong>Graduated</strong> or <strong>Cancelled</strong>. The comparison appears here once there is
+          Upload enrollment calls of proven sales and clients who cancelled, grade them, then set Retention on
+          each call to <strong>Graduated</strong>, <strong>Made 6+ payments</strong> or <strong>Cancelled</strong>. The comparison appears here once there is
           at least one of each.
         </p>
       ) : (
         <>
           {(nG < MIN_FOR_FINDINGS || nC < MIN_FOR_FINDINGS) && (
             <div className="note" style={{ marginTop: 0 }}>
-              Early days: {nG} graduated and {nC} cancelled. Treat these differences as hints until there are at least{" "}
+              Early days: {nG} proven and {nC} cancelled. Treat these differences as hints until there are at least{" "}
               {MIN_FOR_FINDINGS} of each.
             </div>
           )}
@@ -284,7 +285,7 @@ export default function Insights() {
           <div className="compare">
             <div className="compare-row compare-head">
               <span />
-              <span>Graduated</span>
+              <span>Proven</span>
               <span>Cancelled</span>
               <span>Difference</span>
             </div>
@@ -311,7 +312,7 @@ export default function Insights() {
                 <div key={group} className="compare" style={{ marginTop: 10 }}>
                   <div className="compare-row compare-head">
                     <span>{group}</span>
-                    <span>Graduated</span>
+                    <span>Proven</span>
                     <span>Cancelled</span>
                     <span>Difference</span>
                   </div>

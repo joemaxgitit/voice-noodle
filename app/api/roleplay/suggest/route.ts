@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, thinkingFor } from "@/lib/callsServer";
 import { gradeCostUsd } from "@/lib/calls";
-import type { ClientInsight } from "@/lib/learn";
+import { isProven, type ClientInsight } from "@/lib/learn";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -69,6 +69,7 @@ Create at most {N} NEW practice client(s) that cover real situations the existin
 - first_message_en/es: how they answer the phone ("Hello?", "Yeah, who's this?").
 - based_on: the ids of the real profiles you drew on.
 - notes: one line for the rep's lead card (what the application said), no secrets.
+Real profiles marked proven="yes" are sales that lasted (the client graduated or made 6+ payments) -- what genuinely won those clients should be what genuinely wins yours.
 If nothing real is missing from the existing clients, return an empty list.`;
 
 const slugOf = (s: string) =>
@@ -86,7 +87,7 @@ export async function POST(request: Request) {
   if (!key) return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set on the server." }, { status: 500 });
 
   const [{ data: ins, error }, { data: personas }, { data: secrets }] = await Promise.all([
-    supabase.from("client_insights").select("*").eq("kind", "full").is("used_in", null).order("created_at", { ascending: false }).limit(16),
+    supabase.from("client_insights").select("*, calls(retention)").eq("kind", "full").is("used_in", null).order("created_at", { ascending: false }).limit(16),
     supabase.from("roleplay_personas").select("id, name, title, difficulty, sort_order"),
     supabase.from("roleplay_persona_secrets").select("persona_id, backstory"),
   ]);
@@ -103,7 +104,7 @@ export async function POST(request: Request) {
   const real = pool
     .map(
       (i) =>
-        `<real id="${i.id}" lang="${i.lang}" outcome="${i.outcome ?? "?"}">\n${JSON.stringify({ profile: i.profile, objections: i.objections, moments: i.moments, ending: i.ending })}\n</real>`
+        `<real id="${i.id}" lang="${i.lang}" outcome="${i.outcome ?? "?"}"${isProven(i) ? ' proven="yes"' : ""}>\n${JSON.stringify({ profile: i.profile, objections: i.objections, moments: i.moments, ending: i.ending })}\n</real>`
     )
     .join("\n");
 

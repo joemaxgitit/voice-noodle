@@ -1,11 +1,18 @@
 /*
-  Graduates vs cancels: what was different about the enrollment calls of
+  Proven vs cancels (proven = graduated, or made 6+ payments): what was different about the enrollment calls of
   clients who finished the program and those who cancelled.
 
   Pure functions over grades already stored on each call, so the Insights
   page and the lesson drafter (api/calls/lessons) see exactly the same numbers.
 */
 import { ROADMAP, stageLabel, stageTerm, type Grade } from "@/lib/calls";
+
+/** Treat "made 6+ payments" as a proven sale, the same as graduated, for every comparison. */
+export function asProven<T extends { retention: string }>(rows: T[]): (T & { retention: "graduated" | "cancelled"; paid6?: boolean })[] {
+  return rows
+    .filter((r) => ["graduated", "paid6", "cancelled"].includes(r.retention))
+    .map((r) => ({ ...r, retention: r.retention === "cancelled" ? "cancelled" : "graduated", paid6: r.retention === "paid6" }) as T & { retention: "graduated" | "cancelled"; paid6?: boolean });
+}
 
 export type InsightCall = {
   id: string;

@@ -278,7 +278,7 @@ async function managerGuidance(supabase: Supa, practice = false): Promise<string
   const lessons = (g?.lessons as string | null)?.trim();
   if (lessons) {
     parts.push(
-      "Lessons the sales manager approved from comparing enrollment calls of clients who graduated with clients who cancelled. Use them to sharpen your judgment of the roadmap, close quality and coaching -- they are patterns, not rules:\n" +
+      "Lessons the sales manager approved from comparing enrollment calls of proven sales (clients who graduated or made 6+ payments -- the calls this team wants every rep to make) with clients who cancelled. Use them to sharpen your judgment of the roadmap, close quality and coaching -- they are patterns, not rules:\n" +
         lessons
     );
   }

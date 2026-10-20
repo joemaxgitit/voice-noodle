@@ -1015,6 +1015,8 @@ export default function CallDetail() {
                           ? "Cancelled"
                           : call.retention === "graduated"
                             ? "Graduated"
+                            : call.retention === "paid6"
+                              ? "Made 6+ payments"
                             : call.retention === "active"
                               ? "Active"
                               : "Not set"}
@@ -1029,6 +1031,7 @@ export default function CallDetail() {
                         <option value="">Not set</option>
                         <option value="active">Active</option>
                         <option value="cancelled">Cancelled</option>
+                        <option value="paid6">Made 6+ payments</option>
                         <option value="graduated">Graduated</option>
                       </select>
                     </div>

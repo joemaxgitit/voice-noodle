@@ -97,6 +97,7 @@ export function callLine(c: HistCall, personas: Map<string, string>): string {
   const outcome = (c.outcome_manual || c.outcome) as Outcome | null;
   const parts = [
     `${day(c.call_date || c.created_at)} | ${kind}`,
+    c.retention === "graduated" || c.retention === "paid6" ? `PROVEN SALE (${c.retention === "graduated" ? "client graduated" : "client made 6+ payments"})` : c.retention === "cancelled" ? "client later CANCELLED" : "",
     `script score ${c.score ?? "--"} | Straight Line ${c.slp_score ?? "--"}`,
     outcome ? `outcome ${OUTCOME_LABEL[outcome] ?? outcome}` : "",
     c.close_quality && c.close_quality !== "n/a" ? `close ${c.close_quality}` : "",
@@ -226,6 +227,7 @@ How to write it:
 - "since" is when a trend started (a date or month) or "" if unclear; "action" is "" for improving trends if nothing is needed.
 - "data_gaps": what is missing that would sharpen this (no KPI reports, no real calls graded lately, etc.). "" if nothing.
 - Never put a client's personal or banking details in the review.
+- PROVEN SALE calls (the client graduated or made 6+ payments) are what this team wants every rep's calls to look like. When the rep has them, name what those calls did right and coach the rest of their calls toward them; a call whose client later cancelled is the opposite signal.
 - Spotlights: each call line may show how long the rep stayed in hardship before moving on (this team's target is 8-12 minutes from the start of the call) and how they picked the client back up after the loan turndown (pickup strength, whether the three options were first laid out evenly). Give these two moments special attention -- name a pattern if one shows up across calls -- but weigh them alongside everything else, never instead of it.
 - "core": a SECOND, separate version of the review for coaches who only see voice, tone, script and Straight Line training. Same fields, but built ONLY from the graded calls (real and practice), their Straight Line, script, tonality and voice measurements, script practice drills, knowledge checks and training cards. In "core", never mention or hint at deals, sales numbers, closing ratio, conversion, KPIs, rank, retention or cancellations, rotation, the Deal Clip, attendance, one-on-ones, or manager notes and files -- not even indirectly ("despite strong numbers"). Judge trajectory from the calls alone. If there are few or no graded calls in the window, say so plainly and lean on practice. Its focus_next drills are trainer sections and mock clients only.
 - Stay on the work. If a note mentions the rep's personal life (health, family, money), don't repeat it or speculate about it; at most say the rep's state came up in a one-on-one.`;

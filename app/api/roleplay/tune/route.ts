@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, thinkingFor } from "@/lib/callsServer";
 import { gradeCostUsd } from "@/lib/calls";
-import type { ClientInsight } from "@/lib/learn";
+import { isProven, type ClientInsight } from "@/lib/learn";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -49,7 +49,8 @@ Rules for a rewrite:
 - Keep it written to the AI in second person ("You are...") and about the same length or a little longer.
 - patience: 1 (hangs up fast) to 10 (very patient), from how comparable real clients behaved.
 - why: one or two plain sentences for the manager on what changed and which real patterns it reflects.
-- based_on: ids of the real profiles you drew on.`;
+- based_on: ids of the real profiles you drew on.
+- Real profiles marked proven="yes" are sales that lasted (the client graduated or made 6+ payments): the calls this team wants every rep to make. Let what won those clients over shape what genuinely wins your practice clients.`;
 
 export async function POST(request: Request) {
   const ctx = await requireAdmin(request);
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
   if (!key) return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set on the server." }, { status: 500 });
 
   const [{ data: ins, error }, { data: personas }, { data: secrets }] = await Promise.all([
-    supabase.from("client_insights").select("*").in("kind", ["full", "short"]).order("created_at", { ascending: false }).limit(24),
+    supabase.from("client_insights").select("*, calls(retention)").in("kind", ["full", "short"]).order("created_at", { ascending: false }).limit(24),
     supabase.from("roleplay_personas").select("id, name, title, difficulty"),
     supabase.from("roleplay_persona_secrets").select("persona_id, backstory, patience, right_outcome"),
   ]);
@@ -76,7 +77,7 @@ export async function POST(request: Request) {
     })
     .join("\n");
   const real = pool
-    .map((i) => `<real id="${i.id}" lang="${i.lang}" kind="${i.kind}" outcome="${i.outcome ?? "?"}">\n${JSON.stringify({ profile: i.profile, objections: i.objections, moments: i.moments, ending: i.ending })}\n</real>`)
+    .map((i) => `<real id="${i.id}" lang="${i.lang}" kind="${i.kind}" outcome="${i.outcome ?? "?"}"${isProven(i) ? ' proven="yes"' : ""}>\n${JSON.stringify({ profile: i.profile, objections: i.objections, moments: i.moments, ending: i.ending })}\n</real>`)
     .join("\n");
 
   const res = await fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {

@@ -34,6 +34,7 @@ export type HistCall = {
   tonality: string | null;
   close_quality: string | null;
   spotlights?: Spotlights | null;
+  retention?: string | null;
 };
 
 export type RepNote = {
@@ -186,6 +187,7 @@ const CALL_COLS = [
   "tonality:grade->tonality->>summary",
   "close_quality:grade->>close_quality",
   "spotlights:grade->spotlights",
+  "retention",
 ].join(", ");
 
 /** Supabase returns an error for a missing table; treat those as empty so one gap doesn't blank the page. */

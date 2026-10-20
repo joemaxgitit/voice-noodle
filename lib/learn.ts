@@ -72,7 +72,12 @@ export type ClientInsight = {
   used_in: string | null;
   usd: number | null;
   created_at: string;
+  /** The call's retention, joined in (graduated / paid6 = a proven sale). */
+  calls?: { retention: string | null } | null;
 };
+
+/** A sale that lasted: the client graduated or made 6+ payments. */
+export const isProven = (i: Pick<ClientInsight, "calls">) => ["graduated", "paid6"].includes(i.calls?.retention ?? "");
 
 /** Calls under this length (or with very little from the client) only teach how calls end. */
 export const SHORT_CALL_SECS = 180;
@@ -104,7 +109,8 @@ const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…`
 export function realVoice(insights: ClientInsight[], lang: "en" | "es", cutoff = "9999"): RealVoice {
   const pool = insights
     .filter((i) => i.kind !== "skip" && i.created_at < cutoff)
-    .sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : a.id.localeCompare(b.id)));
+    // Proven sales first (graduated or 6+ payments): what won those clients is what we want reps to learn.
+    .sort((a, b) => Number(isProven(b)) - Number(isProven(a)) || (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : a.id.localeCompare(b.id)));
   const mine = pool.filter((i) => i.lang === lang);
   // Spanish clients are fewer; fall back to English material for behaviour, never for wording.
   const lines: RealVoice["lines"] = [];

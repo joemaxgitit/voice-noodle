@@ -117,7 +117,11 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
 /* Retention: whether an enrolled client stayed. Entered by a manager for
    now; the Bolton retention agent can fill it in later, matched on the
    lead ID in the Client field. */
-export type Retention = "active" | "cancelled" | "graduated";
+export type Retention = "active" | "cancelled" | "graduated" | "paid6";
+
+/** Proven sales: the client graduated, or made more than 6 payments. These are the calls we push reps toward. */
+export const PROVEN: Retention[] = ["graduated", "paid6"];
+export const RETENTION_LABEL: Record<Retention, string> = { active: "Active", cancelled: "Cancelled", graduated: "Graduated", paid6: "Made 6+ payments" };
 
 export const CANCEL_REASONS: Record<string, string> = {
   remorse: "Buyer's remorse",

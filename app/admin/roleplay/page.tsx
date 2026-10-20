@@ -276,8 +276,8 @@ export default function RoleplayAdmin() {
     setScripts(sc.data || []);
     setCalls((c.data || []) as unknown as PracticeRow[]);
     // The real-call library (separate, so the page works before its table exists).
-    const ins = await supabase.from("client_insights").select("id, call_id, lang, kind, outcome, objections, moments, ending, used_in, created_at").order("created_at", { ascending: false }).limit(400);
-    setInsights(ins.error ? null : ((ins.data || []) as ClientInsight[]));
+    const ins = await supabase.from("client_insights").select("id, call_id, lang, kind, outcome, objections, moments, ending, used_in, created_at, calls(retention)").order("created_at", { ascending: false }).limit(400);
+    setInsights(ins.error ? null : ((ins.data || []) as unknown as ClientInsight[]));
     setLoading(false);
   }, [supabase]);
 

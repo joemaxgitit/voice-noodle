@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { compare, digest, formatValue, favouring, MIN_FOR_FINDINGS, type InsightCall } from "@/lib/insights";
+import { compare, digest, formatValue, favouring, MIN_FOR_FINDINGS, type InsightCall, asProven } from "@/lib/insights";
 import { requireAdmin, thinkingFor } from "@/lib/callsServer";
 import { gradeCostUsd } from "@/lib/calls";
 import { logSpend } from "@/lib/spendServer";
@@ -26,13 +26,14 @@ export async function POST(request: Request) {
   const { data, error } = await supabase
     .from("calls")
     .select("id, retention, score, slp_score, grade, created_at")
-    .in("retention", ["graduated", "cancelled"])
+    .in("retention", ["graduated", "paid6", "cancelled"])
     .not("grade", "is", null)
     .order("created_at", { ascending: false })
     .limit(400);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const calls = (data || []) as unknown as InsightCall[];
+  // "Made 6+ payments" counts as a proven sale, the same as graduated.
+  const calls = asProven((data || []) as unknown as (InsightCall & { retention: string })[]) as InsightCall[];
   const grads = calls.filter((c) => c.retention === "graduated");
   const cancels = calls.filter((c) => c.retention === "cancelled");
   if (!grads.length || !cancels.length) {
@@ -54,9 +55,9 @@ export async function POST(request: Request) {
 
   const small = grads.length < MIN_FOR_FINDINGS || cancels.length < MIN_FOR_FINDINGS;
 
-  const prompt = `A sales manager at a debt-relief company wants to learn what separates the enrollment calls of clients who GRADUATED (finished the program -- out of debt, usually with a 700+ credit score) from the enrollment calls of clients who CANCELLED. Every call below was already graded against the company's script and Jordan Belfort's Straight Line method, including an emotional roadmap of the call.
+  const prompt = `A sales manager at a debt-relief company wants to learn what separates the enrollment calls of PROVEN sales -- clients who GRADUATED (finished the program -- out of debt, usually with a 700+ credit score) or made MORE THAN 6 PAYMENTS (stuck with it; just as valuable) -- from the enrollment calls of clients who CANCELLED. Every call below was already graded against the company's script and Jordan Belfort's Straight Line method, including an emotional roadmap of the call.
 
-There are ${grads.length} graduated and ${cancels.length} cancelled calls.${
+There are ${grads.length} proven (graduated or 6+ payments) and ${cancels.length} cancelled calls.${
     small ? ` That is a small sample: only state a lesson when the difference is clear, and say "early pattern" in its support.` : ""
   }
 
