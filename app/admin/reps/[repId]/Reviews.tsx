@@ -6,13 +6,6 @@ import type { RepReview, ReviewBody } from "@/lib/repHistory";
 import { okToSpend, usd, useEstimate } from "@/lib/spend";
 import type { Ctx } from "./page";
 
-const WINDOWS = [
-  { days: 30, label: "Last 30 days" },
-  { days: 60, label: "Last 60 days" },
-  { days: 90, label: "Last 90 days" },
-  { days: 0, label: "Everything" },
-];
-
 const TRAJ: Record<ReviewBody["trajectory"], string> = {
   improving: "Improving",
   steady: "Steady",
@@ -24,7 +17,6 @@ const TRAJ: Record<ReviewBody["trajectory"], string> = {
 /** Claude's read on the rep's overall arc, and the history of past reads. */
 export default function Reviews({ ctx }: { ctx: Ctx }) {
   const { supabase, repId, repName, history: h, people, reload } = ctx;
-  const [days, setDays] = useState(90);
   const [focus, setFocus] = useState("");
   const [error, setError] = useState("");
   const [starting, setStarting] = useState(false);
@@ -51,7 +43,7 @@ export default function Reviews({ ctx }: { ctx: Ctx }) {
     const res = await fetch("/api/reps/review", {
       method: "POST",
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ repId, days, focus }),
+      body: JSON.stringify({ repId, days: 0, focus }),
     }).catch((e) => e as Error);
     setStarting(false);
     if (res instanceof Error) return setError(res.message);
@@ -71,13 +63,6 @@ export default function Reviews({ ctx }: { ctx: Ctx }) {
             : "Claude reads every graded call (real and practice), the Straight Line, script and tonality scores, and practice, and writes"} {repName.split(" ")[0]}&rsquo;s arc: what&rsquo;s slipping before it gets worse, what&rsquo;s getting better, and what to
           coach next. Takes a minute or two.
         </p>
-        <div className="rx-presets" role="group" aria-label="Window">
-          {WINDOWS.map((w) => (
-            <button key={w.days} className={days === w.days ? "on" : ""} aria-pressed={days === w.days} onClick={() => setDays(w.days)}>
-              {w.label}
-            </button>
-          ))}
-        </div>
         <label className="field">
           <span className="label">Anything to look at especially? (optional)</span>
           <input value={focus} onChange={(e) => setFocus(e.target.value)} placeholder="e.g. cancels before first payment, or the SuperMoney drop" />

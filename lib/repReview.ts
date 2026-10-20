@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { gradeCostUsd, OUTCOME_LABEL, type Outcome } from "@/lib/calls";
+import { gradeCostUsd, OUTCOME_LABEL, type Outcome, callAt } from "@/lib/calls";
 import { thinkingFor } from "@/lib/callsServer";
 import { compareRep, fmtChange, fmtKpi, fmtMonth, KIND_LABEL, monthlyReports, type KpiRow } from "@/lib/kpi";
 import { TAG_LABEL, type HistCall, type RepHistory, type ReviewBody } from "@/lib/repHistory";
@@ -244,7 +244,11 @@ export async function buildReviewInput(opts: {
 }): Promise<{ content: Block[]; inputs: Record<string, number> }> {
   const { supabase, history: h, repId, repName, since, focus } = opts;
   const inWindow = (iso: string) => !since || iso >= since;
-  const calls = h.calls.filter((c) => c.status === "graded" && inWindow(c.created_at)).slice(0, 150);
+  // By when the call happened, not when it was uploaded: newest call first.
+  const calls = h.calls
+    .filter((c) => c.status === "graded" && inWindow(new Date(callAt(c)).toISOString()))
+    .sort((a, b) => callAt(b) - callAt(a))
+    .slice(0, 150);
   // Personal notes never go to Claude.
   const notes = h.notes.filter((n) => !n.private && (inWindow(n.note_date) || n.tag === "concern")).slice(0, 200);
   const quizzes = h.quizzes.filter((q) => inWindow(q.created_at)).slice(0, 40);
