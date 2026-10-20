@@ -35,17 +35,14 @@ export default function TodayPanel({
   useEffect(() => {
     if (!userId || !modules.length) return;
     void (async () => {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
       const [c, a] = await Promise.all([
-        supabase
-          .from("calls")
-          .select("source, created_at, slp_score, sections:grade->sections, hardship_at:grade->spotlights->hardship->moved_on_at, followup_kind:grade->spotlights->followup->>kind")
-          .eq("rep_id", userId)
-          .eq("status", "graded")
-          .order("created_at", { ascending: false })
-          .limit(30),
+        fetch(`/api/me/section-scores${viewing ? `?rep=${userId}` : ""}`, { headers: { Authorization: `Bearer ${token ?? ""}` } })
+          .then((r) => (r.ok ? r.json() : { calls: [] }))
+          .catch(() => ({ calls: [] })) as Promise<{ calls?: MoveCall[] }>,
         supabase.from("attempts").select("segment_id, created_at, scores").eq("user_id", userId).order("created_at", { ascending: false }).limit(120),
       ]);
-      setMove(nextMove(modules, (c.data || []) as unknown as MoveCall[], (a.data || []) as MoveAttempt[], lang));
+      setMove(nextMove(modules, c.calls || [], (a.data || []) as MoveAttempt[], lang));
       const { count } = await supabase
         .from("calls")
         .select("id", { count: "exact", head: true })
@@ -55,7 +52,7 @@ export default function TodayPanel({
         .gte("created_at", weekStart().toISOString());
       setThisWeek(count ?? 0);
     })();
-  }, [supabase, userId, modules, lang]);
+  }, [supabase, userId, modules, lang, viewing]);
 
   const m = move?.module ?? null;
   const goal = move?.goal ?? 2;

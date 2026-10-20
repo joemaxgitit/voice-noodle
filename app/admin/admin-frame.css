@@ -266,8 +266,10 @@ button.af-link {
 /* ---------- the rep frame ---------- */
 
 .rs-brand {
+  position: relative;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
   padding: 18px 16px 10px;
 }
@@ -276,6 +278,12 @@ button.af-link {
   max-height: 64px;
   width: auto;
   height: auto;
+}
+.rs-brand .af-close {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 .rs-mobile-logo {
   height: 30px;
