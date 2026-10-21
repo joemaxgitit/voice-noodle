@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { okToSpend, usd, useEstimate } from "@/lib/spend";
-import { plainCounts } from "@/lib/plain";
+import { plainWords } from "@/lib/plain";
 
 // Every string in a saved draft, in plain words (older drafts may say "n=2").
 const plain = <T,>(x: T): T =>
-  typeof x === "string" ? (plainCounts(x) as T) : Array.isArray(x) ? (x.map(plain) as T) : x && typeof x === "object" ? (Object.fromEntries(Object.entries(x).map(([k, v]) => [k, plain(v)])) as T) : x;
+  typeof x === "string" ? (plainWords(x) as T) : Array.isArray(x) ? (x.map(plain) as T) : x && typeof x === "object" ? (Object.fromEntries(Object.entries(x).map(([k, v]) => [k, plain(v)])) as T) : x;
 import type { Archetype } from "@/app/api/archetypes/route";
 
 type Row = { id: string; status: "draft" | "approved" | "replaced"; body: { archetypes: Archetype[]; notes: string }; inputs: { clients?: number; proven?: number; cancelled?: number; straight_line?: number }; created_at: string; approved_at: string | null };
@@ -105,7 +105,7 @@ export default function Archetypes() {
                     </div>
                     <p style={{ margin: "6px 0" }}>{a.summary}</p>
                     <small className="muted">
-                      {a.buyer_type} · threshold {a.action_threshold} · pain {a.pain_awareness} · weakest Ten: {a.weakest_ten}
+                      Buyer: {a.buyer_type} · needs {a.action_threshold} certainty to act · pain: {a.pain_awareness} · weakest Ten: {a.weakest_ten}
                       {a.core_belief ? ` · "${a.core_belief}"` : ""} · {a.openness}
                       {a.decision ? ` · ${a.decision}` : ""}
                     </small>
