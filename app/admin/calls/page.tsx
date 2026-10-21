@@ -844,7 +844,7 @@ export default function Calls() {
                     {c.retention === "cancelled" && <strong className="danger">{" · cancelled"}</strong>}
                     {c.retention === "graduated" && <strong className="good-text">{" · graduated"}</strong>}
                     {c.retention === "paid6" && <strong className="good-text">{" · 6+ payments"}</strong>}
-                    {c.status === "graded" && (c.gfail === "true" || (Number(c.gver) || 1) < 4) && (
+                    {c.status === "graded" && c.gfail === "true" && (
                       <span className="muted" title="This grade is from older grading rules (the automatic re-grade couldn't redo it). Open the call and press Re-grade.">
                         {" · older grade"}
                       </span>

@@ -6,13 +6,13 @@ import { hardshipScoreOf, lineScoreOf } from "@/lib/calls";
  * scores, new rules): every graded call on file is then re-graded by itself,
  * oldest first, the next time a manager opens the Calls page.
  */
-export const GRADER_VERSION = 5;
+export const GRADER_VERSION = 6;
 /**
- * The oldest grade that's still current, per kind of call. Version 5 only
- * changed renew calls (the 2-4 minute hardship), so other calls graded on
- * version 4 don't need re-grading.
+ * The oldest grade that's still current, per kind of call (a change that only
+ * affects renew calls raises just the renew number). Version 6: the close read
+ * balanced both ways (fragile not too free, not too soft) -- every call.
  */
-export const CURRENT_FROM = { renew: 5, other: 4 };
+export const CURRENT_FROM = { renew: 6, other: 6 };
 import {
   ROADMAP,
   voiceNotes,
@@ -334,6 +334,11 @@ async function closeCalibration(supabase: Supa): Promise<string> {
 <close_track_record>
 How earlier close calls on this team held up (clients whose result is known): called fragile ${f.n} -- ${f.lasted} lasted 6+ payments or graduated, ${f.cancelled} cancelled; called ok ${o.n} -- ${o.lasted} lasted, ${o.cancelled} cancelled; called solid ${so.n} -- ${so.lasted} lasted, ${so.cancelled} cancelled.${
     f.n >= 3 && f.lasted >= f.cancelled ? " Most clients called fragile actually stuck with the program, so \"fragile\" has been used too freely: keep it for a specific red flag still standing at the signature." : ""
+  }${
+    // The other direction: "ok"/"solid" closes cancelling as often as fragile ones means the grader has gone too soft.
+    o.n + so.n >= 4 && o.cancelled + so.cancelled >= 3 && (o.cancelled + so.cancelled) / (o.n + so.n) >= (f.n ? f.cancelled / f.n : 0.5)
+      ? " Clients called ok or solid have been cancelling about as often as fragile ones, so real red flags at the signature are being missed: look harder for them."
+      : ""
   }
 </close_track_record>
 `;
@@ -592,7 +597,7 @@ outcome: how the call ended for the sale -- "enrolled" (agreement signed or paym
 
 turning_points: the 2 or 3 moments that most moved the client toward yes or away from it. time (seconds), moment (what happened, in a few words), direction ("toward" or "away"), why (one sentence). On an enrolled call these explain what earned the yes; on a lost call, where it was lost. Do not award credit for the close itself -- explain what caused it.
 
-close_quality: only for an enrolled call, otherwise "n/a". Judge the client's state AT THE MOMENT THEY SIGNED, not the bumps along the way -- confusion or hesitation that the rep cleared up before the signature is normal selling, not a risk. "solid": by the end the client showed in their own words that they understood the core points (not a loan, not settlement, payments go to Bolton, accounts go to collections, they have to take part), chose it freely, and the payment fits their budget. "ok": the usual enrollment -- some bumps, small gaps or a rushed moment, but nothing that leaves the client signing on a false belief; most enrollments are "ok". "fragile": ONLY when a specific red flag is still standing when they sign -- they still clearly believe something false about a core point (it's a loan, the company pays their creditors, nothing will go to collections), the payment is plainly beyond what they said they can afford, they were pushed past a clear "no", or the rep promised something that contradicts the acknowledgements and never corrected it. A fragile close must name that moment. close_quality_reason: one sentence, or "".
+close_quality: only for an enrolled call, otherwise "n/a". Judge the client's state AT THE MOMENT THEY SIGNED, not the bumps along the way -- confusion or hesitation that the rep cleared up before the signature is normal selling, not a risk. "solid": by the end the client showed in their own words that they understood the core points (not a loan, not settlement, payments go to Bolton, accounts go to collections, they have to take part), chose it freely, and the payment fits their budget. "ok": the usual enrollment -- some bumps, small gaps or a rushed moment, but nothing that leaves the client signing on a false belief; most enrollments are "ok". "fragile": ONLY when a specific red flag is still standing when they sign -- they still clearly believe something false about a core point (it's a loan, the company pays their creditors, nothing will go to collections), they said they didn't understand and then just said "yes"/"okay" through the acknowledgements without the gap being closed, the payment is plainly beyond what they said they can afford, they were pushed past a clear "no", or the rep promised something that contradicts the acknowledgements and never corrected it. A fragile close must name that moment. Don't go soft either: if one of those red flags is genuinely still standing, it is "fragile" even if the call otherwise went well. close_quality_reason: one sentence, or "".
 
 spotlights: two moments that decide most sales on this team. They are EXTRA awareness only. Grade everything else exactly as described above, and never let these change any other field or either score.
 - hardship: the hardship / intelligence-gathering stretch. On this team the strongest calls keep the client talking about personal, vulnerable things (what happened, how it hits their family, how they feel about it) until roughly 8-12 minutes from the START of the call before moving on to the loan, credit report or options. moved_on_at: seconds from the start of the call when the rep moved off hardship (0 if the call never reached hardship; the call's end if they never moved on). vulnerable_secs: about how many seconds the client spent on genuinely personal, vulnerable talk. deepest: what the client opened up about, in a few words, no names. best_question: the rep's best follow-up that took it deeper (a quote), or "". cut_short and cut_short_time: the moment the rep cut it short while the client was still opening up (a quote, and seconds), or "" and 0. read: one plain sentence.
