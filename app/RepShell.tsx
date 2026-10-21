@@ -241,16 +241,20 @@ export default function RepShell({
 
           <div className="af-group">
             <div className="af-group-title">{es ? "Practica el guion" : "Practice the script"}</div>
-            {(data?.scripts || []).map((sc) =>
-              group(
-                sc.id,
-                cleanTitle(sc.title),
-                "script",
-                mods.filter((m) => m.script_id === sc.id && m.kind !== "loop"),
-                sc.id
-              )
-            )}
-            {group("loops", es ? "Loops" : "Loops", "loop", loops)}
+            {/* Loops sit right under the script they belong to (the Options Script). */}
+            {(data?.scripts || []).map((sc) => (
+              <div key={sc.id}>
+                {group(
+                  sc.id,
+                  cleanTitle(sc.title),
+                  "script",
+                  mods.filter((m) => m.script_id === sc.id && m.kind !== "loop"),
+                  sc.id
+                )}
+                {loops[0]?.script_id === sc.id && group("loops", "Loops", "loop", loops)}
+              </div>
+            ))}
+            {!(data?.scripts || []).some((sc) => sc.id === loops[0]?.script_id) && group("loops", "Loops", "loop", loops)}
           </div>
 
           <div className="af-group">

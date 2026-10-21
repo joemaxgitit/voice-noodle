@@ -168,28 +168,37 @@ function ScriptTree({ path }: { path: string }) {
       {open.has(key) && <div className="rs-sub">{body}</div>}
     </div>
   );
+  const loopsGroup =
+    loops.length > 0 &&
+    group(
+      "loops",
+      "Loops",
+      "loop",
+      loops.map((m) => link(`/admin?script=${m.script_id}&module=${m.id}`, m.title, curModule === m.id))
+    );
+  // Loops sit right under the script they belong to (the Options Script).
+  const loopsAfter = loops[0]?.script_id;
   return (
     <>
       {tree.scripts.map((sc) => {
         const mods = en.filter((m) => m.script_id === sc.id && m.kind !== "loop");
         if (!mods.length) return null;
-        return group(
-          sc.id,
-          cleanTitle(sc.title),
-          "script",
-          <>
-            {link(`/admin?script=${sc.id}`, "All sections", curScript === sc.id && !curModule)}
-            {mods.map((m) => link(`/admin?script=${sc.id}&module=${m.id}`, m.title, curModule === m.id))}
-          </>
+        return (
+          <div key={sc.id}>
+            {group(
+              sc.id,
+              cleanTitle(sc.title),
+              "script",
+              <>
+                {link(`/admin?script=${sc.id}`, "All sections", curScript === sc.id && !curModule)}
+                {mods.map((m) => link(`/admin?script=${sc.id}&module=${m.id}`, m.title, curModule === m.id))}
+              </>
+            )}
+            {sc.id === loopsAfter && loopsGroup}
+          </div>
         );
       })}
-      {loops.length > 0 &&
-        group(
-          "loops",
-          "Loops",
-          "loop",
-          loops.map((m) => link(`/admin?script=${m.script_id}&module=${m.id}`, m.title, curModule === m.id))
-        )}
+      {!tree.scripts.some((sc) => sc.id === loopsAfter) && loopsGroup}
     </>
   );
 }
