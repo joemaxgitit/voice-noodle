@@ -59,7 +59,11 @@ export async function afterGrade(request: Request, supabase: Supa, callId: strin
     }
   }
   // A graded call with a known result (proven or cancelled) can sharpen the rep's own style.
-  if (me.rep_id && ["graduated", "paid6", "cancelled"].includes((me.retention as string | null) ?? "")) jobs.push(kick(request, "/api/reps/fingerprint", { repId: me.rep_id, auto: true }));
+  if (me.rep_id && ["graduated", "paid6", "cancelled"].includes((me.retention as string | null) ?? "")) {
+    jobs.push(kick(request, "/api/reps/fingerprint", { repId: me.rep_id, auto: true }));
+    // ...and the grader's lessons from proven sales vs cancels (waits for enough of both; at most every 6 hours).
+    jobs.push(kick(request, "/api/calls/lessons", { auto: true }));
+  }
   // Practice voices pick up anything new from real calls (free; skips voices already up to date).
   jobs.push(kick(request, "/api/roleplay/sync", { background: true }));
   await Promise.all(jobs);

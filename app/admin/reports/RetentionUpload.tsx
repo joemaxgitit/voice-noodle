@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { displayName, matchRep, nameKey } from "@/lib/kpi";
 import { pct, pts, reasonsText, type RetentionParsed } from "@/lib/retention";
+import { afterOutcomes } from "@/lib/outcomes";
 import { fmtDate } from "@/lib/training";
 
 type Person = { id: string; full_name: string | null; role: string; kpi_name: string | null; active: boolean };
@@ -112,6 +113,31 @@ export default function RetentionUpload({
         }
       }
     }
+    // Cancels on the report that match a call on file (by client ID) are marked cancelled on that call,
+    // so the grader, Insights and each rep's "Style that works" learn from it by themselves.
+    // Calls already marked graduated or 6+ payments stay proven.
+    let marked = 0;
+    const touched: (string | null)[] = [];
+    if (parsed.cancels.length) {
+      const byId = new Map(parsed.cancels.map((c) => [c.client_id.trim().toLowerCase(), c]));
+      const { data: cs } = await supabase.from("calls").select("id, client_label, retention, rep_id, outcome, outcome_manual").neq("source", "roleplay").not("client_label", "is", null).limit(10000);
+      for (const c of (cs || []) as { id: string; client_label: string; retention: string | null; rep_id: string | null; outcome: string | null; outcome_manual: string | null }[]) {
+        const hit = byId.get(c.client_label.trim().toLowerCase());
+        if (!hit || c.retention === "cancelled" || c.retention === "graduated" || c.retention === "paid6") continue;
+        // Only the call where they enrolled carries the result; earlier calls in the journey stay as they were.
+        if ((c.outcome_manual || c.outcome) !== "enrolled") continue;
+        const stage = hit.stage === "before_1st" ? "before the 1st payment" : hit.stage === "after_1st" ? "after the 1st payment" : "";
+        const { error } = await supabase
+          .from("calls")
+          .update({ retention: "cancelled", cancel_date: hit.requested, cancel_note: `From the retention report${stage ? `: cancelled ${stage}` : ""}.` })
+          .eq("id", c.id);
+        if (!error) {
+          marked++;
+          touched.push(c.rep_id);
+        }
+      }
+      if (marked) void afterOutcomes(supabase, touched);
+    }
     // Remember hand-picked names.
     for (const r of reps) {
       const m = match[nameKey(r.salesman)];
@@ -119,7 +145,7 @@ export default function RetentionUpload({
     }
     setBusy(false);
     onDone(
-      `Saved the retention lookback for ${period(parsed.period_start, parsed.period_end)} -- ${rows.filter((r) => r.rep_id).length} reps updated.`
+      `Saved the retention lookback for ${period(parsed.period_start, parsed.period_end)} -- ${rows.filter((r) => r.rep_id).length} reps updated.${marked ? ` ${marked} uploaded call${marked === 1 ? "" : "s"} matched by client ID and marked cancelled.` : ""}`
     );
   }
 

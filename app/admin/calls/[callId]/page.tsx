@@ -46,6 +46,7 @@ import type { RoleplayInfo } from "@/lib/roleplay";
 import JourneyBox from "./JourneyBox";
 import "../calls.css";
 import "../../reps/reps.css";
+import { afterOutcomes } from "@/lib/outcomes";
 
 type Call = {
   id: string;
@@ -632,16 +633,9 @@ export default function CallDetail() {
     setCall({ ...call, ...next });
     const { error } = await supabase.from("calls").update(next).eq("id", call.id);
     if (error) return setError(error.message);
-    // A new proven sale or cancel: the rep's "Style that works" refreshes by itself when there's enough to go on.
+    // A new proven sale or cancel: the rep's "Style that works" and the grader's lessons refresh by themselves.
     if (patch.retention !== undefined && call.rep_id && call.source !== "roleplay") {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      void fetch("/api/reps/fingerprint", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session?.access_token ?? ""}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ repId: call.rep_id, auto: true }),
-      }).catch(() => null);
+      void afterOutcomes(supabase, [call.rep_id]);
     }
   }
 

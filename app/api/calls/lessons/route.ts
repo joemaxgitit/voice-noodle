@@ -3,6 +3,7 @@ import { compare, digest, formatValue, favouring, MIN_FOR_FINDINGS, type Insight
 import { requireAdmin, thinkingFor } from "@/lib/callsServer";
 import { gradeCostUsd } from "@/lib/calls";
 import { logSpend } from "@/lib/spendServer";
+import { plainCounts } from "@/lib/plain";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -12,13 +13,22 @@ const PER_GROUP = 30; // most recent calls of each kind sent to the drafter
 
 /**
  * Drafts lessons from graduates' vs cancelled clients' enrollment calls.
- * Returns the draft only -- nothing is saved or used in grading until a
- * manager reviews it and presses Save on the Insights page.
+ * Returns the draft for a manager to review and save on the Insights page.
+ * With { auto: true } (sent by itself whenever new cancels or proven sales
+ * come in) it also saves the lessons straight into grading, so the grader
+ * keeps refining itself -- at most every 6 hours, and only once there are
+ * enough proven and cancelled calls to compare.
  */
 export async function POST(request: Request) {
   const ctx = await requireAdmin(request);
   if (ctx instanceof NextResponse) return ctx;
   const { supabase, orgId, userId } = ctx;
+  const input = (await request.json().catch(() => ({}))) as { auto?: boolean };
+  const auto = !!input.auto;
+  if (auto) {
+    const { data: g } = await supabase.from("grading_guidance").select("updated_at").eq("org_id", orgId).maybeSingle();
+    if (g?.updated_at && Date.now() - new Date(g.updated_at as string).getTime() < 6 * 3600_000) return NextResponse.json({ skipped: "refreshed in the last 6 hours" });
+  }
 
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set on the server." }, { status: 500 });
@@ -36,6 +46,9 @@ export async function POST(request: Request) {
   const calls = asProven((data || []) as unknown as (InsightCall & { retention: string })[]) as InsightCall[];
   const grads = calls.filter((c) => c.retention === "graduated");
   const cancels = calls.filter((c) => c.retention === "cancelled");
+  // Automatic refresh only once there's enough to compare -- no spend before then.
+  if (auto && (grads.length < MIN_FOR_FINDINGS || cancels.length < MIN_FOR_FINDINGS))
+    return NextResponse.json({ skipped: `needs ${MIN_FOR_FINDINGS} proven and ${MIN_FOR_FINDINGS} cancelled calls (have ${grads.length} and ${cancels.length})` });
   if (!grads.length || !cancels.length) {
     return NextResponse.json(
       { error: "Mark at least one graded enrollment call Graduated and one Cancelled first." },
@@ -133,7 +146,11 @@ Rules:
     const parsed = JSON.parse(out.content?.find((c) => c.type === "text")?.text || "{}") as {
       lessons?: { lesson: string; support: string }[];
     };
-    const lines = (parsed.lessons ?? []).map((l) => `- ${l.lesson.trim()} (${l.support.trim()})`);
+    const lines = (parsed.lessons ?? []).map((l) => plainCounts(`- ${l.lesson.trim()} (${l.support.trim()})`));
+    if (auto && lines.length && grads.length >= MIN_FOR_FINDINGS && cancels.length >= MIN_FOR_FINDINGS) {
+      await supabase.from("grading_guidance").upsert({ org_id: orgId, lessons: lines.join("\n"), updated_by: userId, updated_at: new Date().toISOString() });
+      return NextResponse.json({ saved: true, graduated: grads.length, cancelled: cancels.length });
+    }
     return NextResponse.json({ draft: lines.join("\n"), graduated: grads.length, cancelled: cancels.length });
   } catch {
     return NextResponse.json({ error: "The draft could not be read. Try again." }, { status: 502 });
