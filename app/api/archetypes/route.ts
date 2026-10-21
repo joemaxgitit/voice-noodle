@@ -94,7 +94,7 @@ Group these clients into the 6-8 archetypes that genuinely recur here -- fewer i
 - results: how these clients turned out, from the data (e.g. "5 enrolled, 3 proven, 1 cancelled").
 - confidence: "solid" if 5+ clients back it, "thin" otherwise.
 notes: one or two sentences on how much evidence there is and what would sharpen the picture.
-Never use a name, place or exact number that could identify a client. Return the JSON only.`;
+Never use a name, place or exact number that could identify a client. Write for a sales manager in plain words: no statistics shorthand like "n=2" -- say "from 2 clients". Return the JSON only.`;
 
 type Db = Awaited<ReturnType<typeof requireAdmin>> extends infer T ? (T extends { supabase: infer S } ? S : never) : never;
 

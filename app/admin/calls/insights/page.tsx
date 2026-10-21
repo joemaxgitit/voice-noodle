@@ -8,6 +8,7 @@ import { TEAM_MIN_REPS, type TeamPattern } from "@/lib/fingerprint";
 import { okToSpend } from "@/lib/spend";
 import { asProven, compare, favouring, formatValue, MIN_FOR_FINDINGS, type InsightCall, type Metric } from "@/lib/insights";
 import Archetypes from "./Archetypes";
+import { plainCounts } from "@/lib/plain";
 import "../calls.css";
 import "../../reps/reps.css";
 
@@ -133,7 +134,7 @@ export default function Insights() {
     // "Made 6+ payments" counts as a proven sale, the same as graduated.
     setCalls(asProven((c.data || []) as unknown as (InsightCall & { retention: string })[]) as InsightCall[]);
     setFixes((f.data || []) as Correction[]);
-    const lessons = (g.data?.lessons as string | null) ?? "";
+    const lessons = plainCounts((g.data?.lessons as string | null) ?? "");
     setSaved(lessons);
     setDraft(lessons);
     setLoading(false);
@@ -184,7 +185,7 @@ export default function Insights() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error || `Request failed (${res.status}).`);
-      setDraft(body.draft || "");
+      setDraft(plainCounts(body.draft || ""));
       setNote("Draft ready. Edit it, delete anything you don't agree with, then press Save. Nothing is used until you save.");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

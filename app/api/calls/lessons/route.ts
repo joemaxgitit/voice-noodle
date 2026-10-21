@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     .slice(0, 25)
     .map(
       (m) =>
-        `${m.group} / ${m.label}: graduated ${formatValue(m, m.graduated)} (n=${m.nGraduated}) vs cancelled ${formatValue(m, m.cancelled)} (n=${m.nCancelled})`
+        `${m.group} / ${m.label}: proven ${formatValue(m, m.graduated)} (from ${m.nGraduated} calls) vs cancelled ${formatValue(m, m.cancelled)} (from ${m.nCancelled} calls)`
     )
     .join("\n");
 
