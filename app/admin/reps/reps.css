@@ -139,3 +139,5 @@ a.rx-ev:hover { background: var(--ink-3); }
 .rx-score { position: relative; display: inline-block; }
 .rx-delta { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 6px; white-space: nowrap; font-size: 12px; }
 @media (max-width: 700px) { .rx-table .rx-hide-sm { display: none; } }
+.rx-table th.rx-wrap { white-space: normal; line-height: 1.25; max-width: 92px; }
+.rx-table .rx-slp { padding-right: 42px; }

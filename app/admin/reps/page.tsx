@@ -1,5 +1,6 @@
 "use client";
 
+import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -18,13 +19,14 @@ type CallLite = {
   call_date: string | null;
   source: string;
   slp_score: number | null;
+  score: number | null;
   status: string;
   script_id: string | null;
   tens: { product?: number | null; rep?: number | null; company?: number | null } | null;
   hs: number | null;
   fu: string | null;
 };
-type SortKey = "name" | "slp" | "product" | "rep" | "company" | "hardship" | "calls" | "review";
+type SortKey = "name" | "slp" | "script" | "product" | "rep" | "company" | "hardship" | "calls" | "review";
 const clock = (secs: number) => `${Math.floor(secs / 60)}:${String(Math.round(secs % 60)).padStart(2, "0")}`;
 const avg1 = (xs: number[]) => (xs.length ? Math.round((xs.reduce((s, x) => s + x, 0) / xs.length) * 10) / 10 : null);
 const tenBand = (x: number) => (x >= 7 ? "good" : x >= 5 ? "fair" : "poor");
@@ -71,7 +73,7 @@ export default function Reps() {
       // By when the call happened (call date), falling back to upload date when no call date was given.
       supabase
         .from("calls")
-        .select("rep_id, created_at, call_date, source, slp_score, status, script_id, tens:grade->three_tens, hs:grade->spotlights->hardship->moved_on_at, fu:grade->spotlights->followup->>kind")
+        .select("rep_id, created_at, call_date, source, slp_score, score, status, script_id, tens:grade->three_tens, hs:grade->spotlights->hardship->moved_on_at, fu:grade->spotlights->followup->>kind")
         .or(`call_date.gte.${since.slice(0, 10)},and(call_date.is.null,created_at.gte.${since})`)
         .not("rep_id", "is", null),
       supabase.from("kpi_reports").select("*"),
@@ -158,6 +160,9 @@ export default function Reps() {
         const prev30 = mine.filter((c) => at(c) < now - 30 * DAY && at(c) >= now - 60 * DAY);
         const slp = avg(now30.map((c) => c.slp_score).filter((x): x is number => x !== null));
         const slpPrev = avg(prev30.map((c) => c.slp_score).filter((x): x is number => x !== null));
+        // Script score: real calls only (practice calls aren't graded on the script the same way).
+        const scr = avg(now30.filter((c) => c.source !== "roleplay").map((c) => c.score).filter((x): x is number => x !== null));
+        const scrPrev = avg(prev30.filter((c) => c.source !== "roleplay").map((c) => c.score).filter((x): x is number => x !== null));
         const ten = (k: "product" | "rep" | "company") => avg1(now30.map((c) => c.tens?.[k]).filter((x): x is number => typeof x === "number"));
         const tens = { product: ten("product"), rep: ten("rep"), company: ten("company") };
         const tv = Object.entries(tens).filter(([, v]) => v !== null) as [string, number][];
@@ -175,6 +180,8 @@ export default function Reps() {
           p,
           slp,
           slpDelta: slp !== null && slpPrev !== null ? slp - slpPrev : null,
+          scr,
+          scrDelta: scr !== null && scrPrev !== null ? scr - scrPrev : null,
           tens,
           weakest,
           hs,
@@ -203,6 +210,7 @@ export default function Reps() {
       switch (sort.key) {
         case "name": return (r.p.full_name || "").toLowerCase();
         case "slp": return r.slp;
+        case "script": return r.scr;
         case "product": return r.tens.product;
         case "rep": return r.tens.rep;
         case "company": return r.tens.company;
@@ -226,7 +234,7 @@ export default function Reps() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, sort, superMode]);
 
-  const head = (key: SortKey, label: string, cls = "", title?: string) => (
+  const head = (key: SortKey, label: React.ReactNode, cls = "", title?: string) => (
     <th
       className={`rx-sort ${cls}`}
       title={title}
@@ -255,11 +263,12 @@ export default function Reps() {
             <tr>
               {head("name", "Rep")}
               {head("slp", "SLP 30d", "num rx-slp", "Straight Line score, last 30 days by call date. The arrow is the change from the 30 days before.")}
-              {head("product", "Product (Ten 1)", "num rx-hide-sm", "Client's certainty in the product, 1-10, last 30 days")}
-              {head("rep", "Rep (Ten 2)", "num rx-hide-sm", "Client's trust in the rep, 1-10, last 30 days")}
-              {head("company", "Company (Ten 3)", "num rx-hide-sm", "Client's certainty in the company, 1-10, last 30 days")}
+              {head("script", "Script 30d", "num rx-slp", "Script score on real calls, last 30 days by call date. The arrow is the change from the 30 days before.")}
+              {head("product", <>Product<br />(Ten 1)</>, "num rx-hide-sm rx-wrap", "Client's certainty in the product, 1-10, last 30 days")}
+              {head("rep", <>Rep<br />(Ten 2)</>, "num rx-hide-sm rx-wrap", "Client's trust in the rep, 1-10, last 30 days")}
+              {head("company", <>Company<br />(Ten 3)</>, "num rx-hide-sm rx-wrap", "Client's certainty in the company, 1-10, last 30 days")}
               {head("hardship", "Hardship", "num", "Average time before moving off hardship, Options Script first calls, last 30 days. Target 8-12 min. Renew calls have no hardship target.")}
-              {head("calls", "Calls / practice", "num rx-hide-sm", "Real calls / practice calls graded, last 30 days")}
+              {head("calls", <>Calls /<br />practice</>, "num rx-hide-sm rx-wrap", "Real calls / practice calls graded, last 30 days")}
               {superMode && (
                 <>
               <th className="num">{kpi ? `Deals ${fmtMonth(monthOf(kpi.cur), false)}` : "Deals"}</th>
@@ -298,6 +307,21 @@ export default function Reps() {
                         <small className={`rx-delta ${r.slpDelta > 0 ? "rx-up" : "rx-down"}`}>
                           {r.slpDelta > 0 ? "▲" : "▼"}
                           {Math.abs(r.slpDelta)}
+                        </small>
+                      )}
+                    </span>
+                  )}
+                </td>
+                <td className="num rx-slp">
+                  {r.scr === null ? (
+                    <span className="muted">--</span>
+                  ) : (
+                    <span className="rx-score">
+                      <span className={`pill ${scoreBand(r.scr)}`}>{r.scr}</span>
+                      {r.scrDelta !== null && r.scrDelta !== 0 && (
+                        <small className={`rx-delta ${r.scrDelta > 0 ? "rx-up" : "rx-down"}`}>
+                          {r.scrDelta > 0 ? "▲" : "▼"}
+                          {Math.abs(r.scrDelta)}
                         </small>
                       )}
                     </span>
