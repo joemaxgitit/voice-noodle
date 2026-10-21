@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 import PracticeToggle from "./PracticeToggle";
@@ -39,8 +40,21 @@ const UNFILED: ScriptRef = {
  * and to make finished work disappear. So: a tab per script, headings per
  * module, and a filter that hides anything already recorded.
  */
-export default function Admin() {
+export default function AdminPage() {
+  return (
+    <Suspense fallback={null}>
+      <Admin />
+    </Suspense>
+  );
+}
+
+function Admin() {
   const supabase = createClient();
+  // The manager menu opens a script (?script=) or one section of it (?module=).
+  const params = useSearchParams();
+  const router = useRouter();
+  const wantScript = params.get("script");
+  const wantModule = params.get("module");
   const [rows, setRows] = useState<Row[]>([]);
   const [activeScript, setActiveScript] = useState<string | null>(null);
   const [hideRecorded, setHideRecorded] = useState(false);
@@ -75,10 +89,17 @@ export default function Admin() {
     return [...seen.values()].sort((a, b) => a.sort_order - b.sort_order);
   }, [rows]);
 
-  // First tab, once the data arrives.
+  // First tab once the data arrives, or the script the menu asked for.
   useEffect(() => {
-    if (!activeScript && scripts.length > 0) setActiveScript(scripts[0].id);
-  }, [scripts, activeScript]);
+    if (wantScript && scripts.some((s) => s.id === wantScript)) setActiveScript(wantScript);
+    else if (!activeScript && scripts.length > 0) setActiveScript(scripts[0].id);
+  }, [scripts, activeScript, wantScript]);
+  // One section from the menu: that section and its Spanish (or English) twin.
+  const focusModule = useMemo(() => {
+    if (!wantModule) return null;
+    const m = rows.find((r) => r.modules?.id === wantModule)?.modules ?? null;
+    return m;
+  }, [rows, wantModule]);
 
   const perScript = useMemo(() => {
     const out = new Map<string, { total: number; done: number }>();
@@ -108,6 +129,7 @@ export default function Admin() {
 
     for (const r of rows) {
       if (scriptOf(r).id !== activeScript) continue;
+      if (focusModule && !(r.modules?.id === focusModule.id || (r.modules?.sort_order === focusModule.sort_order && r.modules?.language !== focusModule.language))) continue;
       const key = r.modules?.id ?? "__none";
       const b = buckets.get(key) || { module: r.modules, all: [], shown: [] };
       b.all.push(r);
@@ -123,7 +145,7 @@ export default function Admin() {
     return list.sort(
       (a, b) => (a.module?.sort_order ?? 999) - (b.module?.sort_order ?? 999)
     );
-  }, [rows, activeScript, hideRecorded]);
+  }, [rows, activeScript, hideRecorded, focusModule]);
 
   const timed = rows.filter((r) => voiceCount(r) > 0).length;
   const nothingLeft =
@@ -160,7 +182,7 @@ export default function Admin() {
               <button
                 key={s.id}
                 aria-pressed={activeScript === s.id}
-                onClick={() => setActiveScript(s.id)}
+                onClick={() => (wantScript || wantModule ? router.push(`/admin?script=${s.id}`) : setActiveScript(s.id))}
               >
                 {s.title}
                 <span className="section-count">
@@ -170,6 +192,13 @@ export default function Admin() {
             );
           })}
         </div>
+      )}
+
+      {focusModule && (
+        <p className="muted" style={{ marginTop: 10 }}>
+          Showing one section: <b>{focusModule.title}</b>.{" "}
+          <Link href={`/admin?script=${activeScript ?? ""}`}>Show the whole script</Link>
+        </p>
       )}
 
       <div className="row" style={{ marginTop: 4 }}>

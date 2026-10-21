@@ -54,7 +54,6 @@ const GROUPS: { title: string; items: Item[] }[] = [
     items: [
       { href: "/admin/training", label: "Training hub", icon: "calendar", match: (p) => p.startsWith("/admin/training") },
       { href: "/admin/roleplay", label: "Practice calls", icon: "headset", match: (p) => p.startsWith("/admin/roleplay") },
-      { href: "/admin", label: "Segments", icon: "script", match: (p) => p === "/admin" || p.startsWith("/admin/timing") },
       { href: "/admin/attempts", label: "Attempts", icon: "mic", match: (p) => p.startsWith("/admin/attempts") },
       { href: "/admin/listening", label: "Listening", icon: "ear", match: (p) => p.startsWith("/admin/listening") },
       { href: "/admin/live", label: "Live", icon: "live", match: (p) => p.startsWith("/admin/live") },
@@ -100,6 +99,98 @@ export function Icon({ name }: { name: keyof typeof ICONS }) {
     <svg className="af-icon" viewBox="0 0 24 24" aria-hidden="true">
       <path d={ICONS[name]} />
     </svg>
+  );
+}
+
+type TreeScript = { id: string; title: string; sort_order: number };
+type TreeModule = { id: string; title: string; script_id: string; kind: string; language: string; sort_order: number };
+let treeCache: { scripts: TreeScript[]; modules: TreeModule[] } | null = null;
+
+const cleanTitle = (t: string) => t.replace(/\s+[—-]\s+.*$/, "");
+
+/**
+ * The scripts in the menu, organised like the rep side: each script opens to
+ * its sections, and the objection loops sit together under Loops. Each link
+ * opens the recording page on that script or section.
+ */
+function ScriptTree({ path }: { path: string }) {
+  const [tree, setTree] = useState(treeCache);
+  const [qs, setQs] = useState("");
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (treeCache) return;
+    const supabase = createClient();
+    void Promise.all([
+      supabase.from("scripts").select("id, title, sort_order").eq("active", true).order("sort_order"),
+      supabase.from("modules").select("id, title, script_id, kind, language, sort_order").eq("active", true).order("sort_order"),
+    ]).then(([s, m]) => {
+      treeCache = { scripts: (s.data || []) as TreeScript[], modules: (m.data || []) as TreeModule[] };
+      setTree(treeCache);
+    });
+  }, []);
+  // Which script / section is open on the recording page (read from the address, kept in step with clicks).
+  useEffect(() => setQs(window.location.search), [path]);
+  const q = new URLSearchParams(qs);
+  const onRecording = path === "/admin" || path.startsWith("/admin/timing");
+  const curScript = onRecording ? q.get("script") : null;
+  const curModule = onRecording ? q.get("module") : null;
+  useEffect(() => {
+    if (!tree || !curScript) return;
+    const m = tree.modules.find((x) => x.id === curModule);
+    setOpen((o) => new Set(o).add(m?.kind === "loop" ? "loops" : curScript));
+  }, [tree, curScript, curModule]);
+
+  if (!tree) return null;
+  const en = tree.modules.filter((m) => (m.language || "en") === "en");
+  const seen = new Set<string>();
+  const loops = en.filter((m) => m.kind === "loop" && !seen.has(m.title.toLowerCase()) && (seen.add(m.title.toLowerCase()), true));
+  const toggle = (k: string) =>
+    setOpen((o) => {
+      const n = new Set(o);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
+  const link = (href: string, label: string, active: boolean) => (
+    <Link key={href} href={href} onClick={() => setQs(href.slice(href.indexOf("?")))} className={`rs-sublink${active ? " active" : ""}`}>
+      <span>{label}</span>
+    </Link>
+  );
+  const group = (key: string, label: string, icon: keyof typeof ICONS, body: ReactNode) => (
+    <div key={key}>
+      <button type="button" className={`af-link rs-group${open.has(key) ? " open" : ""}`} aria-expanded={open.has(key)} onClick={() => toggle(key)}>
+        <Icon name={icon} />
+        <span style={{ flex: 1 }}>{label}</span>
+        <span className="rs-chev">
+          <Icon name="chevron" />
+        </span>
+      </button>
+      {open.has(key) && <div className="rs-sub">{body}</div>}
+    </div>
+  );
+  return (
+    <>
+      {tree.scripts.map((sc) => {
+        const mods = en.filter((m) => m.script_id === sc.id && m.kind !== "loop");
+        if (!mods.length) return null;
+        return group(
+          sc.id,
+          cleanTitle(sc.title),
+          "script",
+          <>
+            {link(`/admin?script=${sc.id}`, "All sections", curScript === sc.id && !curModule)}
+            {mods.map((m) => link(`/admin?script=${sc.id}&module=${m.id}`, m.title, curModule === m.id))}
+          </>
+        );
+      })}
+      {loops.length > 0 &&
+        group(
+          "loops",
+          "Loops",
+          "loop",
+          loops.map((m) => link(`/admin?script=${m.script_id}&module=${m.id}`, m.title, curModule === m.id))
+        )}
+    </>
   );
 }
 
@@ -192,6 +283,12 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
                   </Link>
                 );
               })}
+              {g.title === "Training" && (
+                <>
+                  <div className="af-group-title" style={{ marginTop: 10 }}>Scripts</div>
+                  <ScriptTree path={path} />
+                </>
+              )}
             </div>
           ))}
         </nav>
