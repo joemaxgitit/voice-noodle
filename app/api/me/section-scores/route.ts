@@ -14,9 +14,9 @@ import { requireMember } from "@/lib/roleplayServer";
 export const dynamic = "force-dynamic";
 
 const COLS =
-  "source,created_at,call_date,slp_score,sections:grade->sections,hardship_at:grade->spotlights->hardship->moved_on_at,followup_kind:grade->spotlights->followup->>kind";
+  "source,created_at,call_date,slp_score,sections:grade->sections,hardship_at:grade->spotlights->hardship->moved_on_at,hardship_target:grade->spotlights->hardship->>target,followup_kind:grade->spotlights->followup->>kind";
 
-type Row = { source: string | null; created_at: string; call_date: string | null; slp_score: number | null; sections: { section?: string; status?: string }[] | null; hardship_at: number | null; followup_kind: string | null };
+type Row = { source: string | null; created_at: string; call_date: string | null; slp_score: number | null; sections: { section?: string; status?: string }[] | null; hardship_at: number | null; hardship_target: string | null; followup_kind: string | null };
 
 export async function GET(request: Request) {
   const who = await requireMember(request);
@@ -45,7 +45,8 @@ export async function GET(request: Request) {
     created_at: r.created_at,
     call_date: r.call_date,
     slp_score: r.slp_score,
-    hardship_at: typeof r.hardship_at === "number" ? r.hardship_at : null,
+    // A renew's short hardship is on target, not "too short".
+    hardship_at: typeof r.hardship_at === "number" && r.hardship_target !== "renew" ? r.hardship_at : null,
     followup_kind: r.followup_kind,
     sections: Array.isArray(r.sections) ? r.sections.map((s) => ({ section: String(s?.section ?? ""), status: String(s?.status ?? "") })) : null,
   }));

@@ -6,7 +6,13 @@ import { hardshipScoreOf, lineScoreOf } from "@/lib/calls";
  * scores, new rules): every graded call on file is then re-graded by itself,
  * oldest first, the next time a manager opens the Calls page.
  */
-export const GRADER_VERSION = 4;
+export const GRADER_VERSION = 5;
+/**
+ * The oldest grade that's still current, per kind of call. Version 5 only
+ * changed renew calls (the 2-4 minute hardship), so other calls graded on
+ * version 4 don't need re-grading.
+ */
+export const CURRENT_FROM = { renew: 5, other: 4 };
 import {
   ROADMAP,
   voiceNotes,
@@ -194,7 +200,7 @@ export async function prepareGrade(
         ". Those sections are included above, in order, and are graded the same way."
     );
     notes.push(
-      "A renew call is fast-paced on purpose: the client went through the full hardship conversation months ago. There is no hardship length target -- never coach the rep to dig longer into hardship or mark them down for moving on quickly. Judge whether they confirmed the debt is still a problem and kept pace with the conversation. There is no loan on this call, so there is no loan turndown either."
+      "A renew call is fast-paced on purpose: the client went through the full hardship conversation months ago. The hardship target on a renew is about 2-4 minutes from the START of the call, not 8-12: confirm the debt is still a problem and why, re-anchor the pain in the client's own words, and move on. Grade the hardship spotlight and its parts against that short re-qualification -- reward getting the client to re-own the pain quickly; don't coach a longer dig, and mark it down only when the rep skipped re-anchoring the pain or dragged it out well past 4-6 minutes. There is no loan on this call, so there is no loan turndown."
     );
   }
 
@@ -1331,9 +1337,9 @@ async function grade(
     for (const t of result.turning_points) t.direction = low(t.direction);
     clean(result);
     nameSections(result, prior.naming);
-    // Renew calls: no hardship target and no loan, so those two spotlights don't apply.
+    // Renew calls: a short hardship (2-4 minutes, marked so every page uses that target) and no loan turndown.
     if (prior.naming.skip.length && result.spotlights) {
-      delete result.spotlights.hardship;
+      if (result.spotlights.hardship) result.spotlights.hardship.target = "renew";
       delete result.spotlights.turndown;
     }
     if (prior.naming.lang === "es") await englishQuotes(result, key, new Set(prior.naming.english));

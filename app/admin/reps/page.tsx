@@ -180,7 +180,8 @@ export default function Reps() {
         const tv = Object.entries(tens).filter(([, v]) => v !== null) as [string, number][];
         const weakest = tv.length > 1 ? tv.reduce((a, b) => (b[1] < a[1] ? b : a))[0] : null;
         // Hardship: Options Script first calls only (renew calls have no hardship target; follow-ups covered it before).
-        const hsCalls = now30.filter((c) => !renewScripts.has(c.script_id ?? "") && c.fu !== "followup" && typeof c.hss === "number");
+        // Renew calls count too: each is scored against its own target (2-4 minutes on a renew).
+        const hsCalls = now30.filter((c) => c.fu !== "followup" && typeof c.hss === "number");
         const hs = avg(hsCalls.map((c) => c.hss as number));
         const timed = hsCalls.filter((c) => typeof c.hs === "number" && (c.hs as number) > 0);
         const hsTime = timed.length ? timed.reduce((a, c) => a + (c.hs as number), 0) / timed.length : null;
@@ -282,7 +283,7 @@ export default function Reps() {
               {head("product", <>Product<br />(Ten 1)</>, "num rx-hide-sm rx-wrap", "Client's certainty in the product, 1-10, last 30 days")}
               {head("rep", <>Rep<br />(Ten 2)</>, "num rx-hide-sm rx-wrap", "Client's trust in the rep, 1-10, last 30 days")}
               {head("company", <>Company<br />(Ten 3)</>, "num rx-hide-sm rx-wrap", "Client's certainty in the company, 1-10, last 30 days")}
-              {head("hardship", "Hardship", "num", "Hardship score (0-100): how deep the client opened up, question quality, follow-ups, empathy, anchoring the pain and staying on the line. Options Script first calls, last 30 days; renew calls and follow-ups are left out. Faded when it rests on fewer than 3 calls.")}
+              {head("hardship", "Hardship", "num", "Hardship score (0-100): how deep the client opened up, question quality, follow-ups, empathy, anchoring the pain and staying on the line. First calls and renews, last 30 days, each scored against its own target (8-12 minutes, or 2-4 on a renew); follow-ups are left out. Faded when it rests on fewer than 3 calls.")}
               {head("calls", <>Calls 30d<br />(all time)</>, "num rx-hide-sm rx-wrap", "Real calls / practice calls graded with a call date in the last 30 days. Underneath: every graded call on file. Older calls still count in the rep's profile, trends and coaching review -- the 30-day columns only use the last 30 days.")}
               {superMode && (
                 <>
@@ -353,7 +354,7 @@ export default function Reps() {
                     )}
                   </td>
                 ))}
-                <td className="num" title={r.hsN ? `${r.hsN} Options first call${r.hsN === 1 ? "" : "s"}${r.hsTime ? ` · moved on at ${clock(r.hsTime)} on average` : ""}` : undefined}>
+                <td className="num" title={r.hsN ? `${r.hsN} call${r.hsN === 1 ? "" : "s"}${r.hsTime ? ` · moved on at ${clock(r.hsTime)} on average` : ""}` : undefined}>
                   {r.hs === null ? (
                     <span className="muted">--</span>
                   ) : (

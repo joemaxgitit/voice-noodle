@@ -144,13 +144,14 @@ export default function Insights() {
     void load();
     void supabase
       .from("calls")
-      .select("outcome, outcome_manual, hs:grade->spotlights->hardship->moved_on_at, pickup:grade->spotlights->turndown->>pickup, even:grade->spotlights->turndown->>options_even")
+      .select("outcome, outcome_manual, hs:grade->spotlights->hardship->moved_on_at, hst:grade->spotlights->hardship->>target, pickup:grade->spotlights->turndown->>pickup, even:grade->spotlights->turndown->>options_even")
       .neq("source", "roleplay")
       .eq("status", "graded")
       .not("grade->spotlights", "is", null)
       .order("created_at", { ascending: false })
       .limit(1000)
-      .then(({ data }) => setSpot(((data || []) as { outcome: string | null; outcome_manual: string | null; hs: number | null; pickup: string | null; even: string | null }[]).map((x) => ({ ...x, manual: x.outcome_manual }))));
+      // The 8-12 minute bins are about first calls: a renew's hardship (2-4 minute target) is left out of them.
+      .then(({ data }) => setSpot(((data || []) as { outcome: string | null; outcome_manual: string | null; hs: number | null; hst: string | null; pickup: string | null; even: string | null }[]).map((x) => ({ ...x, hs: x.hst === "renew" ? null : x.hs, manual: x.outcome_manual }))));
   }, [load, supabase]);
 
   const nG = calls.filter((c) => c.retention === "graduated").length;

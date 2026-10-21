@@ -114,7 +114,8 @@ export default function Overview({ ctx }: { ctx: Ctx }) {
           // Spotlights on real calls, last 30 days: how long hardship ran, and the turndown pickup.
           const sp = real.filter((c) => t(c) >= now - 30 * DAY && c.spotlights);
           if (!sp.length) return null;
-          const mins = sp.map((c) => (c.spotlights!.hardship?.moved_on_at ?? 0) / 60).filter((m) => m > 0);
+          // Minutes against the 8-12 target: renew calls (2-4 minute target) are left out of this average.
+          const mins = sp.filter((c) => c.spotlights!.hardship?.target !== "renew").map((c) => (c.spotlights!.hardship?.moved_on_at ?? 0) / 60).filter((m) => m > 0);
           const avgMin = mins.length ? mins.reduce((a, b) => a + b, 0) / mins.length : null;
           const td = sp.filter((c) => c.spotlights!.turndown?.happened);
           const strong = td.filter((c) => c.spotlights!.turndown?.pickup === "strong").length;

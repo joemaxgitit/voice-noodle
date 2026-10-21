@@ -231,6 +231,8 @@ export type Spotlights = {
     parts?: HardshipParts;
     /** 0-100, weighted from parts (see hardshipScoreOf). */
     score?: number | null;
+    /** "renew": judged against the renew target (2-4 minutes), not 8-12. */
+    target?: "renew";
   };
   turndown?: {
     happened: boolean;
@@ -247,7 +249,20 @@ export type Spotlights = {
 
 /** The hardship target on this team: keep the client on vulnerable topics until 8-12 minutes from the start of the call. */
 export const HARDSHIP_TARGET = { from: 8 * 60, to: 12 * 60 };
-export const hardshipBand = (secs: number) => (secs >= HARDSHIP_TARGET.from ? "good" : secs >= 5 * 60 ? "fair" : "poor");
+export const hardshipBand = (secs: number, target?: string) =>
+  target === "renew"
+    ? // Renew: 2-4 minutes is the target; a little either side is fine; under a minute or past 6 isn't.
+      secs >= 2 * 60 && secs <= 4 * 60
+      ? "good"
+      : secs >= 60 && secs <= 6 * 60
+        ? "fair"
+        : "poor"
+    : secs >= HARDSHIP_TARGET.from
+      ? "good"
+      : secs >= 5 * 60
+        ? "fair"
+        : "poor";
+export const hardshipTargetLabel = (target?: string) => (target === "renew" ? "target 2–4 min (renew)" : "target 8–12 min");
 
 export type Grade = {
   speaker_roles: { speaker: string; role: Role }[];

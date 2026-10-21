@@ -35,6 +35,7 @@ import {
   type CallCost,
   type GradeVersion,
   hardshipBand,
+  hardshipTargetLabel,
   HARDSHIP_PART_LABEL,
   HARDSHIP_WEIGHTS,
   type HardshipParts,
@@ -1159,8 +1160,8 @@ export default function CallDetail() {
                         ) : (
                           <>
                             {typeof hs.score === "number" && <span className={`pill ${scoreBand(hs.score)}`}>score {hs.score}</span>}{" "}
-                            <span className={`pill ${hardshipBand(hs.moved_on_at)}`}>moved on at {clock(hs.moved_on_at)}</span>{" "}
-                            <small className="muted">target 8–12 min</small>
+                            <span className={`pill ${hardshipBand(hs.moved_on_at, hs.target)}`}>moved on at {clock(hs.moved_on_at)}</span>{" "}
+                            <small className="muted">{hardshipTargetLabel(hs.target)}</small>
                           </>
                         )}
                         {hs.parts && !(g.spotlights.followup?.kind === "followup" && hs.moved_on_at === 0) && (

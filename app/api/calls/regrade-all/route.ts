@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { requireAdmin, log } from "@/lib/callsServer";
-import { GRADER_VERSION, prepareGrade } from "@/lib/gradeCall";
+import { CURRENT_FROM, GRADER_VERSION, prepareGrade } from "@/lib/gradeCall";
 import { kick } from "@/lib/chain";
 
 export const runtime = "nodejs";
@@ -19,19 +19,22 @@ export const maxDuration = 300;
 
 const PER_RUN = 2;
 
-type Row = { id: string; status: string; call_date: string | null; created_at: string; updated_at: string; ver: string | null };
+type Row = { id: string; status: string; call_date: string | null; created_at: string; updated_at: string; ver: string | null; script_id: string | null };
 
 async function stale(supabase: Awaited<ReturnType<typeof requireAdmin>> extends infer T ? (T extends { supabase: infer S } ? S : never) : never) {
   const { data, error } = await supabase
     .from("calls")
-    .select("id, status, call_date, created_at, updated_at, ver:grade->>grader_version")
+    .select("id, status, call_date, created_at, updated_at, script_id, ver:grade->>grader_version")
     .in("status", ["graded", "grading"])
     .not("transcript", "is", null)
     .not("script_id", "is", null)
     .limit(5000);
   if (error) return { error: error.message, todo: [] as Row[], grading: 0 };
   const rows = (data || []) as Row[];
-  const old = rows.filter((r) => (Number(r.ver) || 1) < GRADER_VERSION);
+  // Renew calls (scripts that continue into another) may need a newer version than the rest.
+  const { data: sc } = await supabase.from("scripts").select("id, continues_into");
+  const renew = new Set(((sc || []) as { id: string; continues_into: string | null }[]).filter((x) => x.continues_into).map((x) => x.id));
+  const old = rows.filter((r) => (Number(r.ver) || 1) < (renew.has(r.script_id ?? "") ? CURRENT_FROM.renew : CURRENT_FROM.other));
   const recent = Date.now() - 10 * 60_000;
   return {
     error: "",
