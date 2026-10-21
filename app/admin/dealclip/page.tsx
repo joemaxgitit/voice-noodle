@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { readSheet } from "@/lib/xlsx";
 import { createClient } from "@/lib/supabase/client";
-import { matchRep } from "@/lib/kpi";
+import { matchRep, parseReport, kindFromFile } from "@/lib/kpi";
 import { exportDateFromFile } from "@/lib/kpi";
 import { fmtDay } from "@/lib/rotation";
 import { clipOf, exportHour, readClip, round1, throughDay, twoADay, workDays, type ClipRow } from "@/lib/dealclip";
@@ -40,9 +40,13 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 /**
  * Morning Deal Clip. Drop last night's month-to-date Sales Dashboard and
  * get the team ranked by deals with month-end projections, ready to post.
- * Copying it for the sales chat also saves the morning's numbers onto each
- * rep's profile (super mode). Reps never see this page.
+ * Dropping the file saves the morning's numbers onto each rep's profile and
+ * files the dashboard as this month's KPI report (month to date), so the
+ * Reps table, KPI tab, one-on-ones and coaching reviews stay current.
+ * Reps never see this page.
  */
+const MTD_TITLE = "Sales dashboard (month to date)";
+
 export default function DealClip() {
   const [file, setFile] = useState("");
   const [rows, setRows] = useState<ClipRow[] | null>(null);
@@ -63,6 +67,9 @@ export default function DealClip() {
   const [copied, setCopied] = useState(false);
   const [over, setOver] = useState(false);
   const [saved, setSaved] = useState("");
+  // The dropped file itself, and whether its numbers still need saving (they save on drop now, not only on Copy).
+  const [fileObj, setFileObj] = useState<File | null>(null);
+  const [pending, setPending] = useState(false);
   const [vindico, setVindico] = useState<{ id: string; full_name: string | null; kpi_name: string | null }[]>([]);
   useEffect(() => {
     const supabase = createClient();
@@ -82,6 +89,8 @@ export default function DealClip() {
       const t = throughDay(exportDateFromFile(f.name), exportHour(f.name));
       const w = workDays(t);
       setFile(f.name);
+      setFileObj(f);
+      setPending(true);
       setRows(r);
       setHidden(new Set(r.filter((x) => x.status && !/active/i.test(x.status)).map((x) => x.name)));
       setThrough(t);
@@ -144,7 +153,90 @@ export default function DealClip() {
   }
 
   /** Keep this morning's numbers on each rep's profile. Same day again replaces it. */
-  async function snapshot(name: string) {
+  // As soon as a dashboard is dropped and read: save the morning's numbers to each rep's profile,
+  // and file the dashboard as this month's KPI report (month to date) so every page shows the latest numbers.
+  useEffect(() => {
+    if (!pending || !through || !ranked.length || !fileObj) return;
+    setPending(false);
+    void (async () => {
+      await snapshot(title.trim(), true);
+      const msg = await fileMonthToDate(fileObj, through);
+      setSaved(`Saved this morning's numbers to each rep's profile${msg ? ` and ${msg}` : ""}.`);
+      setTimeout(() => setSaved(""), 6000);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, through, ranked, fileObj]);
+
+  /**
+   * Files the dropped Sales Dashboard as this month's KPI report, period = 1st of the month to the dashboard's
+   * "through" day. Each morning's drop replaces the earlier month-to-date one; a month's last drop stays as its
+   * final report. A report already on file for later in the same month is left alone.
+   */
+  async function fileMonthToDate(f: File, day: string): Promise<string> {
+    if (kindFromFile(f.name) !== "sales_dashboard") return "";
+    const supabase = createClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session) return "";
+    const { data: me } = await supabase.from("profiles").select("org_id").eq("id", session.user.id).single();
+    const orgId = me?.org_id as string | undefined;
+    if (!orgId) return "";
+    const start = `${day.slice(0, 7)}-01`;
+    const { data: same } = await supabase
+      .from("kpi_reports")
+      .select("id, period_end, title")
+      .eq("kind", "sales_dashboard")
+      .gte("period_end", start)
+      .lte("period_end", `${day.slice(0, 7)}-31`);
+    const list = (same || []) as { id: string; period_end: string; title: string }[];
+    if (list.some((r) => r.period_end > day)) return "";
+    let parsed;
+    try {
+      parsed = parseReport(readSheet(f.name, new Uint8Array(await f.arrayBuffer())));
+    } catch {
+      return "";
+    }
+    if (!parsed.rows.length) return "";
+    const { data: people } = await supabase.from("profiles").select("id, full_name, kpi_name").eq("org_id", orgId);
+    const id = crypto.randomUUID();
+    const path = `${orgId}/reports/${id}-${f.name.replace(/[^\w.-]+/g, "_")}`;
+    const up = await supabase.storage.from("rep-files").upload(path, f, { contentType: f.type || undefined });
+    const { error: e1 } = await supabase.from("kpi_reports").insert({
+      id,
+      org_id: orgId,
+      kind: "sales_dashboard",
+      title: MTD_TITLE,
+      file_name: f.name,
+      path: up.error ? null : path,
+      period_start: start,
+      period_end: day,
+      columns: parsed.columns,
+      uploaded_by: session.user.id,
+    });
+    if (e1) return "";
+    const rows = parsed.rows.map((r) => ({
+      org_id: orgId,
+      report_id: id,
+      rep_id: matchRep(r.salesman, (people || []) as { id: string; full_name: string | null; kpi_name: string | null }[]),
+      salesman: r.salesman,
+      data: r.data,
+    }));
+    const { error: e2 } = await supabase.from("kpi_rows").insert(rows);
+    if (e2) {
+      await supabase.from("kpi_reports").delete().eq("id", id);
+      return "";
+    }
+    // The earlier month-to-date drops for this month are now out of date.
+    const old = list.filter((r) => r.title === MTD_TITLE && r.period_end <= day).map((r) => r.id);
+    if (old.length) {
+      await supabase.from("kpi_rows").delete().in("report_id", old);
+      await supabase.from("kpi_reports").delete().in("id", old);
+    }
+    return "updated this month's KPI report";
+  }
+
+  async function snapshot(name: string, quiet = false) {
     const supabase = createClient();
     const {
       data: { session },
@@ -167,6 +259,7 @@ export default function DealClip() {
       saved_by: session.user.id,
     }));
     const { error } = await supabase.from("deal_clips").upsert(payload, { onConflict: "org_id,day,salesman" });
+    if (quiet) return;
     setSaved(
       error
         ? /deal_clips|does not exist/i.test(error.message)
@@ -183,8 +276,8 @@ export default function DealClip() {
       <h1>Deal Clip</h1>
       <p className="muted" style={{ maxWidth: "66ch" }}>
         Each morning, drop last night&rsquo;s month-to-date Sales Dashboard. The team is ranked by deals with a month-end projection. The clip is
-        deals per work day so far × work days in the month. Switch on &ldquo;If Two a Day&rdquo; when you want it: deals so far + 2 per work day left. Copying it
-        also saves the morning&rsquo;s numbers to each rep&rsquo;s profile.
+        deals per work day so far × work days in the month. Switch on &ldquo;If Two a Day&rdquo; when you want it: deals so far + 2 per work day left. Dropping the
+        file saves the morning&rsquo;s numbers to each rep&rsquo;s profile and keeps this month&rsquo;s KPI report up to date.
       </p>
       {error && <div className="error">{error}</div>}
       {saved && <div className="status">{saved}</div>}
