@@ -479,8 +479,7 @@ export default function TimingEditor({
 
       <h2>3 &middot; Timing</h2>
       <p className="hint">
-        Alignment listens to your recording and finds every word for you. Tap
-        by hand only if it gets something wrong.
+        ElevenLabs listens to your recording and lines up every word for you.
       </p>
 
       <div className="row">
@@ -492,9 +491,9 @@ export default function TimingEditor({
         )}
       </div>
 
-      <p className="hint" style={{ marginTop: 16 }}>
-        Or tap it manually:
-      </p>
+      {/* ElevenLabs does the timing; tapping by hand is only a fallback, so it stays tucked away. */}
+      <details style={{ marginTop: 16 }} open={armed || undefined}>
+      <summary className="hint" style={{ cursor: "pointer" }}>Fix the timing by hand (only if the auto-align got something wrong)</summary>
       <p className="hint">
         Press start, then hit <kbd>Space</kbd> the instant each new phrase
         begins. The first line is marked for you. <kbd>Backspace</kbd> undoes
@@ -548,6 +547,7 @@ export default function TimingEditor({
           </li>
         ))}
       </ol>
+      </details>
 
       <h2>4 &middot; Preview and publish</h2>
       <div className="script">

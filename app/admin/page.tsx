@@ -167,7 +167,7 @@ function Admin() {
       </div>
       <h1>Segments</h1>
       <p className="muted">
-        Pick a segment to upload a master recording and tap its phrase timing.
+        Pick a segment to upload its master recording. ElevenLabs lines up the words for the read-along automatically.
       </p>
 
       <PracticeToggle />
