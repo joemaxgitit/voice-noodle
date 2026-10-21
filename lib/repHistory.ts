@@ -36,6 +36,8 @@ export type HistCall = {
   close_quality: string | null;
   spotlights?: Spotlights | null;
   line_control?: LineControl | null;
+  /** Practice calls: the client archetype the mock client was played as. */
+  archetype?: string | null;
   retention?: string | null;
 };
 
@@ -194,6 +196,7 @@ const CALL_COLS = [
   "close_quality:grade->>close_quality",
   "spotlights:grade->spotlights",
   "line_control:grade->line_control",
+  "archetype:roleplay->archetype->>name",
   "retention",
 ].join(", ");
 

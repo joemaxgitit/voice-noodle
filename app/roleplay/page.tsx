@@ -250,7 +250,7 @@ export default function Roleplay() {
       const { VoiceConversation } = await import("@elevenlabs/client");
       const c = await VoiceConversation.startSession({
         signedUrl: body.signedUrl,
-        dynamicVariables: body.dynamicVariables ?? { call_mode: "This is the FIRST call. You've never spoken with this rep or Lionside before." },
+        dynamicVariables: body.dynamicVariables ?? { call_mode: "This is the FIRST call. You've never spoken with this rep or Lionside before.", client_type: "No special mix today: be yourself exactly as described above." },
         connectionType: "websocket",
         onConnect: ({ conversationId }) => {
           convId.current = conversationId;

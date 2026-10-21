@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireMember, signedUrl, xiKey } from "@/lib/roleplayServer";
-import { callModeText, type Persona, type RoleplayInfo, type RoleplayLang, type RoleplayMode } from "@/lib/roleplay";
+import { archetypeText, callModeText, type ArchetypeMix, type Persona, type RoleplayInfo, type RoleplayLang, type RoleplayMode } from "@/lib/roleplay";
 
 export const runtime = "nodejs";
 
@@ -65,6 +65,32 @@ export async function POST(request: Request) {
     if (g?.summary) previous = `${g.summary} It ended: ${g.furthest_point ?? "without a decision"}.`;
   }
 
+  // Today's client type: one of the approved archetypes, picked at random (the common ones more often).
+  // Read with the server key -- the archetypes are managers-only -- and never shown on the rep's screen.
+  let mix: ArchetypeMix | null = null;
+  try {
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (key && base) {
+      const q = new URLSearchParams({ select: "body", org_id: `eq.${orgId}`, status: "eq.approved", order: "approved_at.desc", limit: "1" });
+      const r = await fetch(`${base}/rest/v1/client_archetypes?${q}`, { headers: { apikey: key, Authorization: `Bearer ${key}` }, cache: "no-store", signal: AbortSignal.timeout(8_000) });
+      const rows = r.ok ? ((await r.json()) as { body: { archetypes?: (ArchetypeMix & { clients?: number })[] } }[]) : [];
+      const list = rows[0]?.body?.archetypes ?? [];
+      const total = list.reduce((a, x) => a + Math.max(1, Number(x.clients) || 1), 0);
+      let pick = Math.random() * total;
+      for (const a of list) {
+        pick -= Math.max(1, Number(a.clients) || 1);
+        if (pick <= 0) {
+          mix = a;
+          break;
+        }
+      }
+    }
+  } catch {
+    mix = null;
+  }
+  const clientType = archetypeText(mix);
+
   const info: RoleplayInfo = {
     mode,
     previous,
@@ -74,6 +100,7 @@ export async function POST(request: Request) {
     agent_id: agentId,
     conversation_id: null,
     started_at: new Date().toISOString(),
+    archetype: mix ? { name: mix.name, text: clientType } : null,
   };
 
   const { data: call, error: insErr } = await supabase
@@ -98,7 +125,7 @@ export async function POST(request: Request) {
 
   try {
     const url = await signedUrl(agentId);
-    return NextResponse.json({ callId: call.id, signedUrl: url, info, dynamicVariables: { call_mode: callModeText(mode, previous) } });
+    return NextResponse.json({ callId: call.id, signedUrl: url, info: { ...info, archetype: null }, dynamicVariables: { call_mode: callModeText(mode, previous), client_type: clientType } });
   } catch (e) {
     await supabase.from("calls").delete().eq("id", call.id);
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 502 });

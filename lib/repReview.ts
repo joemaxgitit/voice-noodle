@@ -93,7 +93,7 @@ const day = (iso: string) => iso.slice(0, 10);
 const cut = (s: string | null | undefined, n: number) => (!s ? "" : s.length > n ? `${s.slice(0, n)}…` : s);
 
 export function callLine(c: HistCall, personas: Map<string, string>): string {
-  const kind = c.source === "roleplay" ? `PRACTICE with mock client ${personas.get(c.persona_id || "") || "?"}` : `REAL client call${c.client_label ? ` (${c.client_label})` : ""}`;
+  const kind = c.source === "roleplay" ? `PRACTICE with mock client ${personas.get(c.persona_id || "") || "?"}${c.archetype ? ` played as client type "${c.archetype}"` : ""}` : `REAL client call${c.client_label ? ` (${c.client_label})` : ""}`;
   const outcome = (c.outcome_manual || c.outcome) as Outcome | null;
   const parts = [
     `${day(c.call_date || c.created_at)} | ${kind}`,

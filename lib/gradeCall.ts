@@ -244,8 +244,8 @@ export async function prepareGrade(
   let practice = "";
   if (isPractice) {
     const { data: secret } = await supabase.rpc("roleplay_reveal", { p_call: callId }).maybeSingle();
-    const rp = (call.roleplay as { persona?: string; lang?: string } | null) || {};
-    practice = practiceNote(rp.persona || "the client", (secret as PersonaSecret | null) ?? null);
+    const rp = (call.roleplay as { persona?: string; lang?: string; archetype?: { name: string; text: string } | null } | null) || {};
+    practice = practiceNote(rp.persona || "the client", (secret as PersonaSecret | null) ?? null, rp.archetype ?? null);
     const mode = (call.roleplay as { mode?: string; previous?: string | null } | null) || {};
     if (mode.mode === "followup")
       practice += `\nThis practice call was a FOLLOW-UP: the client had spoken with Lionside before and put it off.${mode.previous ? ` What the client was told about last time: ${mode.previous}` : ""} Grade it as a follow-up: stages that belonged to that earlier call are "not_reached" with evidence starting "Covered earlier (practice set-up)", skills with no fair chance for that reason score null, set spotlights.followup.kind to "followup", and judge how the rep re-opened and whether they got to the bottom of the stall.\n`;

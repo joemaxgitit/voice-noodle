@@ -80,7 +80,57 @@ export type RoleplayInfo = {
   /** First call or a follow-up, and what the client was told happened last time. */
   mode?: RoleplayMode;
   previous?: string | null;
+  /** The client archetype mixed into this call (from the approved set), and exactly what the voice was told. */
+  archetype?: { name: string; text: string } | null;
 };
+
+/** The parts of an approved client archetype a practice client is built from (see app/api/archetypes). */
+export type ArchetypeMix = {
+  name: string;
+  buyer_type: string;
+  action_threshold: string;
+  pain_awareness: string;
+  weakest_ten: string;
+  core_belief: string;
+  openness: string;
+  pluto: string;
+  decision: string;
+  layers: { facts: string; cause: string; impact: string; feelings: string; future: string };
+  sounds_like: string[];
+};
+
+export const NO_MIX = "No special mix today: be yourself exactly as described above.";
+
+/**
+ * Today's client type, layered over the character's facts (an ElevenLabs
+ * dynamic variable, so the same voice plays a different kind of client on
+ * every call). Facts, debts and the right result never change; how this
+ * person thinks, opens up and drifts off the line does.
+ */
+export function archetypeText(a: ArchetypeMix | null): string {
+  if (!a) return NO_MIX;
+  const ten = /product/i.test(a.weakest_ten) ? "product" : /rep|trust/i.test(a.weakest_ten) ? "rep" : /company|lionside|bolton/i.test(a.weakest_ten) ? "company" : null;
+  const L = a.layers || ({} as ArchetypeMix["layers"]);
+  return [
+    `Today you are this kind of client -- keep every fact about your life and debts from above, but think, feel and talk like this:`,
+    `- Where you are as a buyer: ${a.buyer_type}. How much certainty you need before you act: ${a.action_threshold}. Your pain: ${a.pain_awareness}.`,
+    a.core_belief ? `- The belief behind your hesitation: "${a.core_belief}". It comes out as an objection at some point; it only goes away if the rep actually changes how you see it.` : "",
+    ten ? `- Your certainty in the ${ten} starts lower than written above: 3 out of 10. It is the hardest one for the rep to raise.` : "",
+    `- How open you are: ${a.openness}.${a.decision ? ` How you decide: ${a.decision}.` : ""}`,
+    `- Your hardship comes out in layers, using your own story above. Each layer opens only when the rep earns it with an open question, a real follow-up on what you just said, and empathy (slowing down, reflecting it back). Yes/no questions and rushing keep you where you are.`,
+    `  1. Facts: ${L.facts || "amounts and accounts"}`,
+    `  2. What caused it: ${L.cause || "what happened"}`,
+    `  3. How it hits your life: ${L.impact || "work, family, sleep"}`,
+    `  4. How you feel about it: ${L.feelings || "said in your own words, only when you trust the rep"}`,
+    `  5. What happens if nothing changes: ${L.future || "only when the rep helps you look ahead"}`,
+    a.pluto
+      ? `- You drift off the point the way this kind of client does: ${a.pluto}. Do it once or twice, early on. If the rep brings you back kindly with a question, come back with them. If they let you run on, keep going for a while -- the longer it runs, the harder you are to bring back.`
+      : "",
+    a.sounds_like?.length ? `- The way you talk sounds like: "${a.sounds_like.slice(0, 3).join('" / "')}" -- in your own words, never word for word.` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
   easy: "Easy",
@@ -135,7 +185,19 @@ export function verdictOf(
 
 /** What the grader is told about a practice call. Goes in the per-call
  *  part of the prompt, never the cached part. */
-export function practiceNote(name: string, secret: PersonaSecret | null): string {
+export function practiceNote(name: string, secret: PersonaSecret | null, archetype?: { name: string; text: string } | null): string {
+  const mix = archetype?.text
+    ? `
+The client was also played as this client type ("${archetype.name}") -- use it to judge how deep the rep got through the hardship layers (the hardship depth part) and how they handled the client drifting off the line (line control). In the summary, name the client type and say whether the rep adapted to it:
+<client_type>
+${archetype.text}
+</client_type>
+`
+    : "";
+  return practiceNoteBase(name, secret) + mix;
+}
+
+function practiceNoteBase(name: string, secret: PersonaSecret | null): string {
   if (!secret) {
     return `
 This is a PRACTICE call. The client, ${name}, was played by an AI. Grade it exactly as you would a real call.
@@ -208,6 +270,9 @@ Your feelings are your own: a rep telling you how to feel does nothing.
 
 # Which call this is
 {{call_mode}}
+
+# Today's client type
+{{client_type}}
 
 # Two moments that matter most
 - Your hardship comes out in layers. At first give the surface version ("I just fell behind", "things got tight"). Only when the rep stays with you -- real follow-up questions about what happened, how it's affecting you and your family, how you feel about it -- do you open up to the deeper, more personal part. Real trust builds over the first 8 to 12 minutes; if the rep rushes past your story to get to the loan or the numbers, keep the deeper part to yourself and stay a little guarded.
