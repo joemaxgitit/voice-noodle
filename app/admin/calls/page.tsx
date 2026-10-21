@@ -105,6 +105,25 @@ function audioSeconds(file: File): Promise<number | null> {
  * Call monitoring: upload a recording downloaded from the dialer, and it is
  * transcribed (with banking numbers redacted) and graded against the script.
  */
+// The same recording saved twice often gets " (1)" or " - Copy" added to its name.
+function baseName(n: string): string {
+  return n
+    .toLowerCase()
+    .replace(/\.[a-z0-9]{2,5}$/, "")
+    .replace(/(\s*-\s*copy|\s+copy)?(\s*\(\d+\))*$/g, "")
+    .replace(/(\s*-\s*copy|\s+copy)$/g, "")
+    .trim();
+}
+
+async function fileHash(f: File): Promise<string | null> {
+  try {
+    const d = await crypto.subtle.digest("SHA-256", await f.arrayBuffer());
+    return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return null;
+  }
+}
+
 export default function Calls() {
   const supabase = createClient();
   const router = useRouter();
@@ -115,6 +134,7 @@ export default function Calls() {
   const [calls, setCalls] = useState<CallRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [dupe, setDupe] = useState<{ id: string; what: string } | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
   const [vinNote, setVinNote] = useState("");
@@ -417,6 +437,7 @@ export default function Calls() {
 
   async function upload() {
     setError("");
+    setDupe(null);
     if (est && !(await okToSpend(supabase, est.usd, "This call"))) return;
     const typed = repId === NEW_REP ? repName.trim() : "";
     if (!file || !repId || (repId === NEW_REP && !typed) || !scriptId || !me?.org_id) {
@@ -448,6 +469,35 @@ export default function Calls() {
         return;
       }
       seconds = await audioSeconds(file);
+    }
+
+    // Never the same recording twice: same audio bytes, or the same name (ignoring "(1)", "- Copy")
+    // at the same length. The old call has to be deleted before this one can go up.
+    setBusy("Checking it isn't already on file...");
+    const hash = await fileHash(file);
+    let hashCol = true;
+    {
+      let hit: { id: string; client_label: string | null; call_date: string | null } | null = null;
+      if (hash) {
+        const { data, error: hErr } = await supabase.from("calls").select("id, client_label, call_date").eq("file_hash", hash).limit(1);
+        if (hErr) hashCol = false; // column not added yet: the name check still runs
+        else hit = data?.[0] ?? null;
+      }
+      if (!hit) {
+        const base = baseName(file.name);
+        const like = base.replace(/[\\%_]/g, (c) => "\\" + c);
+        const { data } = await supabase.from("calls").select("id, file_name, duration_secs, client_label, call_date").ilike("file_name", `${like}%`).limit(50);
+        hit =
+          ((data || []) as { id: string; file_name: string | null; duration_secs: number | null; client_label: string | null; call_date: string | null }[]).find(
+            (c) => baseName(c.file_name || "") === base && (c.duration_secs == null || seconds == null || Math.abs(c.duration_secs - seconds) <= 2)
+          ) ?? null;
+      }
+      if (hit) {
+        setBusy("");
+        setDupe({ id: hit.id, what: [hit.client_label, hit.call_date].filter(Boolean).join(" · ") });
+        setError("This recording is already on file. Delete that call first if you want to upload it again.");
+        return;
+      }
     }
 
     if (decoded) {
@@ -499,6 +549,7 @@ export default function Calls() {
         ...(upNumber ? { call_number: Number(upNumber) } : {}),
         ...(upHandoff ? { handoff: upHandoff } : {}),
         file_name: file.name,
+        ...(hash && hashCol ? { file_hash: hash } : {}),
         duration_secs: seconds,
         voice,
         status: "uploading",
@@ -762,7 +813,17 @@ export default function Calls() {
           )}
         </div>
 
-        {error && <div className="error">{error}</div>}
+        {error && (
+          <div className="error">
+            {error}
+            {dupe && (
+              <>
+                {" "}
+                <Link href={`/admin/calls/${dupe.id}`}>Open the call on file{dupe.what ? ` (${dupe.what})` : ""}</Link>
+              </>
+            )}
+          </div>
+        )}
         {bleepNote && <div className="status">{bleepNote}</div>}
       </div>
 
