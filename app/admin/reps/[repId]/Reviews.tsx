@@ -77,7 +77,7 @@ export default function Reviews({ ctx }: { ctx: Ctx }) {
         <div className="card rx-working" style={{ marginTop: 14 }}>
           <span className="rx-spin" aria-hidden="true" />
           <span>
-            Reading {working.inputs ? describeInputs(working.inputs) : "everything on record"} and writing the review. You can leave this page; it&rsquo;ll be here when
+            Reading {working.inputs ? describeInputs(ctx.superMode ? working.inputs : { calls: working.inputs.calls, practice: working.inputs.practice, quizzes: working.inputs.quizzes }) : "everything on record"} and writing the review. You can leave this page; it&rsquo;ll be here when
             you come back.
           </span>
         </div>
