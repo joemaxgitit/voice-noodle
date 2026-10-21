@@ -6,7 +6,7 @@ import { hardshipScoreOf, lineScoreOf } from "@/lib/calls";
  * scores, new rules): every graded call on file is then re-graded by itself,
  * oldest first, the next time a manager opens the Calls page.
  */
-export const GRADER_VERSION = 3;
+export const GRADER_VERSION = 4;
 import {
   ROADMAP,
   voiceNotes,
@@ -969,9 +969,17 @@ function askClaude(blocks: { type: string; text: string }[], key: string, strict
                 input_schema: GRADE_SCHEMA,
               },
             ],
-            tool_choice: { type: "tool", name: "submit_grade" },
+            // This model doesn't allow forcing a specific tool, so it's offered and the request says to use it.
+            tool_choice: { type: "auto" },
           }),
-      messages: [{ role: "user", content: blocks }],
+      messages: [
+        {
+          role: "user",
+          content: strict
+            ? blocks
+            : [...blocks, { type: "text", text: "Submit the grade by calling the submit_grade tool once, with every field filled in. Do not write the grade as text." }],
+        },
+      ],
     }),
     signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
   });
