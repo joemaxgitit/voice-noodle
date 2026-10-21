@@ -1,5 +1,6 @@
 "use client";
 
+import SegmentRecorder from "./SegmentRecorder";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { recordingMatchesScript } from "@/lib/scriptSync";
@@ -70,6 +71,8 @@ export default function TimingEditor({
 
   const [file, setFile] = useState<File | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  // A take recorded on this page is aligned by itself as soon as it's kept.
+  const [alignWhenReady, setAlignWhenReady] = useState(false);
 
   const [raw, setRaw] = useState(
     inSync && current?.timings?.length
@@ -178,6 +181,13 @@ export default function TimingEditor({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [armed, lines.length, audio]);
+
+  useEffect(() => {
+    if (!alignWhenReady || !file) return;
+    setAlignWhenReady(false);
+    void autoAlign();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alignWhenReady, file]);
 
   async function autoAlign() {
     if (!file) {
@@ -445,11 +455,22 @@ export default function TimingEditor({
       </p>
 
       <h2>1 &middot; Recording</h2>
-      <input
-        type="file"
-        accept="audio/*"
-        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+      <p className="hint">Record it right here, or upload a file you recorded somewhere else.</p>
+      <SegmentRecorder
+        name={segment.segment_code}
+        onTake={(f) => {
+          setFile(f);
+          setAlignWhenReady(true);
+        }}
       />
+      <label className="hint" style={{ display: "block", marginTop: 12 }}>
+        Or upload a file:{" "}
+        <input
+          type="file"
+          accept="audio/*"
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+        />
+      </label>
       {audioUrl ? (
         <audio
           ref={setAudioEl}
@@ -461,7 +482,7 @@ export default function TimingEditor({
         />
       ) : (
         <p className="hint" style={{ marginTop: 12 }}>
-          Choose an audio file to time.
+          Record it or choose a file, then align it below.
         </p>
       )}
 
