@@ -268,7 +268,7 @@ export type Grade = {
   outcome?: Outcome;
   outcome_note?: string;
   turning_points?: TurningPoint[];
-  close_quality?: "solid" | "fragile" | "n/a";
+  close_quality?: "solid" | "ok" | "fragile" | "n/a";
   close_quality_reason?: string;
   /** Hardship depth and the loan-turndown pickup. Extra awareness only; never in either score. */
   spotlights?: Spotlights;

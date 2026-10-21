@@ -216,7 +216,7 @@ export default function PracticeResult() {
               <div style={{ fontSize: 18, fontWeight: 700 }}>
                 {OUTCOME_LABEL[row.outcome as Outcome] ?? row.outcome ?? "--"}
                 {g.close_quality && g.close_quality !== "n/a" ? (
-                  <span className={`pill ${g.close_quality === "solid" ? "good" : "poor"}`} style={{ marginLeft: 8 }}>
+                  <span className={`pill ${g.close_quality === "solid" ? "good" : g.close_quality === "ok" ? "fair" : "poor"}`} style={{ marginLeft: 8 }}>
                     {g.close_quality}
                   </span>
                 ) : null}

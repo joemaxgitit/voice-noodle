@@ -608,7 +608,7 @@ export default function Calls() {
       const set = calls.filter((c) => outcomeOf(c) === "enrolled" && c.close_quality === q && c.retention);
       return { n: set.length, cancelled: set.filter((c) => c.retention === "cancelled").length };
     };
-    return { fragile: tally("fragile"), solid: tally("solid") };
+    return { fragile: tally("fragile"), ok: tally("ok"), solid: tally("solid") };
   }, [calls]);
 
   // Average graded score per rep, for the filter view.
@@ -803,10 +803,11 @@ export default function Calls() {
         </span>
       </div>
 
-      {(closeCheck.fragile.n > 0 || closeCheck.solid.n > 0) && (
+      {(closeCheck.fragile.n > 0 || closeCheck.ok.n > 0 || closeCheck.solid.n > 0) && (
         <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-          Closes with retention entered: fragile {closeCheck.fragile.cancelled}/{closeCheck.fragile.n} cancelled
-          {" \u00b7 "}solid {closeCheck.solid.cancelled}/{closeCheck.solid.n} cancelled
+          How the grader&rsquo;s close calls held up (clients with a known result): fragile {closeCheck.fragile.cancelled} of {closeCheck.fragile.n} cancelled
+          {" \u00b7 "}normal {closeCheck.ok.cancelled} of {closeCheck.ok.n}
+          {" \u00b7 "}solid {closeCheck.solid.cancelled} of {closeCheck.solid.n}
         </p>
       )}
 

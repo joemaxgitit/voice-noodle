@@ -6,7 +6,7 @@ import { hardshipScoreOf, lineScoreOf } from "@/lib/calls";
  * scores, new rules): every graded call on file is then re-graded by itself,
  * oldest first, the next time a manager opens the Calls page.
  */
-export const GRADER_VERSION = 2;
+export const GRADER_VERSION = 3;
 import {
   ROADMAP,
   voiceNotes,
@@ -253,6 +253,8 @@ export async function prepareGrade(
 
   // A real call in a client journey: earlier calls with the same client ID, so a follow-up isn't marked down for stages done before.
   if (!isPractice) practice = await journeyNote(supabase, callId, script?.title ?? "");
+  // How the close calls have held up on this team's real retention, so the fragile read stays honest.
+  if (!isPractice) practice += await closeCalibration(supabase);
 
   // After the claim: a rep grading their own practice call can only read
   // the managers' lessons while that call is marked as grading.
@@ -297,6 +299,38 @@ export async function prepareGrade(
         cost: (call.cost as CallCost | null) || {},
       }),
   };
+}
+
+/**
+ * The grader's close calls checked against what actually happened: of the
+ * enrollments it called fragile, how many lasted (6+ payments or graduated)
+ * and how many cancelled. If "fragile" keeps landing on sales that stick, the
+ * grader is told to be stricter about what counts.
+ */
+async function closeCalibration(supabase: Supa): Promise<string> {
+  const { data } = await supabase
+    .from("calls")
+    .select("retention, cq:grade->>close_quality")
+    .eq("status", "graded")
+    .neq("source", "roleplay")
+    .in("retention", ["graduated", "paid6", "cancelled"])
+    .limit(2000);
+  const rows = (data || []) as { retention: string; cq: string | null }[];
+  const tally = (q: string) => {
+    const xs = rows.filter((r) => r.cq === q);
+    return { n: xs.length, lasted: xs.filter((r) => r.retention !== "cancelled").length, cancelled: xs.filter((r) => r.retention === "cancelled").length };
+  };
+  const f = tally("fragile");
+  const o = tally("ok");
+  const so = tally("solid");
+  if (f.n + o.n + so.n < 3) return "";
+  return `
+<close_track_record>
+How earlier close calls on this team held up (clients whose result is known): called fragile ${f.n} -- ${f.lasted} lasted 6+ payments or graduated, ${f.cancelled} cancelled; called ok ${o.n} -- ${o.lasted} lasted, ${o.cancelled} cancelled; called solid ${so.n} -- ${so.lasted} lasted, ${so.cancelled} cancelled.${
+    f.n >= 3 && f.lasted >= f.cancelled ? " Most clients called fragile actually stuck with the program, so \"fragile\" has been used too freely: keep it for a specific red flag still standing at the signature." : ""
+  }
+</close_track_record>
+`;
 }
 
 /*
@@ -552,7 +586,7 @@ outcome: how the call ended for the sale -- "enrolled" (agreement signed or paym
 
 turning_points: the 2 or 3 moments that most moved the client toward yes or away from it. time (seconds), moment (what happened, in a few words), direction ("toward" or "away"), why (one sentence). On an enrolled call these explain what earned the yes; on a lost call, where it was lost. Do not award credit for the close itself -- explain what caused it.
 
-close_quality: only for an enrolled call, otherwise "n/a". "solid" if the client clearly understood what they agreed to (not a loan, not settlement, payments go to Bolton, accounts go to collections, participation required) and chose it freely. "fragile" if they signed while confused, pressured, unable to afford the payment, or after the rep contradicted the acknowledgements -- a fragile close is a cancellation risk. close_quality_reason: one sentence, or "".
+close_quality: only for an enrolled call, otherwise "n/a". Judge the client's state AT THE MOMENT THEY SIGNED, not the bumps along the way -- confusion or hesitation that the rep cleared up before the signature is normal selling, not a risk. "solid": by the end the client showed in their own words that they understood the core points (not a loan, not settlement, payments go to Bolton, accounts go to collections, they have to take part), chose it freely, and the payment fits their budget. "ok": the usual enrollment -- some bumps, small gaps or a rushed moment, but nothing that leaves the client signing on a false belief; most enrollments are "ok". "fragile": ONLY when a specific red flag is still standing when they sign -- they still clearly believe something false about a core point (it's a loan, the company pays their creditors, nothing will go to collections), the payment is plainly beyond what they said they can afford, they were pushed past a clear "no", or the rep promised something that contradicts the acknowledgements and never corrected it. A fragile close must name that moment. close_quality_reason: one sentence, or "".
 
 spotlights: two moments that decide most sales on this team. They are EXTRA awareness only. Grade everything else exactly as described above, and never let these change any other field or either score.
 - hardship: the hardship / intelligence-gathering stretch. On this team the strongest calls keep the client talking about personal, vulnerable things (what happened, how it hits their family, how they feel about it) until roughly 8-12 minutes from the START of the call before moving on to the loan, credit report or options. moved_on_at: seconds from the start of the call when the rep moved off hardship (0 if the call never reached hardship; the call's end if they never moved on). vulnerable_secs: about how many seconds the client spent on genuinely personal, vulnerable talk. deepest: what the client opened up about, in a few words, no names. best_question: the rep's best follow-up that took it deeper (a quote), or "". cut_short and cut_short_time: the moment the rep cut it short while the client was still opening up (a quote, and seconds), or "" and 0. read: one plain sentence.
@@ -1087,7 +1121,7 @@ function clean(g: Grade) {
     x.direction = one(x.direction, ["toward", "away"] as const, "away");
   }
   g.outcome = one(g.outcome, ["enrolled", "callback", "not_interested", "hung_up", "other"] as const, "other");
-  g.close_quality = one(g.close_quality, ["solid", "fragile", "n/a"] as const, "n/a");
+  g.close_quality = one(g.close_quality, ["solid", "ok", "fragile", "n/a"] as const, "n/a");
   const sp = g.spotlights;
   if (sp?.hardship) {
     sp.hardship.moved_on_at = t(sp.hardship.moved_on_at) ?? 0;

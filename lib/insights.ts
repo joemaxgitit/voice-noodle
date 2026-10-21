@@ -115,7 +115,7 @@ export function compare(calls: InsightCall[]): Metric[] {
       "Close and compliance",
       "Solid close",
       "pct",
-      (c) => (c.grade.close_quality === "solid" ? 100 : c.grade.close_quality === "fragile" ? 0 : null),
+      (c) => (c.grade.close_quality === "solid" ? 100 : c.grade.close_quality === "ok" ? 50 : c.grade.close_quality === "fragile" ? 0 : null),
       calls,
       "share of closes the grader called solid"
     )

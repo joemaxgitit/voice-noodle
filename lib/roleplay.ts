@@ -163,7 +163,8 @@ export function verdictOf(
   closeQuality: string | null | undefined
 ): { ok: boolean | null; text: string } {
   const enrolled = outcome === "enrolled";
-  const solid = enrolled && closeQuality === "solid";
+  // "ok" is the usual enrollment: no red flag standing at the signature.
+  const solid = enrolled && (closeQuality === "solid" || closeQuality === "ok");
 
   if (right === "no_sale") {
     return enrolled

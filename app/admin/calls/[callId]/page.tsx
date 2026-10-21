@@ -996,8 +996,8 @@ export default function CallDetail() {
                     ))}
                   </select>
                   {g.close_quality && g.close_quality !== "n/a" && (
-                    <span className={`pill ${g.close_quality === "solid" ? "good" : "poor"}`}>
-                      {g.close_quality === "solid" ? "Solid close" : "Fragile close \u00b7 cancel risk"}
+                    <span className={`pill ${g.close_quality === "solid" ? "good" : g.close_quality === "ok" ? "fair" : "poor"}`}>
+                      {g.close_quality === "solid" ? "Solid close" : g.close_quality === "ok" ? "Normal close" : "Fragile close \u00b7 cancel risk"}
                     </span>
                   )}
                 </div>
