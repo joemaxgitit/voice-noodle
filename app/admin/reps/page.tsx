@@ -4,7 +4,7 @@ import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { scoreBand, callAt, hardshipBand } from "@/lib/calls";
+import { scoreBand, callAt } from "@/lib/calls";
 import { fmtKpi, headlineValue, monthlyReports, monthOf, fmtMonth, type KpiReport, type KpiRow } from "@/lib/kpi";
 import DropBox from "./DropBox";
 import { useMode } from "@/lib/superMode";
@@ -24,6 +24,7 @@ type CallLite = {
   script_id: string | null;
   tens: { product?: number | null; rep?: number | null; company?: number | null } | null;
   hs: number | null;
+  hss: number | null;
   fu: string | null;
 };
 type SortKey = "name" | "slp" | "script" | "product" | "rep" | "company" | "hardship" | "calls" | "review";
@@ -73,7 +74,7 @@ export default function Reps() {
       // By when the call happened (call date), falling back to upload date when no call date was given.
       supabase
         .from("calls")
-        .select("rep_id, created_at, call_date, source, slp_score, score, status, script_id, tens:grade->three_tens, hs:grade->spotlights->hardship->moved_on_at, fu:grade->spotlights->followup->>kind")
+        .select("rep_id, created_at, call_date, source, slp_score, score, status, script_id, tens:grade->three_tens, hs:grade->spotlights->hardship->moved_on_at, hss:grade->spotlights->hardship->score, fu:grade->spotlights->followup->>kind")
         .or(`call_date.gte.${since.slice(0, 10)},and(call_date.is.null,created_at.gte.${since})`)
         .not("rep_id", "is", null),
       supabase.from("kpi_reports").select("*"),
@@ -168,8 +169,10 @@ export default function Reps() {
         const tv = Object.entries(tens).filter(([, v]) => v !== null) as [string, number][];
         const weakest = tv.length > 1 ? tv.reduce((a, b) => (b[1] < a[1] ? b : a))[0] : null;
         // Hardship: Options Script first calls only (renew calls have no hardship target; follow-ups covered it before).
-        const hsCalls = now30.filter((c) => !renewScripts.has(c.script_id ?? "") && c.fu !== "followup" && typeof c.hs === "number" && c.hs > 0);
-        const hs = hsCalls.length ? hsCalls.reduce((a, c) => a + (c.hs as number), 0) / hsCalls.length : null;
+        const hsCalls = now30.filter((c) => !renewScripts.has(c.script_id ?? "") && c.fu !== "followup" && typeof c.hss === "number");
+        const hs = avg(hsCalls.map((c) => c.hss as number));
+        const timed = hsCalls.filter((c) => typeof c.hs === "number" && (c.hs as number) > 0);
+        const hsTime = timed.length ? timed.reduce((a, c) => a + (c.hs as number), 0) / timed.length : null;
         const kr = kpi?.curRows.find((r) => r.rep_id === p.id);
         const kp = kpi?.prevRows.find((r) => r.rep_id === p.id);
         const deals = kr && kpi ? headlineValue(kr, kpi.cur.columns, "deals") : null;
@@ -186,6 +189,7 @@ export default function Reps() {
           weakest,
           hs,
           hsN: hsCalls.length,
+          hsTime,
           real: now30.filter((c) => c.source !== "roleplay").length,
           practice: now30.filter((c) => c.source === "roleplay").length,
           deals,
@@ -267,7 +271,7 @@ export default function Reps() {
               {head("product", <>Product<br />(Ten 1)</>, "num rx-hide-sm rx-wrap", "Client's certainty in the product, 1-10, last 30 days")}
               {head("rep", <>Rep<br />(Ten 2)</>, "num rx-hide-sm rx-wrap", "Client's trust in the rep, 1-10, last 30 days")}
               {head("company", <>Company<br />(Ten 3)</>, "num rx-hide-sm rx-wrap", "Client's certainty in the company, 1-10, last 30 days")}
-              {head("hardship", "Hardship", "num", "Average time before moving off hardship, Options Script first calls, last 30 days. Target 8-12 min. Renew calls have no hardship target.")}
+              {head("hardship", "Hardship", "num", "Hardship score (0-100): how deep the client opened up, question quality, follow-ups, empathy, anchoring the pain and staying on the line. Options Script first calls, last 30 days; renew calls and follow-ups are left out. Faded when it rests on fewer than 3 calls.")}
               {head("calls", <>Calls /<br />practice</>, "num rx-hide-sm rx-wrap", "Real calls / practice calls graded, last 30 days")}
               {superMode && (
                 <>
@@ -338,12 +342,12 @@ export default function Reps() {
                     )}
                   </td>
                 ))}
-                <td className="num" title={r.hsN ? `${r.hsN} Options first call${r.hsN === 1 ? "" : "s"}` : undefined}>
+                <td className="num" title={r.hsN ? `${r.hsN} Options first call${r.hsN === 1 ? "" : "s"}${r.hsTime ? ` · moved on at ${clock(r.hsTime)} on average` : ""}` : undefined}>
                   {r.hs === null ? (
                     <span className="muted">--</span>
                   ) : (
-                    <span className={`pill ${hardshipBand(r.hs)}`} style={r.hsN < 3 ? { opacity: 0.6 } : undefined}>
-                      {clock(r.hs)}
+                    <span className={`pill ${scoreBand(r.hs)}`} style={r.hsN < 3 ? { opacity: 0.6 } : undefined}>
+                      {r.hs}
                     </span>
                   )}
                 </td>

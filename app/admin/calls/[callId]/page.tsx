@@ -35,6 +35,9 @@ import {
   type CallCost,
   type GradeVersion,
   hardshipBand,
+  HARDSHIP_PART_LABEL,
+  HARDSHIP_WEIGHTS,
+  type HardshipParts,
 } from "@/lib/calls";
 import { decodeMono } from "@/lib/shrinkAudio";
 import { measureVoice } from "@/lib/voice";
@@ -1156,14 +1159,29 @@ export default function CallDetail() {
                     <div className="rx-grid2">
                       {hs && (
                       <section className="card">
-                        <b>Hardship depth</b>{" "}
+                        <b>Hardship</b>{" "}
                         {g.spotlights.followup?.kind === "followup" && hs.moved_on_at === 0 ? (
                           <span className="pill">covered before this call</span>
                         ) : (
                           <>
+                            {typeof hs.score === "number" && <span className={`pill ${scoreBand(hs.score)}`}>score {hs.score}</span>}{" "}
                             <span className={`pill ${hardshipBand(hs.moved_on_at)}`}>moved on at {clock(hs.moved_on_at)}</span>{" "}
                             <small className="muted">target 8–12 min</small>
                           </>
+                        )}
+                        {hs.parts && !(g.spotlights.followup?.kind === "followup" && hs.moved_on_at === 0) && (
+                          <div style={{ marginTop: 8 }}>
+                            {(Object.keys(HARDSHIP_WEIGHTS) as (keyof HardshipParts)[]).map((k) => (
+                              <div className="rx-skill" key={k}>
+                                <span>{HARDSHIP_PART_LABEL[k]}</span>
+                                <span className="bar">
+                                  <i style={{ width: `${Math.max(0, Math.min(10, hs.parts![k] ?? 0)) * 10}%` }} />
+                                </span>
+                                <span className="delta">{hs.parts![k] ?? "--"}</span>
+                              </div>
+                            ))}
+                            {hs.depth_reached && <small className="muted">Deepest layer reached: {hs.depth_reached}</small>}
+                          </div>
                         )}
                         <p style={{ margin: "8px 0 4px" }}>{hs.read}</p>
                         <small className="muted">
@@ -1223,6 +1241,35 @@ export default function CallDetail() {
                   </>
                 );
               })()}
+
+              {g.line_control && (
+                <>
+                  <h2>Staying on the line</h2>
+                  <p className="hint" style={{ marginTop: -4 }}>
+                    Every trip off the straight line (&ldquo;off to Pluto&rdquo;). A minute or less that the rep brought back smoothly builds rapport and counts as a plus; every minute past that counts against. A tenth of the Straight Line score.
+                  </p>
+                  <section className="card">
+                    {typeof g.line_control.score === "number" && <span className={`pill ${scoreBand(g.line_control.score)}`}>line control {g.line_control.score}</span>}{" "}
+                    <span className="muted">{g.line_control.read}</span>
+                    {(g.line_control.excursions ?? []).length === 0 ? (
+                      <p className="hint" style={{ marginBottom: 0 }}>Stayed on the line the whole call.</p>
+                    ) : (
+                      (g.line_control.excursions ?? []).map((e, i) => (
+                        <p key={i} style={{ margin: "8px 0 0" }}>
+                          <small className="muted">{clock(e.at)}</small> {e.about}{" "}
+                          <small className="muted">
+                            · {e.by === "rep" ? "rep took it there" : "client took it there"} · {clock(e.secs)}
+                          </small>{" "}
+                          <span className={`pill ${e.secs <= 60 && e.back === "smooth" ? "good" : e.back === "never" || e.secs > 120 ? "poor" : "fair"}`}>
+                            {e.back === "smooth" ? "brought back smoothly" : e.back === "slow" ? "slow to come back" : "never came back"}
+                          </span>
+                          {e.how && <small className="muted"> &ldquo;{e.how}&rdquo;</small>}
+                        </p>
+                      ))
+                    )}
+                  </section>
+                </>
+              )}
 
               {(g.turning_points?.length ?? 0) > 0 && (
                 <>

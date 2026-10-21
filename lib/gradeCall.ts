@@ -1,4 +1,12 @@
 import { jsonrepair } from "jsonrepair";
+import { hardshipScoreOf, lineScoreOf } from "@/lib/calls";
+
+/**
+ * The version of the grading rules. Bump it for a MAJOR grading change (new
+ * scores, new rules): every graded call on file is then re-graded by itself,
+ * oldest first, the next time a manager opens the Calls page.
+ */
+export const GRADER_VERSION = 2;
 import {
   ROADMAP,
   voiceNotes,
@@ -548,6 +556,9 @@ close_quality: only for an enrolled call, otherwise "n/a". "solid" if the client
 
 spotlights: two moments that decide most sales on this team. They are EXTRA awareness only. Grade everything else exactly as described above, and never let these change any other field or either score.
 - hardship: the hardship / intelligence-gathering stretch. On this team the strongest calls keep the client talking about personal, vulnerable things (what happened, how it hits their family, how they feel about it) until roughly 8-12 minutes from the START of the call before moving on to the loan, credit report or options. moved_on_at: seconds from the start of the call when the rep moved off hardship (0 if the call never reached hardship; the call's end if they never moved on). vulnerable_secs: about how many seconds the client spent on genuinely personal, vulnerable talk. deepest: what the client opened up about, in a few words, no names. best_question: the rep's best follow-up that took it deeper (a quote), or "". cut_short and cut_short_time: the moment the rep cut it short while the client was still opening up (a quote, and seconds), or "" and 0. read: one plain sentence.
+  Time alone is not the skill: the hardship is about getting the client vulnerable enough to share the sensitive, painful things that caused the debt, through empathy and the right questions. depth_reached: the deepest layer the client actually reached, judged only from the client's own words -- "facts" (amounts, accounts), "cause" (what happened that caused the debt), "impact" (how it hit their life, work, family), "feelings" (fear, shame, exhaustion, said in their own words), or "future" (what happens if nothing changes, and they feel it) -- or "none".
+  parts, each 0-10: depth -- how far the client opened up (facts 2, cause 4, impact 6, feelings 8, future pain felt 10); questions -- open questions that moved from facts to cause to impact to feelings, not a yes/no checklist; followups -- whether the rep followed the client's own thread one layer deeper rather than jumping to the next question; empathy -- I Care tone, slowing down, pauses, letting silence work, not interrupting, reflecting back what they heard; anchoring -- whether the rep summed the pain back and got the client to own it before moving on to Create the Villain; on_line -- whether the hardship stayed on the straight line (the client's painful story about the debt IS on the line; unrelated stories, small talk and tangents are not) or the rep brought it back. If the call never reached hardship, all parts 0.
+line_control: the straight line from open to close. Clients constantly try to pull the call "off to Pluto" -- stories that have nothing to do with the debt, side questions, debates, small talk -- and reps sometimes take it there themselves (chasing a tangent, oversharing). Going off the line briefly to build rapport is good when the rep brings it back; the longer it runs, the harder it is to bring the client back. The client's painful story about what caused the debt is ON the line, as is anything that moves the sale forward. excursions: every trip off the line longer than about 15 seconds -- at (seconds from the start), by ("client" or "rep" -- who took it off the line), about (a few words, no names), secs (how long it ran), back ("smooth" if the rep brought it back with a question or a tone shift, "slow" if it took several tries or the rep only got back after the client ran out, "never" if the call drifted and did not return), how (the line the rep used to bring it back, as a short quote, or ""). read: one plain sentence on how well the rep kept control of the line.
 - turndown: the moment the SuperMoney loan comes back declined (the Hopeless stage). happened: false if there was no decline on this call (then the rest is "" / 0 / "n/a"). at: seconds. client_reaction: how the client took it, in a few words. pickup: the rep's next 60-90 seconds -- "strong" if they came back with real, positive certainty and energy that lifted the client out of despair (use the voice measurements in braces when present: energy and pitch up against the rep's own level, steady pace, no rush), "ok", or "flat" if they sounded deflated, unsure, apologetic or rushed. pickup_evidence: a quote or measurement. options_even: the three options exactly as the script presents them (credit counseling, debt settlement, financial wellness -- use the script's own wording and order) -- "yes" if all three were first laid out evenly and without bias, "partly", "no" if the rep steered before presenting all three neutrally, "n/a" if options were never reached. Steering toward one AFTER all three were presented evenly is fine and expected -- never count it against them. options_note: one short sentence. recovered: "yes", "partly", "no" or "n/a" -- did the client come back up afterwards, judged by what they said next. read: one plain sentence.
 
 - followup: the follow-up game. More than half of this team's enrollments take more than one call, so how a rep handles a call that doesn't close, and how they re-open a follow-up, matters. kind: "followup" if this call picks up a conversation from an earlier call (see the client journey note, or clear cues in the call itself like "as we talked about", jumping straight into the application), "one_call" if the whole sale happened on this call, otherwise "first". ended_open: true if the call ended without an enrollment. stall_stated: the reason the client gave for not going ahead today ("need to talk to my wife", "call me Friday"), or "". stall_real: what was really underneath it, as far as the call shows, or "". got_to_bottom: "yes" if the rep found the real reason and dealt with it, "partly", "no" if they accepted the brush-off, "n/a" if there was no stall. next_step: "set" if a specific next step was agreed (a time, who needs to be on the call, what the client will have ready), "vague", "none", or "n/a" if the call enrolled. next_step_detail: a few words. reopen: on a follow-up, how the rep opened -- did they bring the pain and certainty back first, or jump straight to paperwork -- one sentence, else "". rebuilt: on a follow-up, "yes", "partly" or "no" for whether they rebuilt pain and certainty before asking again, else "n/a". repeat_stall: true if the client raised the same stall as on an earlier call. read: one plain sentence.
@@ -639,9 +650,27 @@ const GRADE_SCHEMA = {
     "close_quality",
     "close_quality_reason",
     "spotlights",
+    "line_control",
   ],
   additionalProperties: false,
   properties: {
+    line_control: {
+      type: "object",
+      additionalProperties: false,
+      required: ["excursions", "read"],
+      properties: {
+        excursions: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["at", "by", "about", "secs", "back", "how"],
+            properties: { at: { type: "number" }, by: { type: "string" }, about: { type: "string" }, secs: { type: "number" }, back: { type: "string" }, how: { type: "string" } },
+          },
+        },
+        read: { type: "string" },
+      },
+    },
     emotional_arc: {
       type: "array",
       items: {
@@ -745,9 +774,23 @@ const GRADE_SCHEMA = {
       properties: {
         hardship: {
           type: "object",
-          required: ["moved_on_at", "vulnerable_secs", "deepest", "best_question", "cut_short", "cut_short_time", "read"],
+          required: ["moved_on_at", "vulnerable_secs", "deepest", "best_question", "cut_short", "cut_short_time", "read", "depth_reached", "parts"],
           additionalProperties: false,
           properties: {
+            depth_reached: { type: "string" },
+            parts: {
+              type: "object",
+              additionalProperties: false,
+              required: ["depth", "questions", "followups", "empathy", "anchoring", "on_line"],
+              properties: {
+                depth: { type: "number" },
+                questions: { type: "number" },
+                followups: { type: "number" },
+                empathy: { type: "number" },
+                anchoring: { type: "number" },
+                on_line: { type: "number" },
+              },
+            },
             moved_on_at: { type: "number" },
             vulnerable_secs: { type: "number" },
             deepest: { type: "string" },
@@ -1235,6 +1278,15 @@ async function grade(
       if (typeof k.score === "number") k.score = Math.max(1, Math.min(10, Math.round(k.score)));
     }
 
+    // Hardship and line-control scores are computed here from the grader's parts, so the weights live in one place.
+    if (result.spotlights?.hardship) result.spotlights.hardship.score = hardshipScoreOf(result.spotlights.hardship.parts);
+    if (result.line_control) {
+      const by = (v: string) => (v === "rep" ? "rep" : "client");
+      const back = (v: string) => (["smooth", "slow", "never"].includes(String(v).toLowerCase()) ? (String(v).toLowerCase() as "smooth" | "slow" | "never") : "slow");
+      result.line_control.excursions = (result.line_control.excursions ?? []).map((e) => ({ ...e, by: by(String(e.by).toLowerCase()), back: back(e.back), secs: Math.max(0, Number(e.secs) || 0), at: Math.max(0, Number(e.at) || 0) }));
+      result.line_control.score = lineScoreOf(result.line_control);
+    }
+    result.grader_version = GRADER_VERSION;
     result.model = MODEL;
     result.graded_at = new Date().toISOString();
 

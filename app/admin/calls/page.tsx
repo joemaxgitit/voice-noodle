@@ -116,6 +116,32 @@ export default function Calls() {
 
   const [file, setFile] = useState<File | null>(null);
   const [vinNote, setVinNote] = useState("");
+  // Major grading changes re-grade every call on file by themselves (see /api/calls/regrade-all).
+  const [regrade, setRegrade] = useState<{ remaining: number; each: number } | null>(null);
+  useEffect(() => {
+    let stop = false;
+    let started = false;
+    const tick = async () => {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      if (!token || stop) return;
+      const r = await fetch("/api/calls/regrade-all", { headers: { Authorization: `Bearer ${token}` } }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+      if (!r || stop) return;
+      const each = await estimateFor(supabase, "grade");
+      setRegrade({ remaining: r.remaining, each });
+      // Start (or restart) the run when nothing is grading.
+      if (r.remaining > 0 && !r.grading && !started) {
+        started = true;
+        await fetch("/api/calls/regrade-all", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ background: true }) }).catch(() => null);
+        setTimeout(() => (started = false), 6 * 60_000);
+      }
+    };
+    void tick();
+    const t = setInterval(() => void tick(), 45_000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [supabase]);
   const [repId, setRepId] = useState("");
   const [repName, setRepName] = useState(""); // used when repId is NEW_REP
   const [scriptId, setScriptId] = useState("");
@@ -594,6 +620,12 @@ export default function Calls() {
 
   return (
     <main className="shell calls-shell">
+      {regrade && regrade.remaining > 0 && (
+        <div className="status" style={{ marginBottom: 12 }}>
+          Grading rules were updated. Re-grading every call on file by itself, oldest first: <b>{regrade.remaining}</b> to go
+          {regrade.each ? `, about ${money(regrade.remaining * regrade.each)} left` : ""}. You can keep working; it carries on while this page is closed.
+        </div>
+      )}
 
       <div className="eyebrow">
         {calls.length} calls

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Experiment, FingerprintRow } from "@/lib/fingerprint";
-import type { Flag, SlpSkill, ThreeTens, ComplianceResult, SectionResult, Spotlights } from "@/lib/calls";
+import type { Flag, SlpSkill, ThreeTens, ComplianceResult, SectionResult, Spotlights, LineControl } from "@/lib/calls";
 import type { KpiReport, KpiRow, MetricPref } from "@/lib/kpi";
 import type { CoachingSession } from "@/lib/coaching";
 
@@ -35,6 +35,7 @@ export type HistCall = {
   tonality: string | null;
   close_quality: string | null;
   spotlights?: Spotlights | null;
+  line_control?: LineControl | null;
   retention?: string | null;
 };
 
@@ -192,6 +193,7 @@ const CALL_COLS = [
   "tonality:grade->tonality->>summary",
   "close_quality:grade->>close_quality",
   "spotlights:grade->spotlights",
+  "line_control:grade->line_control",
   "retention",
 ].join(", ");
 

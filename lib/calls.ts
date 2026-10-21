@@ -148,6 +148,61 @@ export type TurningPoint = {
   why: string;
 };
 
+export type HardshipParts = { depth: number; questions: number; followups: number; empathy: number; anchoring: number; on_line: number };
+
+/** Hardship score weights (out of 100): depth is the outcome, the rest is how the rep got there. */
+export const HARDSHIP_WEIGHTS: Record<keyof HardshipParts, number> = { depth: 25, questions: 20, followups: 20, empathy: 15, anchoring: 10, on_line: 10 };
+export const HARDSHIP_PART_LABEL: Record<keyof HardshipParts, string> = {
+  depth: "How deep the client went",
+  questions: "Question quality",
+  followups: "Follow-ups",
+  empathy: "Empathy",
+  anchoring: "Anchored the pain",
+  on_line: "Stayed on the line",
+};
+export function hardshipScoreOf(parts: Partial<HardshipParts> | null | undefined): number | null {
+  if (!parts) return null;
+  let sum = 0;
+  let w = 0;
+  for (const [k, wt] of Object.entries(HARDSHIP_WEIGHTS) as [keyof HardshipParts, number][]) {
+    const v = parts[k];
+    if (typeof v === "number" && isFinite(v)) {
+      sum += (Math.max(0, Math.min(10, v)) / 10) * wt;
+      w += wt;
+    }
+  }
+  return w ? Math.round((100 * sum) / w) : null;
+}
+
+/** A trip off the straight line ("off to Pluto"): who took it there, how long, and how it came back. */
+export type Excursion = { at: number; by: "client" | "rep"; about: string; secs: number; back: "smooth" | "slow" | "never"; how: string };
+export type LineControl = { excursions: Excursion[]; read: string; score?: number | null };
+
+/**
+ * Line control, 0-100. A short trip off the line (a minute or less) that the
+ * rep brought back smoothly builds rapport: a plus. Every minute past the
+ * first counts against, because the longer it runs the harder it is to bring
+ * them back. Never bringing them back costs the most.
+ */
+export function lineScoreOf(lc: LineControl | null | undefined): number | null {
+  if (!lc) return null;
+  let score = 80;
+  for (const e of lc.excursions ?? []) {
+    const secs = Math.max(0, Number(e.secs) || 0);
+    if (secs <= 60) {
+      if (e.back === "smooth") score += 5;
+      else if (e.back === "slow") score -= 2;
+      else score -= 10;
+    } else {
+      const over = Math.ceil((secs - 60) / 60);
+      score -= 6 * over;
+      if (e.back === "slow") score -= 3;
+      if (e.back === "never") score -= 15;
+    }
+  }
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
 export type Spotlights = {
   followup?: {
     kind: "first" | "followup" | "one_call";
@@ -162,7 +217,21 @@ export type Spotlights = {
     repeat_stall: boolean;
     read: string;
   };
-  hardship?: { moved_on_at: number; vulnerable_secs: number; deepest: string; best_question: string; cut_short: string; cut_short_time: number; read: string };
+  hardship?: {
+    moved_on_at: number;
+    vulnerable_secs: number;
+    deepest: string;
+    best_question: string;
+    cut_short: string;
+    cut_short_time: number;
+    read: string;
+    /** How far the client opened up: facts, cause, impact, feelings, future. */
+    depth_reached?: string;
+    /** Each 0-10, judged by the grader; the score is weighted from them in code. */
+    parts?: HardshipParts;
+    /** 0-100, weighted from parts (see hardshipScoreOf). */
+    score?: number | null;
+  };
   turndown?: {
     happened: boolean;
     at: number;
@@ -203,6 +272,9 @@ export type Grade = {
   close_quality_reason?: string;
   /** Hardship depth and the loan-turndown pickup. Extra awareness only; never in either score. */
   spotlights?: Spotlights;
+  line_control?: LineControl;
+  /** Which version of the grading rules produced this grade (missing = 1). */
+  grader_version?: number;
   model?: string;
   graded_at?: string;
 };
@@ -698,7 +770,10 @@ export function slpScoreOf(grade: Grade): number | null {
   const skills = skillsScoreOf(grade);
   if (arc === null) return skills;
   if (skills === null) return arc;
-  return Math.round((arc + skills) / 2);
+  // Line control (staying on the straight line) is a tenth of the score when the grade has it.
+  const line = lineScoreOf(grade.line_control);
+  if (line === null) return Math.round((arc + skills) / 2);
+  return Math.round(0.45 * arc + 0.45 * skills + 0.1 * line);
 }
 
 export function clock(secs: number | null | undefined): string {
