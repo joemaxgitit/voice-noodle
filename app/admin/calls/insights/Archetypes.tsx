@@ -103,7 +103,9 @@ export default function Archetypes() {
                         {a.clients} client{a.clients === 1 ? "" : "s"} · <span className={`pill ${a.confidence === "solid" ? "good" : "fair"}`}>{a.confidence}</span>
                       </small>
                     </div>
-                    <p style={{ margin: "6px 0" }}>{a.summary}</p>
+                    {/* Collapsed by default: the name and a one-line summary; click for the full read. */}
+                    <details>
+                      <summary style={{ cursor: "pointer", margin: "6px 0" }}>{a.summary}</summary>
                     <small className="muted">
                       Buyer: {a.buyer_type} · needs {a.action_threshold} certainty to act · pain: {a.pain_awareness} · weakest Ten: {a.weakest_ten}
                       {a.core_belief ? ` · "${a.core_belief}"` : ""} · {a.openness}
@@ -128,6 +130,7 @@ export default function Archetypes() {
                       <b>What loses them:</b> {a.what_loses}
                     </p>
                     <small className="muted">{a.results}</small>
+                    </details>
                     {shown === draft && (
                       <label className="hint" style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8 }}>
                         <input
