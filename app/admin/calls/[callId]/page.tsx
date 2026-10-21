@@ -282,7 +282,8 @@ export default function CallDetail() {
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
   // -1 = the current grade; 0.. = an earlier one from grade_history.
-  const [version, setVersion] = useState(-1);
+  // Always the latest grade (earlier ones are kept in grade_history, not shown).
+  const version = -1;
   const audio = useRef<HTMLAudioElement>(null);
   const kicked = useRef(false);
   const kickedTranslate = useRef(false);
@@ -718,14 +719,6 @@ export default function CallDetail() {
   const shownSlp = viewing ? viewing.slp_score ?? slpScoreOf(viewing.grade) : null;
   const modelName = (m?: string) =>
     !m ? "" : m.includes("haiku") ? "Haiku" : m.includes("sonnet") ? "Sonnet" : m.includes("opus") ? "Opus" : m;
-  const versionLabel = (v: GradeVersion, i: number) =>
-    `${i < 0 ? "Latest" : "Earlier"} \u00b7 script ${v.score ?? "-"}${
-      (v.slp_score ?? slpScoreOf(v.grade)) !== null ? ` \u00b7 SLP ${v.slp_score ?? slpScoreOf(v.grade)}` : ""
-    } \u00b7 ${modelName(v.grade.model)}${
-      v.grade.graded_at
-        ? ` \u00b7 ${new Date(v.grade.graded_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
-        : ""
-    }`;
   const cost = call.cost;
   const translateUsd = call.translation?.usd ?? null;
   const totalCost =
@@ -932,19 +925,7 @@ export default function CallDetail() {
         </div>
       )}
 
-      {history.length > 0 && call.grade && (
-        <label className="field no-print" style={{ maxWidth: 420, marginTop: 18 }}>
-          <span>Grade shown</span>
-          <select value={version} onChange={(e) => setVersion(Number(e.target.value))}>
-            <option value={-1}>{versionLabel({ grade: call.grade, score: call.score }, -1)}</option>
-            {history.map((v, i) => (
-              <option key={i} value={i}>
-                {versionLabel(v, i)}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
+      {/* Only the latest grade is shown; earlier ones stay in the call's history but aren't offered here. */}
 
       <div className="report-part">
       {g && (
