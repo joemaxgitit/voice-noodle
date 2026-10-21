@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import type React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMode } from "@/lib/superMode";
@@ -245,6 +246,36 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
 
   const current = GROUPS.flatMap((g) => g.items).find((i) => i.match(path));
 
+  // Scripts and Settings start folded; each opens with a click (and stays open while you're on one of its pages).
+  const [shown, setShown] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      setShown(new Set(JSON.parse(localStorage.getItem("vn_menu_open") || "[]") as string[]));
+    } catch {
+      // private window or blocked storage: start folded
+    }
+  }, []);
+  const fold = (k: string) =>
+    setShown((o) => {
+      const n = new Set(o);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      try {
+        localStorage.setItem("vn_menu_open", JSON.stringify([...n]));
+      } catch {
+        // fine without it
+      }
+      return n;
+    });
+  const foldHead = (k: string, style?: React.CSSProperties) => (
+    <button type="button" className="af-group-title af-fold" style={style} aria-expanded={shown.has(k)} onClick={() => fold(k)}>
+      {k}
+      <span className={`rs-chev${shown.has(k) ? " open" : ""}`} aria-hidden="true">
+        <Icon name="chevron" />
+      </span>
+    </button>
+  );
+
   return (
     <div className="admin-frame">
       <header className="af-mobilebar">
@@ -277,8 +308,22 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
             .filter((g) => g.items.length)
             .map((g) => (
             <div className="af-group" key={g.title || "top"}>
-              {g.title && <div className="af-group-title">{g.title}</div>}
-              {g.items.map((i) => {
+              {g.title && g.title !== "Settings" && <div className="af-group-title">{g.title}</div>}
+              {g.title === "Settings" ? (
+                <>
+                  {foldHead("Settings")}
+                  {(shown.has("Settings") || g.items.some((i) => i.match(path))) &&
+                    g.items.map((i) => {
+                      const active = i.match(path);
+                      return (
+                        <Link key={i.href} href={i.href} className={`af-link${active ? " active" : ""}`} aria-current={active ? "page" : undefined}>
+                          <Icon name={i.icon} />
+                          {i.label}
+                        </Link>
+                      );
+                    })}
+                </>
+              ) : g.items.map((i) => {
                 const active = i.match(path);
                 return (
                   <Link
@@ -294,8 +339,8 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
               })}
               {g.title === "Training" && (
                 <>
-                  <div className="af-group-title" style={{ marginTop: 10 }}>Scripts</div>
-                  <ScriptTree path={path} />
+                  {foldHead("Scripts", { marginTop: 10 })}
+                  {(shown.has("Scripts") || path === "/admin" || path.startsWith("/admin/timing")) && <ScriptTree path={path} />}
                 </>
               )}
             </div>

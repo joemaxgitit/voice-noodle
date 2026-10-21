@@ -926,6 +926,16 @@ export default function CallDetail() {
       )}
 
       {/* Only the latest grade is shown; earlier ones stay in the call's history but aren't offered here. */}
+      {call.status === "graded" && (call.grade as unknown as { regrade_failed?: boolean } | null)?.regrade_failed && (
+        <div className="error no-print" style={{ marginTop: 14 }}>
+          This grade is from older grading rules: the automatic re-grade couldn&rsquo;t redo it.
+          {(() => {
+            const why = (call.grade as unknown as { regrade_error?: string }).regrade_error || call.error;
+            return why ? ` What happened: ${why}` : "";
+          })()}{" "}
+          Press Re-grade to try again.
+        </div>
+      )}
 
       <div className="report-part">
       {g && (

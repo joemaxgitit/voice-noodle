@@ -369,3 +369,21 @@ a.rs-sublink:hover {
   max-width: 860px;
 }
 .rs-viewbar a.btn.primary { background: var(--live); border-color: var(--live); color: #191308; }
+
+/* Folding group headings (Scripts, Settings). */
+.af-fold {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 10px 6px;
+  cursor: pointer;
+  text-align: left;
+}
+.af-fold:hover { color: var(--text, inherit); }
+.af-fold .rs-chev { display: inline-grid; transition: transform 0.15s ease; opacity: 0.6; }
+.af-fold .rs-chev.open { transform: rotate(90deg); }
+.af-fold .af-icon { width: 14px; height: 14px; }

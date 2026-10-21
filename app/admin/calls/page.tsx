@@ -845,7 +845,7 @@ export default function Calls() {
                     {c.retention === "graduated" && <strong className="good-text">{" · graduated"}</strong>}
                     {c.retention === "paid6" && <strong className="good-text">{" · 6+ payments"}</strong>}
                     {c.status === "graded" && c.gfail === "true" && (
-                      <span className="muted" title="This grade is from older grading rules (the automatic re-grade couldn't redo it). Open the call and press Re-grade.">
+                      <span className="muted" title={`This grade is from older grading rules -- the automatic re-grade couldn't redo it${c.error ? `: ${c.error}` : ""}. Open the call and press Re-grade.`}>
                         {" · older grade"}
                       </span>
                     )}
@@ -856,7 +856,7 @@ export default function Calls() {
                 </span>
                 {c.status === "graded" && c.score !== null ? (
                   <span className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
-                    <span className={`pill ${band}`} title="Script score">{c.score}</span>
+                    <span className={`pill ${band}`} title="Script score">Script {c.score}</span>
                     {c.slp_score !== null && (
                       <span className={`pill ${scoreBand(c.slp_score)}`} title="Straight Line score">
                         SLP {c.slp_score}

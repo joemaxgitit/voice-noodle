@@ -6,11 +6,13 @@ import { hardshipScoreOf, lineScoreOf } from "@/lib/calls";
  * scores, new rules): every graded call on file is then re-graded by itself,
  * oldest first, the next time a manager opens the Calls page.
  */
-export const GRADER_VERSION = 6;
+export const GRADER_VERSION = 7;
 /**
  * The oldest grade that's still current, per kind of call (a change that only
  * affects renew calls raises just the renew number). Version 6: the close read
  * balanced both ways (fragile not too free, not too soft) -- every call.
+ * Version 7 only fixed re-grades that failed on version 6 (those are retried;
+ * calls graded fine on 6 stay as they are).
  */
 export const CURRENT_FROM = { renew: 6, other: 6 };
 import {
@@ -1169,7 +1171,42 @@ type Usage = {
 };
 
 /** Reads the grade JSON out of the reply: every text block joined, wrappers and small slips (stray control characters, trailing commas) tolerated. */
+/**
+ * On the tool-call route the model sometimes hands back a nested part of the
+ * grade (line_control, spotlights...) as a JSON string instead of an object.
+ * Turn those back into objects, everywhere in the grade, before anything uses them.
+ */
+function unstring<T>(x: T, depth = 0): T {
+  if (depth > 8 || x == null) return x;
+  if (typeof x === "string") {
+    const t = x.trim();
+    if ((t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"))) {
+      try {
+        return unstring(JSON.parse(t), depth + 1) as T;
+      } catch {
+        try {
+          return unstring(JSON.parse(jsonrepair(t)), depth + 1) as T;
+        } catch {
+          return x;
+        }
+      }
+    }
+    return x;
+  }
+  if (Array.isArray(x)) return x.map((v) => unstring(v, depth + 1)) as T;
+  if (typeof x === "object") {
+    const o = x as Record<string, unknown>;
+    for (const k of Object.keys(o)) o[k] = unstring(o[k], depth + 1);
+  }
+  return x;
+}
+
 function readGrade(data: { content?: { type: string; text?: string; input?: unknown }[] }): Grade | null {
+  const g = readGradeRaw(data);
+  return g ? unstring(g) : null;
+}
+
+function readGradeRaw(data: { content?: { type: string; text?: string; input?: unknown }[] }): Grade | null {
   const text = (data.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("").trim();
   const real = (x: unknown): x is Grade => !!x && typeof x === "object" && !Array.isArray(x) && Array.isArray((x as Grade).sections) && (x as Grade).sections.length > 0;
   // The tool-call route: the grade is the tool's input.
