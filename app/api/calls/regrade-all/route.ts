@@ -25,7 +25,7 @@ async function stale(supabase: Awaited<ReturnType<typeof requireAdmin>> extends 
   const { data, error } = await supabase
     .from("calls")
     .select("id, status, call_date, created_at, updated_at, script_id, handoff, ver:grade->>grader_version, fail:grade->>regrade_failed, tries:grade->>regrade_tries, failv:grade->>regrade_failed_version")
-    .in("status", ["graded", "grading"])
+    .in("status", ["graded", "grading", "failed"])
     .not("transcript", "is", null)
     .not("script_id", "is", null)
     .limit(5000);
@@ -40,21 +40,23 @@ async function stale(supabase: Awaited<ReturnType<typeof requireAdmin>> extends 
   const isRenew = (r: Row) => renew.has(r.script_id ?? "") || r.handoff === "renew";
   // Out of date, or a re-grade that failed (kept its old grade): retried up to 3 times per grader version,
   // so a fix to the grader (a new version) gets every failed call another go.
-  const old = rows.filter(
+  const old = rows.filter((r) => r.status !== "failed" || r.ver !== null).filter(
     (r) =>
+      r.status === "failed" ||
       (Number(r.ver) || 1) < (isRenew(r) ? CURRENT_FROM.renew : CURRENT_FROM.other) ||
       (r.fail === "true" && ((Number(r.failv) || 0) < GRADER_VERSION || (Number(r.tries) || 1) < 3))
   );
   const recent = Date.now() - 10 * 60_000;
   return {
     error: "",
-    total: rows.length,
+    total: rows.filter((r) => r.status !== "failed").length,
     renewScript,
     renewIds: new Set(rows.filter(isRenew).map((r) => r.id)),
     wrongScript: new Set(rows.filter((r) => r.handoff === "renew" && !renew.has(r.script_id ?? "")).map((r) => r.id)),
     // Oldest call first, so a client's journey is re-read in order.
     // Graded calls, plus any left stuck mid-grade (no progress for 10+ minutes).
-    todo: old.filter((r) => r.status === "graded" || (r.status === "grading" && new Date(r.updated_at).getTime() <= recent)).sort((a, b) => (a.call_date || a.created_at).localeCompare(b.call_date || b.created_at)),
+    // Also calls whose last grading attempt failed but that still have an earlier grade to fall back on.
+    todo: old.filter((r) => r.status === "graded" || (r.status === "failed" && r.ver !== null) || (r.status === "grading" && new Date(r.updated_at).getTime() <= recent)).sort((a, b) => (a.call_date || a.created_at).localeCompare(b.call_date || b.created_at)),
     grading: rows.filter((r) => r.status === "grading" && new Date(r.updated_at).getTime() > recent).length,
   };
 }

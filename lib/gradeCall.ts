@@ -6,13 +6,13 @@ import { hardshipScoreOf, lineScoreOf } from "@/lib/calls";
  * scores, new rules): every graded call on file is then re-graded by itself,
  * oldest first, the next time a manager opens the Calls page.
  */
-export const GRADER_VERSION = 7;
+export const GRADER_VERSION = 8;
 /**
  * The oldest grade that's still current, per kind of call (a change that only
  * affects renew calls raises just the renew number). Version 6: the close read
  * balanced both ways (fragile not too free, not too soft) -- every call.
- * Version 7 only fixed re-grades that failed on version 6 (those are retried;
- * calls graded fine on 6 stay as they are).
+ * Versions 7 and 8 only fixed re-grades that failed (those are retried; calls
+ * graded fine on 6 stay as they are).
  */
 export const CURRENT_FROM = { renew: 6, other: 6 };
 import {
@@ -1176,11 +1176,12 @@ type Usage = {
  * grade (line_control, spotlights...) as a JSON string instead of an object.
  * Turn those back into objects, everywhere in the grade, before anything uses them.
  */
-function unstring<T>(x: T, depth = 0): T {
+export function unstring<T>(x: T, depth = 0): T {
   if (depth > 8 || x == null) return x;
   if (typeof x === "string") {
     const t = x.trim();
-    if ((t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"))) {
+    // Starts like JSON: parse it (repairing a cut-off or slightly broken one).
+    if (t.startsWith("{") || (t.startsWith("[") && /^\[\s*[{\["]/.test(t))) {
       try {
         return unstring(JSON.parse(t), depth + 1) as T;
       } catch {
@@ -1358,6 +1359,14 @@ async function grade(
       );
     }
 
+    // Anything that should be an object but still isn't (a hopelessly broken part) is dropped, not allowed to fail the grade.
+    const obj = (v: unknown) => !!v && typeof v === "object" && !Array.isArray(v);
+    if (result.line_control && !obj(result.line_control)) delete result.line_control;
+    if (result.line_control && !Array.isArray(result.line_control.excursions)) result.line_control.excursions = [];
+    if (result.spotlights && !obj(result.spotlights)) delete result.spotlights;
+    for (const k of ["hardship", "turndown", "followup"] as const) if (result.spotlights && result.spotlights[k] && !obj(result.spotlights[k])) delete result.spotlights[k];
+    if (result.spotlights?.hardship?.parts && !obj(result.spotlights.hardship.parts)) delete result.spotlights.hardship.parts;
+    if (result.three_tens && !obj(result.three_tens)) delete result.three_tens;
     result.sections ||= [];
     result.compliance ||= [];
     result.flags ||= [];
