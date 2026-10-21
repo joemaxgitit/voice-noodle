@@ -6,7 +6,7 @@ import { hardshipScoreOf, lineScoreOf } from "@/lib/calls";
  * scores, new rules): every graded call on file is then re-graded by itself,
  * oldest first, the next time a manager opens the Calls page.
  */
-export const GRADER_VERSION = 8;
+export const GRADER_VERSION = 9;
 /**
  * The oldest grade that's still current, per kind of call (a change that only
  * affects renew calls raises just the renew number). Version 6: the close read
@@ -1180,6 +1180,28 @@ export function unstring<T>(x: T, depth = 0): T {
   if (depth > 8 || x == null) return x;
   if (typeof x === "string") {
     const t = x.trim();
+    // Tool-call markup leaked into a field (<parameter name="summary">...</parameter>...): read it as an object.
+    if (/^<(?:\w+:)?parameter name="/.test(t)) {
+      const o: Record<string, unknown> = {};
+      const re = /<(?:\w+:)?parameter name="([^"]+)">([\s\S]*?)(?:<\/(?:\w+:)?parameter>|(?=<(?:\w+:)?parameter name=")|$)/g;
+      for (const m of t.matchAll(re)) {
+        const v = m[2].trim();
+        let val: unknown = v;
+        if (/^[[{]/.test(v) || /^-?\d+(\.\d+)?$/.test(v) || v === "true" || v === "false" || v === "null") {
+          try {
+            val = JSON.parse(v);
+          } catch {
+            try {
+              val = JSON.parse(jsonrepair(v));
+            } catch {
+              val = v;
+            }
+          }
+        }
+        o[m[1]] = unstring(val, depth + 1);
+      }
+      return (Object.keys(o).length ? o : x) as T;
+    }
     // Starts like JSON: parse it (repairing a cut-off or slightly broken one).
     if (t.startsWith("{") || (t.startsWith("[") && /^\[\s*[{\["]/.test(t))) {
       try {
@@ -1367,6 +1389,18 @@ async function grade(
     for (const k of ["hardship", "turndown", "followup"] as const) if (result.spotlights && result.spotlights[k] && !obj(result.spotlights[k])) delete result.spotlights[k];
     if (result.spotlights?.hardship?.parts && !obj(result.spotlights.hardship.parts)) delete result.spotlights.hardship.parts;
     if (result.three_tens && !obj(result.three_tens)) delete result.three_tens;
+    if (result.tonality && !obj(result.tonality)) delete result.tonality;
+    if (result.tonality) {
+      if (!Array.isArray(result.tonality.flat_stretches)) result.tonality.flat_stretches = [];
+      if (!Array.isArray(result.tonality.tone_checks)) result.tonality.tone_checks = [];
+      if (typeof result.tonality.summary !== "string") result.tonality.summary = "";
+    }
+    // Any other part that should be an object but came back as text: drop it rather than fail the grade.
+    {
+      const r = result as unknown as Record<string, unknown>;
+      for (const k of Object.keys(r)) if (typeof r[k] === "string" && /^\s*(<(?:\w+:)?parameter|[{[])/.test(r[k] as string)) delete r[k];
+      for (const k of ["sections", "compliance", "flags", "strengths", "coaching_priorities", "speaker_roles", "emotional_arc", "turning_points", "slp"]) if (r[k] != null && !Array.isArray(r[k])) delete r[k];
+    }
     result.sections ||= [];
     result.compliance ||= [];
     result.flags ||= [];
