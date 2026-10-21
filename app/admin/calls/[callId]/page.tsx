@@ -1688,7 +1688,7 @@ export default function CallDetail() {
       )}
 
       <div className="no-print">
-      <JourneyBox supabase={supabase} callId={call.id} clientLabel={call.client_label} source={call.source} onChanged={() => void load()} />
+      <JourneyBox supabase={supabase} callId={call.id} clientLabel={call.client_label} source={call.source} onChanged={() => void load()} version={`${call.status}|${call.updated_at ?? ""}`} />
 
       <h2>Settings</h2>
       {call.audio_path && call.audio_redact_state === "done" && call.audio_redact_note && (

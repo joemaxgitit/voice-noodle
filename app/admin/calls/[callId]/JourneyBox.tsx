@@ -12,7 +12,7 @@ import { clientKey, journeyStatus, numbered, type JourneyCall } from "@/lib/jour
  * This call in the client's journey: its call number, whether another rep
  * took it over, and every other call with the same client ID.
  */
-export default function JourneyBox({ supabase, callId, clientLabel, source, onChanged }: { supabase: SupabaseClient; callId: string; clientLabel: string | null; source: string | null; onChanged?: () => void }) {
+export default function JourneyBox({ supabase, callId, clientLabel, source, onChanged, version }: { supabase: SupabaseClient; callId: string; clientLabel: string | null; source: string | null; onChanged?: () => void; version?: string }) {
   const [calls, setCalls] = useState<(JourneyCall & { rep: string; duration_secs?: number | null })[]>([]);
   const [mine, setMine] = useState<{ call_number: number | null; handoff: string | null } | null>(null);
   const [error, setError] = useState("");
@@ -40,9 +40,10 @@ export default function JourneyBox({ supabase, callId, clientLabel, source, onCh
     );
   }, [supabase, callId, clientLabel]);
 
+  // Reload when this call changes (graded, re-graded), so its row in the timeline isn't left showing "transcribing".
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, version]);
 
   async function set(patch: { call_number?: number | null; handoff?: string | null; script_id?: string }) {
     setError("");
@@ -138,6 +139,32 @@ export default function JourneyBox({ supabase, callId, clientLabel, source, onCh
           <p style={{ margin: "4px 0 0" }}>
             <b>Next move:</b> {read.read.next_move}
           </p>
+          {read.read.renew?.applies && (
+            <div className="card" style={{ marginTop: 10, borderLeft: "3px solid var(--live)" }}>
+              <b>Second chance (renew)</b>{" "}
+              <small className="muted">· {read.read.renew.same_rep ? "same rep both times" : "a different rep on the renew"}</small>
+              {read.read.renew.first_stall && (
+                <p style={{ margin: "6px 0 0" }}>
+                  <b>Why the first call didn&rsquo;t close:</b> {read.read.renew.first_stall}
+                </p>
+              )}
+              {read.read.renew.really && (
+                <p style={{ margin: "4px 0 0" }}>
+                  <b>What was really underneath:</b> {read.read.renew.really}
+                </p>
+              )}
+              {read.read.renew.what_moved && (
+                <p style={{ margin: "4px 0 0" }}>
+                  <b>What moved them on the renew:</b> {read.read.renew.what_moved}
+                </p>
+              )}
+              {read.read.renew.lesson && (
+                <p style={{ margin: "4px 0 0" }}>
+                  <b>Lesson for the first rep:</b> {read.read.renew.lesson}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
       {list.length > 1 && (

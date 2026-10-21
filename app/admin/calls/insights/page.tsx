@@ -80,6 +80,17 @@ export default function Insights() {
 
   // The follow-up game: journeys by client ID.
   type FCall = { id: string; client_label: string | null; call_date: string | null; created_at: string; outcome: string | null; outcome_manual: string | null; retention: string | null; call_number?: number | null; kind: string | null; gtb: string | null; next: string | null; repeat: boolean | null; ended_open: boolean | null };
+  // Second chances: journeys where a renew followed a call that didn't close.
+  const [renews, setRenews] = useState<{ client_key: string; updated_at: string; read: { renew?: { applies?: boolean; first_stall?: string; really?: string; what_moved?: string; lesson?: string; renew_outcome?: string | null; first_rep_id?: string | null; renew_rep_id?: string | null; same_rep?: boolean } } }[]>([]);
+  useEffect(() => {
+    void supabase
+      .from("client_journeys")
+      .select("client_key, updated_at, read")
+      .eq("read->renew->>applies", "true")
+      .order("updated_at", { ascending: false })
+      .limit(200)
+      .then(({ data }) => setRenews((data || []) as typeof renews));
+  }, [supabase]);
   const [fcalls, setFcalls] = useState<FCall[]>([]);
   useEffect(() => {
     void (async () => {
@@ -330,6 +341,49 @@ export default function Insights() {
               </table>
             </section>
           </div>
+        );
+      })()}
+
+      <h2>Second chances (renews)</h2>
+      {(() => {
+        if (!renews.length)
+          return <p className="muted">When a renew is uploaded with the same client ID as an earlier call that didn&rsquo;t close, the journey read shows why the first call stalled and what moved them on the renew. They collect here. Patterns get reliable at around 15&ndash;20 renews.</p>;
+        const closed = renews.filter((r) => r.read.renew?.renew_outcome === "enrolled").length;
+        const who = (id?: string | null) => (id ? names.get(id) ?? "a rep" : "a rep");
+        return (
+          <section className="card">
+            <b>
+              {renews.length} renew{renews.length === 1 ? "" : "s"} of leads that didn&rsquo;t close the first time · {closed} enrolled on the renew
+            </b>
+            <table className="rx-table" style={{ marginTop: 6 }}>
+              <thead>
+                <tr>
+                  <th>First call stalled on</th>
+                  <th>Really underneath</th>
+                  <th>What moved them</th>
+                  <th>Reps</th>
+                </tr>
+              </thead>
+              <tbody>
+                {renews.slice(0, 25).map((r) => {
+                  const x = r.read.renew!;
+                  return (
+                    <tr key={r.client_key}>
+                      <td>{x.first_stall || "--"}</td>
+                      <td>{x.really || "--"}</td>
+                      <td>
+                        {x.what_moved || "--"}
+                        {x.renew_outcome && <small className={`pill ${x.renew_outcome === "enrolled" ? "good" : ""}`} style={{ marginLeft: 6 }}>{x.renew_outcome}</small>}
+                      </td>
+                      <td>
+                        <small>{x.same_rep ? `${who(x.first_rep_id)} both times` : `${who(x.first_rep_id)} → ${who(x.renew_rep_id)}`}</small>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </section>
         );
       })()}
 

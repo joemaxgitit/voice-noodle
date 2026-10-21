@@ -257,6 +257,15 @@ export async function buildReviewInput(opts: {
   const prior = h.reviews.find((r) => r.status === "done" && r.review);
   const files = await fileBlocks(supabase, h, since);
   const kpi = kpiText(h, repId);
+  // Renews: leads this rep didn't close that came back later, and renews this rep took. Anonymous -- no client names.
+  type Rn = { applies?: boolean; first_stall?: string; really?: string; what_moved?: string; lesson?: string; renew_outcome?: string | null; same_rep?: boolean };
+  const [lost, won] = await Promise.all([
+    supabase.from("client_journeys").select("read").eq("read->renew->>first_rep_id", repId).limit(40),
+    supabase.from("client_journeys").select("read").eq("read->renew->>renew_rep_id", repId).limit(40),
+  ]);
+  const rn = (rows: unknown) => ((rows || []) as { read: { renew?: Rn } }[]).map((r) => r.read?.renew).filter((r): r is Rn => !!r?.applies);
+  const renewLost = rn(lost.data);
+  const renewWon = rn(won.data).filter((r) => !r.same_rep);
 
   const text = [
     `REP: ${repName}`,
@@ -265,6 +274,13 @@ export async function buildReviewInput(opts: {
     "",
     `GRADED CALLS (${calls.length}, newest first; scores are 0-100):`,
     calls.length ? calls.map((c) => callLine(c, h.personas)).join("\n") : "(none in this window)",
+    "",
+    `RENEWS OF THIS REP'S LEADS (${renewLost.length}: clients this rep's call didn't close, reached again later${renewLost.some((r) => !r.same_rep) ? ", mostly by other reps" : ""}):`,
+    renewLost.length
+      ? renewLost.map((r) => `- renew outcome: ${r.renew_outcome || "?"}${r.same_rep ? " (same rep)" : ""} | first call stalled on: ${r.first_stall} | really: ${r.really} | what moved them: ${r.what_moved} | lesson: ${r.lesson}`).join("\n")
+      : "(none yet)",
+    `RENEWS THIS REP TOOK OF OTHER REPS' LEADS (${renewWon.length}):`,
+    renewWon.length ? renewWon.map((r) => `- outcome: ${r.renew_outcome || "?"} | what moved them: ${r.what_moved}`).join("\n") : "(none yet)",
     "",
     "KPI REPORTS FROM THE CRM:",
     kpi || "(no KPI reports matched to this rep yet)",
