@@ -900,18 +900,13 @@ const GRADE_SCHEMA = {
 };
 
 function askClaude(blocks: { type: string; text: string }[], key: string, strict: boolean) {
-  const content = strict
-    ? blocks
-    : [
-        ...blocks,
-        {
-          type: "text",
-          text:
-            "Reply with exactly one JSON object and nothing else -- no prose, no code fences. " +
-            "It must match this JSON Schema:\n" +
-            JSON.stringify(GRADE_SCHEMA),
-        },
-      ];
+  /*
+    strict: the grade comes back as JSON held to the schema by the API.
+    Not strict (the API said the schema is too complex to compile): the grade
+    is requested as a forced tool call instead. Tool inputs aren't compiled
+    into a grammar, so there's no size limit, and the model fills the whole
+    object far more reliably than when asked for "JSON in the reply".
+  */
   return fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {
     method: "POST",
     headers: {
@@ -929,10 +924,20 @@ function askClaude(blocks: { type: string; text: string }[], key: string, strict
       */
       max_tokens: 32000,
       ...thinkingFor(MODEL),
-      output_config: strict
-        ? { effort: "high", format: { type: "json_schema", schema: GRADE_SCHEMA } }
-        : { effort: "high" },
-      messages: [{ role: "user", content }],
+      ...(strict
+        ? { output_config: { effort: "high", format: { type: "json_schema", schema: GRADE_SCHEMA } } }
+        : {
+            output_config: { effort: "high" },
+            tools: [
+              {
+                name: "submit_grade",
+                description: "Submit the complete grade for this call. Every field in the schema is required -- fill all of them.",
+                input_schema: GRADE_SCHEMA,
+              },
+            ],
+            tool_choice: { type: "tool", name: "submit_grade" },
+          }),
+      messages: [{ role: "user", content: blocks }],
     }),
     signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
   });
@@ -1111,9 +1116,22 @@ type Usage = {
 };
 
 /** Reads the grade JSON out of the reply: every text block joined, wrappers and small slips (stray control characters, trailing commas) tolerated. */
-function readGrade(data: { content?: { type: string; text?: string }[] }): Grade | null {
+function readGrade(data: { content?: { type: string; text?: string; input?: unknown }[] }): Grade | null {
   const text = (data.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("").trim();
   const real = (x: unknown): x is Grade => !!x && typeof x === "object" && !Array.isArray(x) && Array.isArray((x as Grade).sections) && (x as Grade).sections.length > 0;
+  // The tool-call route: the grade is the tool's input.
+  for (const c of data.content || []) {
+    if (c.type !== "tool_use") continue;
+    let input = c.input;
+    if (typeof input === "string") {
+      try {
+        input = JSON.parse(input);
+      } catch {
+        // fall through
+      }
+    }
+    if (real(input)) return input;
+  }
   // The grade can come back as-is, wrapped one level down ({"grade": {...}}), inside an array,
   // or even as a JSON string of itself ("[{\"speaker_roles\": ...}]"). Unwrap until a real grade turns up.
   const find = (x: unknown, depth = 0): Grade | null => {
@@ -1126,6 +1144,11 @@ function readGrade(data: { content?: { type: string; text?: string }[] }): Grade
       }
     }
     if (real(x)) return x;
+    // Sometimes the grade comes back split across an array of partial objects: put them back together.
+    if (Array.isArray(x) && x.length > 1 && x.every((v) => v && typeof v === "object" && !Array.isArray(v))) {
+      const merged = Object.assign({}, ...x);
+      if (real(merged)) return merged;
+    }
     if (Array.isArray(x)) {
       for (const v of x) {
         const g = find(v, depth + 1);
@@ -1207,7 +1230,7 @@ async function grade(
       throw new Error(`Grading failed (${res.status}). ${message}`);
     }
 
-    type Reply = { content?: { type: string; text?: string }[]; stop_reason?: string; usage?: Usage };
+    type Reply = { content?: { type: string; text?: string; input?: unknown }[]; stop_reason?: string; usage?: Usage };
     let data = (await res.json()) as Reply;
     const check = (d: Reply) => {
       if (d.stop_reason === "refusal") throw new Error("The grader declined to grade this call.");
@@ -1218,8 +1241,9 @@ async function grade(
     let result = readGrade(data);
     if (!result && Date.now() - started < 150_000) {
       // Long calls occasionally come back malformed; one fresh try nearly always fixes it.
-      log("grade", callId, started, "unreadable grade; asking once more");
-      const again = await askClaude(blocks, key, true);
+      // The second try takes the other route (a forced tool call), so it isn't the same request twice.
+      log("grade", callId, started, "unreadable grade; asking once more as a tool call");
+      const again = await askClaude(blocks, key, false);
       if (again.ok) {
         const first = data.usage;
         data = (await again.json()) as Reply;
