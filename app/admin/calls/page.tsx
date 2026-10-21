@@ -51,6 +51,8 @@ type CallRow = {
   outcome: Outcome | null;
   outcome_manual: Outcome | null;
   close_quality: string | null;
+  gver?: string | null;
+  gfail?: string | null;
   retention: string | null;
   redaction_count: number;
   audio_path: string | null;
@@ -201,7 +203,7 @@ export default function Calls() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, rep_id, rep_name, client_label, call_date, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, retention, redaction_count, audio_path, audio_redact_state, error, script_id, updated_at, created_at, cost, lang:transcript->>language, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
+        "id, rep_id, rep_name, client_label, call_date, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, gver:grade->>grader_version, gfail:grade->>regrade_failed, retention, redaction_count, audio_path, audio_redact_state, error, script_id, updated_at, created_at, cost, lang:transcript->>language, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
       )
       // Practice calls with a mock client have their own page.
       .neq("source", "roleplay")
@@ -842,6 +844,11 @@ export default function Calls() {
                     {c.retention === "cancelled" && <strong className="danger">{" · cancelled"}</strong>}
                     {c.retention === "graduated" && <strong className="good-text">{" · graduated"}</strong>}
                     {c.retention === "paid6" && <strong className="good-text">{" · 6+ payments"}</strong>}
+                    {c.status === "graded" && (c.gfail === "true" || (Number(c.gver) || 1) < 4) && (
+                      <span className="muted" title="This grade is from older grading rules (the automatic re-grade couldn't redo it). Open the call and press Re-grade.">
+                        {" · older grade"}
+                      </span>
+                    )}
                     {c.redaction_count > 0 && c.audio_path && c.audio_redact_state !== "done" && (
                       <span className="danger">{" · numbers still in recording"}</span>
                     )}
