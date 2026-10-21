@@ -50,6 +50,7 @@ export default function Reps() {
   const [notes, setNotes] = useState<Map<string, number>>(new Map());
   const [reviews, setReviews] = useState<ReviewLite[]>([]);
   const [showAll, setShowAll] = useState(false);
+  const [totals, setTotals] = useState<Map<string, { real: number; practice: number }>>(new Map());
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "name", dir: 1 });
   // Scripts that pick up after the loan (Renew): no hardship target, so they're left out of the hardship column.
   const [renewScripts, setRenewScripts] = useState<Set<string>>(new Set());
@@ -86,6 +87,16 @@ export default function Reps() {
     if (err) setError(/kpi_|rep_notes|rep_reviews|does not exist/i.test(err.message) ? `${err.message} -- run supabase/rep-profile.sql in the Supabase SQL Editor first.` : err.message);
     setPeople((p.data || []) as Person[]);
     setCalls((c.data || []) as unknown as CallLite[]);
+    // Every graded call on file per rep, whatever the date, so "2 in 30 days" never reads as "only 2 calls".
+    const all = await supabase.from("calls").select("rep_id, source").eq("status", "graded").not("rep_id", "is", null).limit(20000);
+    const tot = new Map<string, { real: number; practice: number }>();
+    for (const x of (all.data || []) as { rep_id: string; source: string }[]) {
+      const t = tot.get(x.rep_id) ?? { real: 0, practice: 0 };
+      if (x.source === "roleplay") t.practice++;
+      else t.real++;
+      tot.set(x.rep_id, t);
+    }
+    setTotals(tot);
     const sc = await supabase.from("scripts").select("id, continues_into");
     setRenewScripts(new Set(((sc.data || []) as { id: string; continues_into: string | null }[]).filter((x) => x.continues_into).map((x) => x.id)));
     setReports((r.data || []) as KpiReport[]);
@@ -272,7 +283,7 @@ export default function Reps() {
               {head("rep", <>Rep<br />(Ten 2)</>, "num rx-hide-sm rx-wrap", "Client's trust in the rep, 1-10, last 30 days")}
               {head("company", <>Company<br />(Ten 3)</>, "num rx-hide-sm rx-wrap", "Client's certainty in the company, 1-10, last 30 days")}
               {head("hardship", "Hardship", "num", "Hardship score (0-100): how deep the client opened up, question quality, follow-ups, empathy, anchoring the pain and staying on the line. Options Script first calls, last 30 days; renew calls and follow-ups are left out. Faded when it rests on fewer than 3 calls.")}
-              {head("calls", <>Calls /<br />practice</>, "num rx-hide-sm rx-wrap", "Real calls / practice calls graded, last 30 days")}
+              {head("calls", <>Calls 30d<br />(all time)</>, "num rx-hide-sm rx-wrap", "Real calls / practice calls graded with a call date in the last 30 days. Underneath: every graded call on file. Older calls still count in the rep's profile, trends and coaching review -- the 30-day columns only use the last 30 days.")}
               {superMode && (
                 <>
               <th className="num">{kpi ? `Deals ${fmtMonth(monthOf(kpi.cur), false)}` : "Deals"}</th>
@@ -353,6 +364,14 @@ export default function Reps() {
                 </td>
                 <td className="num rx-hide-sm">
                   {r.real} / {r.practice}
+                  {(() => {
+                    const t = totals.get(r.p.id);
+                    return t && (t.real !== r.real || t.practice !== r.practice) ? (
+                      <small className="muted" style={{ display: "block" }}>
+                        {t.real} / {t.practice} total
+                      </small>
+                    ) : null;
+                  })()}
                 </td>
                 {superMode && (
                   <>
