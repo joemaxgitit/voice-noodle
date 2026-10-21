@@ -363,15 +363,19 @@ export default function Reps() {
                   )}
                 </td>
                 <td className="num rx-hide-sm">
-                  {r.real} / {r.practice}
-                  {(() => {
-                    const t = totals.get(r.p.id);
-                    return t && (t.real !== r.real || t.practice !== r.practice) ? (
-                      <small className="muted" style={{ display: "block" }}>
-                        {t.real} / {t.practice} total
-                      </small>
-                    ) : null;
-                  })()}
+                  <span style={{ whiteSpace: "nowrap" }}>
+                    {r.real} / {r.practice}
+                    {(() => {
+                      // All-time count, same line, only when it differs from the 30 days.
+                      const t = totals.get(r.p.id);
+                      return t && (t.real !== r.real || t.practice !== r.practice) ? (
+                        <small className="muted" title={`${t.real} real and ${t.practice} practice calls graded in all`}>
+                          {" "}
+                          ({t.practice ? `${t.real} / ${t.practice}` : t.real})
+                        </small>
+                      ) : null;
+                    })()}
+                  </span>
                 </td>
                 {superMode && (
                   <>
