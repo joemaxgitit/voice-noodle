@@ -60,6 +60,18 @@ export type Profile = {
   stall_stated?: string;
   stall_real?: string;
   stall_moved?: string;
+  // Straight Line read (learn_version 2+).
+  buyer_type?: string;
+  action_threshold?: string;
+  pain_awareness?: string;
+  weakest_ten?: string;
+  hardest_ten?: string;
+  core_belief?: string;
+  openness?: string;
+  pluto?: string;
+  hardship_layers?: string;
+  what_closed?: string;
+  learn_version?: number;
 };
 
 export type ClientInsight = {

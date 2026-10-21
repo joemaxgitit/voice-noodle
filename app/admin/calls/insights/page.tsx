@@ -7,6 +7,7 @@ import { clientKey, numbered } from "@/lib/journey";
 import { TEAM_MIN_REPS, type TeamPattern } from "@/lib/fingerprint";
 import { okToSpend } from "@/lib/spend";
 import { asProven, compare, favouring, formatValue, MIN_FOR_FINDINGS, type InsightCall, type Metric } from "@/lib/insights";
+import Archetypes from "./Archetypes";
 import "../calls.css";
 import "../../reps/reps.css";
 
@@ -248,6 +249,8 @@ export default function Insights() {
       </p>
       {error && <div className="error">{error}</div>}
       {note && <div className="note">{note}</div>}
+
+      <Archetypes />
 
       <h2>Team patterns</h2>
       <p className="muted" style={{ marginTop: 0 }}>

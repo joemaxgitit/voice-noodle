@@ -11,6 +11,9 @@ import { OBJECTION_TYPES, SHORT_CALL_SECS } from "@/lib/learn";
 
 const MODEL = process.env.LEARN_MODEL || "claude-haiku-5-5";
 
+/** Bump when the learning step reads something new: every real call on file is re-read once (about a third of a cent each). */
+export const LEARN_VERSION = 2;
+
 const str = { type: "string" } as const;
 const SCHEMA = {
   type: "object",
@@ -21,8 +24,14 @@ const SCHEMA = {
     profile: {
       type: "object",
       additionalProperties: false,
-      required: ["situation", "hardship", "debts", "personality", "speech", "wanted", "decision", "opened_up", "turndown", "stall_stated", "stall_real", "stall_moved"],
-      properties: { situation: str, hardship: str, debts: str, personality: str, speech: str, wanted: str, decision: str, opened_up: str, turndown: str, stall_stated: str, stall_real: str, stall_moved: str },
+      required: [
+        "situation", "hardship", "debts", "personality", "speech", "wanted", "decision", "opened_up", "turndown", "stall_stated", "stall_real", "stall_moved",
+        "buyer_type", "action_threshold", "pain_awareness", "weakest_ten", "hardest_ten", "core_belief", "openness", "pluto", "hardship_layers", "what_closed",
+      ],
+      properties: {
+        situation: str, hardship: str, debts: str, personality: str, speech: str, wanted: str, decision: str, opened_up: str, turndown: str, stall_stated: str, stall_real: str, stall_moved: str,
+        buyer_type: str, action_threshold: str, pain_awareness: str, weakest_ten: str, hardest_ten: str, core_belief: str, openness: str, pluto: str, hardship_layers: str, what_closed: str,
+      },
     },
     objections: {
       type: "array",
@@ -58,6 +67,7 @@ Rules:
 - opened_up: how the client's hardship came out -- the surface version first, what deeper thing they shared, roughly when, and what the rep did that got them there (or cut it off).
 - turndown: if the loan was declined, how the client took it and what the rep did in the next minute that lifted them back up or lost them; "" if there was no decline.
 - stall_stated: if the client put off deciding, how they put it, in their own words, anonymized ("let me talk to my husband first"); else "". stall_real: what was really behind it; else "". stall_moved: what the rep did that got past it (now or on a later call), or "" if nothing did.
+- Straight Line read of this client (Jordan Belfort). buyer_type: "in heat" (had already decided to act), "in power" (real need but no urgency until the pain was amplified), "lookie-loo" (never serious), or "mistake". action_threshold: "low" or "high" -- how much certainty they needed before acting -- plus a few words on what it took ("closed on the first ask" / "needed every Ten at 10 and the spouse"). pain_awareness: "felt it" (owned the pain early) or "denial" (minimized it until it was amplified), plus a few words. weakest_ten: "product", "rep" or "company" -- the Ten that started lowest. hardest_ten: the Ten that was hardest to raise. core_belief: the belief behind their hesitation, in a few plain words ("I should pay what I owe", "these programs are scams", "my credit is everything", "I just want a loan"), or "". openness: "guarded", "opens with the right questions", or "over-sharer". pluto: how this client pulled the call off the straight line (stories, side questions, debates), in a few words, or "". hardship_layers: what the client revealed at each layer, in order -- facts / cause / impact / feelings / future -- in a few words each, anonymized; "" for layers never reached. what_closed: what finally moved them to yes (or, if they didn't enroll, what stood in the way), one plain sentence.
 - usable: false if this is not a real sales conversation with a client (voicemail, wrong number, internal call, mostly silence).
 Return the JSON only.`;
 
@@ -131,7 +141,8 @@ export async function learnFromCall(supabase: Supa, orgId: string, callId: strin
     lang,
     kind: !j.usable ? "skip" : short ? "short" : "full",
     outcome: (call.outcome_manual as string | null) || (call.outcome as string | null) || null,
-    profile: j.profile ?? {},
+    // learn_version marks calls read with the Straight Line fields, so older ones can be re-read once.
+    profile: { ...(j.profile ?? {}), learn_version: LEARN_VERSION },
     objections: (j.objections ?? []).slice(0, 8),
     moments: { cold: (j.cold ?? []).slice(0, 4), warm: (j.warm ?? []).slice(0, 4) },
     ending: j.ending ?? {},

@@ -121,6 +121,7 @@ export default function Calls() {
   useEffect(() => {
     let stop = false;
     let started = false;
+    let relearnAt = 0;
     const tick = async () => {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
       if (!token || stop) return;
@@ -129,6 +130,12 @@ export default function Calls() {
       const each = await estimateFor(supabase, "grade");
       setRegrade({ remaining: r.remaining, each });
       // Start (or restart) the run when nothing is grading.
+      // The learning step's re-read (cheap, about a third of a cent a call) runs the same way.
+      if (Date.now() - relearnAt > 5 * 60_000) {
+        relearnAt = Date.now();
+        const l = await fetch("/api/calls/relearn-all", { headers: { Authorization: `Bearer ${token}` } }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+        if (l?.remaining > 0) void fetch("/api/calls/relearn-all", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ background: true }) }).catch(() => null);
+      }
       if (r.remaining > 0 && !r.grading && !started) {
         started = true;
         await fetch("/api/calls/regrade-all", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ background: true }) }).catch(() => null);
