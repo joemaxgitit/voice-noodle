@@ -19,25 +19,33 @@ export const maxDuration = 300;
 
 const PER_RUN = 2;
 
-type Row = { id: string; status: string; call_date: string | null; created_at: string; updated_at: string; ver: string | null; script_id: string | null };
+type Row = { id: string; status: string; call_date: string | null; created_at: string; updated_at: string; ver: string | null; script_id: string | null; handoff: string | null };
 
 async function stale(supabase: Awaited<ReturnType<typeof requireAdmin>> extends infer T ? (T extends { supabase: infer S } ? S : never) : never) {
   const { data, error } = await supabase
     .from("calls")
-    .select("id, status, call_date, created_at, updated_at, script_id, ver:grade->>grader_version")
+    .select("id, status, call_date, created_at, updated_at, script_id, handoff, ver:grade->>grader_version")
     .in("status", ["graded", "grading"])
     .not("transcript", "is", null)
     .not("script_id", "is", null)
     .limit(5000);
-  if (error) return { error: error.message, todo: [] as Row[], grading: 0 };
+  if (error) return { error: error.message, todo: [] as Row[], grading: 0, total: 0, renewScript: null, renewIds: new Set<string>(), wrongScript: new Set<string>() };
   const rows = (data || []) as Row[];
   // Renew calls (scripts that continue into another) may need a newer version than the rest.
-  const { data: sc } = await supabase.from("scripts").select("id, continues_into");
-  const renew = new Set(((sc || []) as { id: string; continues_into: string | null }[]).filter((x) => x.continues_into).map((x) => x.id));
-  const old = rows.filter((r) => (Number(r.ver) || 1) < (renew.has(r.script_id ?? "") ? CURRENT_FROM.renew : CURRENT_FROM.other));
+  const { data: sc } = await supabase.from("scripts").select("id, title, continues_into");
+  const scripts = (sc || []) as { id: string; title: string; continues_into: string | null }[];
+  const renew = new Set(scripts.filter((x) => x.continues_into).map((x) => x.id));
+  const renewScript = scripts.find((x) => x.continues_into) ?? scripts.find((x) => /renew/i.test(x.title)) ?? null;
+  // A call is a renew if it's on the Renew script or marked Renew in its client journey.
+  const isRenew = (r: Row) => renew.has(r.script_id ?? "") || r.handoff === "renew";
+  const old = rows.filter((r) => (Number(r.ver) || 1) < (isRenew(r) ? CURRENT_FROM.renew : CURRENT_FROM.other));
   const recent = Date.now() - 10 * 60_000;
   return {
     error: "",
+    total: rows.length,
+    renewScript,
+    renewIds: new Set(rows.filter(isRenew).map((r) => r.id)),
+    wrongScript: new Set(rows.filter((r) => r.handoff === "renew" && !renew.has(r.script_id ?? "")).map((r) => r.id)),
     // Oldest call first, so a client's journey is re-read in order.
     todo: old.filter((r) => r.status === "graded").sort((a, b) => (a.call_date || a.created_at).localeCompare(b.call_date || b.created_at)),
     grading: rows.filter((r) => r.status === "grading" && new Date(r.updated_at).getTime() > recent).length,
@@ -49,7 +57,7 @@ export async function GET(request: Request) {
   if (ctx instanceof NextResponse) return ctx;
   const s = await stale(ctx.supabase);
   if (s.error) return NextResponse.json({ error: s.error }, { status: 500 });
-  return NextResponse.json({ version: GRADER_VERSION, remaining: s.todo.length, grading: s.grading });
+  return NextResponse.json({ version: GRADER_VERSION, remaining: s.todo.length, grading: s.grading, total: s.total, renew: s.renewIds.size });
 }
 
 export async function POST(request: Request) {
@@ -69,6 +77,8 @@ export async function POST(request: Request) {
 
   const preps: { run: () => Promise<void> }[] = [];
   for (const c of next) {
+    // Marked Renew but still on another script (uploaded before Renew switched it): grade it on the Renew script.
+    if (s.wrongScript.has(c.id) && s.renewScript) await supabase.from("calls").update({ script_id: s.renewScript.id }).eq("id", c.id);
     const prep = await prepareGrade(supabase, c.id, key, started);
     if (prep.ok && !prep.already) preps.push(prep);
     else if (!prep.ok) {

@@ -117,7 +117,7 @@ export default function Calls() {
   const [file, setFile] = useState<File | null>(null);
   const [vinNote, setVinNote] = useState("");
   // Major grading changes re-grade every call on file by themselves (see /api/calls/regrade-all).
-  const [regrade, setRegrade] = useState<{ remaining: number; each: number } | null>(null);
+  const [regrade, setRegrade] = useState<{ remaining: number; each: number; total?: number; renew?: number; error?: string } | null>(null);
   useEffect(() => {
     let stop = false;
     let started = false;
@@ -125,10 +125,12 @@ export default function Calls() {
     const tick = async () => {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
       if (!token || stop) return;
-      const r = await fetch("/api/calls/regrade-all", { headers: { Authorization: `Bearer ${token}` } }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
-      if (!r || stop) return;
+      const res = await fetch("/api/calls/regrade-all", { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+      const r = res ? await res.json().catch(() => null) : null;
+      if (stop) return;
+      if (!res?.ok || !r) return setRegrade({ remaining: 0, each: 0, error: r?.error || `status ${res?.status ?? "unreachable"}` });
       const each = await estimateFor(supabase, "grade");
-      setRegrade({ remaining: r.remaining, each });
+      setRegrade({ remaining: r.remaining, each, total: r.total, renew: r.renew });
       // Start (or restart) the run when nothing is grading.
       // The learning step's re-read (cheap, about a third of a cent a call) runs the same way.
       if (Date.now() - relearnAt > 5 * 60_000) {
@@ -627,6 +629,12 @@ export default function Calls() {
 
   return (
     <main className="shell calls-shell">
+      {regrade?.error && <div className="error" style={{ marginBottom: 12 }}>Couldn&rsquo;t check the automatic re-grade: {regrade.error}</div>}
+      {regrade && !regrade.error && regrade.remaining === 0 && !!regrade.total && (
+        <p className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
+          All {regrade.total} graded calls are on the current grading rules{regrade.renew ? ` (${regrade.renew} renew)` : ""}.
+        </p>
+      )}
       {regrade && regrade.remaining > 0 && (
         <div className="status" style={{ marginBottom: 12 }}>
           Grading rules were updated. Re-grading every call on file by itself, oldest first: <b>{regrade.remaining}</b> to go
