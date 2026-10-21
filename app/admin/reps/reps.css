@@ -141,3 +141,4 @@ a.rx-ev:hover { background: var(--ink-3); }
 @media (max-width: 700px) { .rx-table .rx-hide-sm { display: none; } }
 .rx-table th.rx-wrap { white-space: normal; line-height: 1.25; max-width: 92px; }
 .rx-table .rx-slp { padding-right: 42px; }
+.rx-table .rx-calls { text-align: center; padding-right: 44px; font-variant-numeric: tabular-nums; white-space: nowrap; }
