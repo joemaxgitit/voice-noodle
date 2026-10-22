@@ -21,6 +21,8 @@ import {
   type Outcome,
 } from "@/lib/calls";
 import { SHORT_LABEL, type Quick } from "@/lib/quick";
+import { byCallMade } from "@/lib/calls";
+import { fmtTime } from "@/lib/dayReview";
 import { audioSeconds, convosoName, uploadCall } from "@/lib/uploadCall";
 import BulkUpload from "./BulkUpload";
 import "./calls.css";
@@ -45,6 +47,7 @@ type CallRow = {
   rep_name: string | null; // typed in when the rep has no account yet
   client_label: string | null;
   call_date: string | null;
+  call_time?: string | null;
   duration_secs: number | null;
   status: CallStatus;
   score: number | null;
@@ -189,14 +192,16 @@ export default function Calls() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, rep_id, rep_name, client_label, call_date, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, gver:grade->>grader_version, gfail:grade->>regrade_failed, retention, redaction_count, audio_path, audio_redact_state, error, script_id, updated_at, created_at, cost, lang:transcript->>language, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
+        "id, rep_id, rep_name, client_label, call_date, call_time, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, gver:grade->>grader_version, gfail:grade->>regrade_failed, retention, redaction_count, audio_path, audio_redact_state, error, script_id, updated_at, created_at, cost, lang:transcript->>language, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
       )
       // Practice calls with a mock client have their own page.
       .neq("source", "roleplay")
+      .order("call_date", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
       .limit(300);
     if (error) setError(error.message);
-    const rows = (data || []) as unknown as CallRow[];
+    // Newest first by when the call was made (date, then time of day), not when it was uploaded.
+    const rows = ((data || []) as unknown as CallRow[]).sort(byCallMade);
     setCalls(rows);
     const readIds = rows.filter((c) => c.status === "read").map((c) => c.id);
     if (readIds.length) {
@@ -311,7 +316,7 @@ export default function Calls() {
     journeyRun.current = Date.now();
     void (async () => {
       const [{ data: cs }, nums, js] = await Promise.all([
-        supabase.from("calls").select("id, client_label, call_date, created_at, status, graded_at:grade->>graded_at").neq("source", "roleplay").not("client_label", "is", null).limit(3000),
+        supabase.from("calls").select("id, client_label, call_date, call_time, created_at, status, graded_at:grade->>graded_at").neq("source", "roleplay").not("client_label", "is", null).limit(3000),
         supabase.from("calls").select("id, call_number").not("call_number", "is", null).limit(3000),
         supabase.from("client_journeys").select("client_key, updated_at"),
       ]);
@@ -770,6 +775,7 @@ export default function Calls() {
                   {c.client_label ? ` · ${c.client_label}` : ""}
                   <div className="calls-meta">
                     {dateLabel(c.call_date)}
+                    {c.call_time ? ` · ${fmtTime(c.call_time)}` : ""}
                     {c.duration_secs ? ` · ${clock(c.duration_secs)}` : ""}
                     {outcomeOf(c) ? ` · ${OUTCOME_LABEL[outcomeOf(c) as Outcome]}` : ""}
                     {c.lang && langOf(c.lang) === "es" ? " · Spanish" : ""}

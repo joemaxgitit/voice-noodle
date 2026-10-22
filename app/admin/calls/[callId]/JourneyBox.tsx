@@ -28,7 +28,7 @@ export default function JourneyBox({ supabase, callId, clientLabel, source, onCh
     setRead((jr.data as { read: JourneyRead; updated_at: string; calls_read: number } | null) ?? null);
     const { data } = await supabase
       .from("calls")
-      .select("id, client_label, call_date, created_at, call_number, handoff, rep_id, rep_name, status, outcome, outcome_manual, retention, score, slp_score, duration_secs, scripts(title), profiles:rep_id(full_name)")
+      .select("id, client_label, call_date, call_time, created_at, call_number, handoff, rep_id, rep_name, status, outcome, outcome_manual, retention, score, slp_score, duration_secs, scripts(title), profiles:rep_id(full_name)")
       .ilike("client_label", clientLabel.trim())
       .neq("source", "roleplay");
     setCalls(

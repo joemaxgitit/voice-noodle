@@ -983,15 +983,21 @@ export function voiceNotes(
 }
 
 /**
- * When a call happened: the call date it was uploaded with, else when it was
- * uploaded. A plain date ("2025-10-20") is read as midday local time, so it
+ * When a call happened: the call date (and time, when known) it was uploaded
+ * with, else when it was uploaded. A plain date ("2025-10-20") is read as midday local time, so it
  * never slips to the day before in US time zones.
  */
-export function callAt(c: { call_date?: string | null; created_at: string }): number {
+export function callAt(c: { call_date?: string | null; created_at: string; call_time?: string | null }): number {
   const d = c.call_date;
   if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
     const [y, m, dd] = d.split("-").map(Number);
-    return new Date(y, m - 1, dd, 12).getTime();
+    // The time of day when known (from the call log or the dialer's file name), else midday.
+    const t = c.call_time?.match(/^(\d{1,2}):(\d{2})/);
+    return t ? new Date(y, m - 1, dd, +t[1], +t[2]).getTime() : new Date(y, m - 1, dd, 12).getTime();
   }
   return new Date(d || c.created_at).getTime();
 }
+
+/** Newest call first, by when it was made (date, then time of day), then by upload. */
+export const byCallMade = <T extends { call_date?: string | null; created_at: string; call_time?: string | null }>(a: T, b: T) =>
+  callAt(b) - callAt(a) || b.created_at.localeCompare(a.created_at);

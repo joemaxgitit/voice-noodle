@@ -176,9 +176,8 @@ export default function KpiTab({
         <table className="rx-table">
           <thead>
             <tr>
-              <th>Window</th>
-              <th className="num">Deals</th>
-              <th className="num">Cancelled before 1st</th>
+              <th>Requests window</th>
+              <th className="num" title="From the sale report the lookback was built on -- it covers a longer stretch than the requests window">Cancelled before 1st</th>
               <th className="num">Requests</th>
               <th>Lost at the sale</th>
             </tr>
@@ -192,9 +191,9 @@ export default function KpiTab({
                     {new Date(`${r.period_start}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })} –{" "}
                     {new Date(`${r.period_end}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                   </td>
-                  <td className="num">{r.deals ?? "--"}</td>
                   <td className="num">
-                    <b>{pct(r.before1_rate)}</b>{" "}
+                    <b>{pct(r.before1_rate)}</b>
+                    {r.deals ? <span className="muted"> of {r.deals} deals</span> : null}{" "}
                     {r.prior_rate !== null && <span className={up > 0.02 ? "rx-down" : up < -0.02 ? "rx-up" : "muted"}>({pts(r.before1_rate, r.prior_rate)})</span>}
                   </td>
                   <td className="num">{r.requests ?? "--"}</td>
@@ -205,7 +204,7 @@ export default function KpiTab({
           </tbody>
         </table>
       </div>
-      <p className="hint" style={{ marginBottom: 0 }}>Lower is better. Rates are a floor while first payments are still pending; the change is against the prior period and is directional.</p>
+      <p className="hint" style={{ marginBottom: 0 }}>Lower is better. The requests (and what was lost at the sale) are from the window shown. The cancel rate comes from the sale report the lookback was built on, which covers a longer stretch -- so the so &ldquo;of 45 deals&rdquo; is every deal in that reportldquo;of N dealsso &ldquo;of 45 deals&rdquo; is every deal in that reportrdquo; count is every deal in that report, not deals made in the window. Rates are a floor while first payments are still pending; the change is against the prior period and is directional.</p>
     </section>
   ) : null;
 

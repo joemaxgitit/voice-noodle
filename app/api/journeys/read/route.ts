@@ -70,7 +70,7 @@ async function readJourney(supabase: Awaited<ReturnType<typeof requireAdmin>> ex
 
   const { data, error } = await supabase
     .from("calls")
-    .select("id, client_label, call_date, created_at, rep_id, rep_name, status, outcome, outcome_manual, retention, score, slp_score, grade, scripts(title), profiles:rep_id(full_name)")
+    .select("id, client_label, call_date, call_time, created_at, rep_id, rep_name, status, outcome, outcome_manual, retention, score, slp_score, grade, scripts(title), profiles:rep_id(full_name)")
     .ilike("client_label", label)
     .neq("source", "roleplay");
   if (error) return { status: 500, body: { error: error.message } };

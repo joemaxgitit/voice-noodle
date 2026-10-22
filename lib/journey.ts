@@ -12,6 +12,8 @@ export type JourneyCall = {
   id: string;
   client_label: string | null;
   call_date: string | null;
+  /** "HH:MM" when known. */
+  call_time?: string | null;
   created_at: string;
   call_number?: number | null;
   handoff?: string | null;
@@ -29,7 +31,12 @@ export const isRenewScript = (title: string | null | undefined) => /renew/i.test
 
 /** Calls in date order, each with its number in the journey (the manager's, else by date). */
 export function numbered<T extends JourneyCall>(calls: T[]): (T & { n: number })[] {
-  const sorted = [...calls].sort((a, b) => (a.call_date || a.created_at.slice(0, 10)).localeCompare(b.call_date || b.created_at.slice(0, 10)) || a.created_at.localeCompare(b.created_at));
+  const sorted = [...calls].sort(
+    (a, b) =>
+      (a.call_date || a.created_at.slice(0, 10)).localeCompare(b.call_date || b.created_at.slice(0, 10)) ||
+      (a.call_time || "").localeCompare(b.call_time || "") ||
+      a.created_at.localeCompare(b.created_at)
+  );
   let last = 0;
   return sorted.map((c) => {
     const n = c.call_number ?? last + 1;

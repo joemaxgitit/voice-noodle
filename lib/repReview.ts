@@ -337,7 +337,7 @@ export async function buildReviewInput(opts: {
           .slice(0, 6)
           .map(
             (r) =>
-              `${r.period_start} to ${r.period_end}: ${r.deals ?? "?"} deals, before-1st ${r.before1_rate === null ? "?" : Math.round(r.before1_rate * 100) + "%"}${r.prior_rate !== null && r.before1_rate !== null ? ` (prior ${Math.round(r.prior_rate * 100)}%)` : ""}, ${r.requests ?? "?"} cancel requests; point-of-sale reasons: ${Object.entries(r.pos_reasons).map(([k, n]) => `${k} x${n}`).join(", ") || "none"}`
+              `requests ${r.period_start} to ${r.period_end}: before-1st rate over ${r.deals ?? "?"} deals in the sale report behind it (a longer stretch than the window, not deals made in it), before-1st ${r.before1_rate === null ? "?" : Math.round(r.before1_rate * 100) + "%"}${r.prior_rate !== null && r.before1_rate !== null ? ` (prior ${Math.round(r.prior_rate * 100)}%)` : ""}, ${r.requests ?? "?"} cancel requests; point-of-sale reasons: ${Object.entries(r.pos_reasons).map(([k, n]) => `${k} x${n}`).join(", ") || "none"}`
           )
           .join("\n") + "\nIf the same point-of-sale reason shows up twice or more, name it as a coaching priority and suggest the matching practice (e.g. misunderstood the program -> the program explanation; would rather pay it themselves / won't go delinquent -> certainty and looping on the close; third party vetoed -> getting the spouse or partner on the call)."
       : "(none)",

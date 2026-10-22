@@ -73,7 +73,7 @@ export default function ManagerHome() {
         supabase.from("profiles").select("id, full_name, role, active").eq("org_id", org),
         supabase
           .from("calls")
-          .select("id, rep_id, created_at, call_date, source, status, slp_score, client_label")
+          .select("id, rep_id, created_at, call_date, call_time, source, status, slp_score, client_label")
           .gte("created_at", since)
           .order("created_at", { ascending: false })
           .limit(400),

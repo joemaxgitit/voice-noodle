@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { clock, hardshipScoreOf, OUTCOME_LABEL, RETENTION_LABEL, scoreBand, type Grade, type Outcome, type Retention } from "@/lib/calls";
+import { byCallMade, clock, hardshipScoreOf, OUTCOME_LABEL, RETENTION_LABEL, scoreBand, type Grade, type Outcome, type Retention } from "@/lib/calls";
 import { bestPool, kindOf, pickBest } from "@/lib/bestCall";
 import { okToSpend, usd, useEstimate } from "@/lib/spend";
 import "../calls.css";
@@ -27,7 +27,7 @@ type Call = {
   grade: Grade | null;
   profiles: { full_name: string | null } | null;
 };
-type Pick = { id: string; call_date: string | null; created_at: string; client_label: string | null; slp_score: number | null; outcome: string | null; duration_secs: number | null };
+type Pick = { id: string; call_date: string | null; call_time?: string | null; created_at: string; client_label: string | null; slp_score: number | null; outcome: string | null; duration_secs: number | null };
 
 const COLS =
   "id, rep_id, rep_name, client_label, call_date, created_at, duration_secs, slp_score, score, outcome, retention, audio_path, script_id, handoff, grade, profiles:rep_id(full_name)";
@@ -85,13 +85,13 @@ function Compare() {
       if (rep) {
         const { data: list } = await supabase
           .from("calls")
-          .select("id, call_date, created_at, client_label, slp_score, outcome, duration_secs")
+          .select("id, call_date, call_time, created_at, client_label, slp_score, outcome, duration_secs")
           .eq("rep_id", rep)
           .eq("status", "graded")
           .neq("source", "roleplay")
           .order("call_date", { ascending: false, nullsFirst: false })
           .limit(300);
-        setPicks(((list || []) as Pick[]).filter((x) => x.id !== aId && x.id !== bId));
+        setPicks(((list || []) as Pick[]).filter((x) => x.id !== aId && x.id !== bId).sort(byCallMade));
       }
     })();
   }, [supabase, aId, bId]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -14,6 +14,8 @@ export type HistCall = {
   id: string;
   created_at: string;
   call_date: string | null;
+  /** "HH:MM" when known. */
+  call_time?: string | null;
   source: string; // 'upload' | 'roleplay'
   persona_id: string | null;
   status: string;
@@ -176,6 +178,7 @@ const CALL_COLS = [
   "id",
   "created_at",
   "call_date",
+  "call_time",
   "source",
   "persona_id",
   "status",

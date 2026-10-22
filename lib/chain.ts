@@ -40,11 +40,11 @@ export async function afterGrade(request: Request, supabase: Supa, callId: strin
   const label = (me.client_label as string | null)?.trim();
   if (label) {
     const [{ data: cs }, nums] = await Promise.all([
-      supabase.from("calls").select("id, client_label, call_date, created_at, status, graded_at:grade->>graded_at").ilike("client_label", label).neq("source", "roleplay"),
+      supabase.from("calls").select("id, client_label, call_date, call_time, created_at, status, graded_at:grade->>graded_at").ilike("client_label", label).neq("source", "roleplay"),
       supabase.from("calls").select("id, call_number").ilike("client_label", label),
     ]);
     const num = new Map(((nums.data || []) as { id: string; call_number: number | null }[]).map((x) => [x.id, x.call_number]));
-    type C = { id: string; client_label: string | null; call_date: string | null; created_at: string; status: string; graded_at: string | null };
+    type C = { id: string; client_label: string | null; call_date: string | null; call_time?: string | null; created_at: string; status: string; graded_at: string | null };
     const list = numbered(
       ((cs || []) as C[]).map((c) => ({ ...c, call_number: num.get(c.id) ?? null, rep_id: null, outcome: null, outcome_manual: null, retention: null, score: null, slp_score: null }))
     );
