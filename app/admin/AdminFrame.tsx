@@ -14,7 +14,7 @@ import "./admin-frame.css";
   unchanged and keeps its own data, buttons and behaviour.
 */
 
-type Item = { href: string; label: string; icon: keyof typeof ICONS; match: (p: string) => boolean; salesOnly?: boolean; extra?: boolean };
+type Item = { href: string; label: string; icon: keyof typeof ICONS; match: (p: string) => boolean; salesOnly?: boolean; extra?: boolean; superAdminOnly?: boolean };
 
 const GROUPS: { title: string; items: Item[] }[] = [
   {
@@ -26,9 +26,9 @@ const GROUPS: { title: string; items: Item[] }[] = [
     items: [
       { href: "/admin/reps", label: "Reps", icon: "people", match: (p) => p.startsWith("/admin/reps") },
       { href: "/admin/rotation", label: "Rotation", icon: "rotate", match: (p) => p.startsWith("/admin/rotation"), salesOnly: true, extra: true },
-      { href: "/admin/dealclip", label: "Deal Clip", icon: "chart", match: (p) => p.startsWith("/admin/dealclip"), salesOnly: true, extra: true },
-      { href: "/admin/coaching", label: "Coaching trends", icon: "chart", match: (p) => p.startsWith("/admin/coaching"), extra: true },
-      { href: "/admin/reports", label: "Sales reports", icon: "table", match: (p) => p.startsWith("/admin/reports"), extra: true },
+      { href: "/admin/dealclip", label: "Deal Clip", icon: "chart", match: (p) => p.startsWith("/admin/dealclip"), salesOnly: true, extra: true, superAdminOnly: true },
+      { href: "/admin/coaching", label: "Coaching trends", icon: "chart", match: (p) => p.startsWith("/admin/coaching"), extra: true, superAdminOnly: true },
+      { href: "/admin/reports", label: "Sales reports", icon: "table", match: (p) => p.startsWith("/admin/reports"), extra: true, superAdminOnly: true },
     ],
   },
   {
@@ -303,7 +303,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="af-nav">
-          {GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !(i.salesOnly && who.service) && !(i.extra && !mode.superMode)) }))
+          {GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !(i.salesOnly && who.service) && !(i.extra && !mode.superMode) && !(i.superAdminOnly && !who.superAdmin)) }))
             // A heading with nothing under it (Meetings, for everyone but the super admin) isn't shown.
             .filter((g) => g.items.length)
             .map((g) => (
