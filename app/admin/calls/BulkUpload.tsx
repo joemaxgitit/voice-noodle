@@ -15,6 +15,8 @@ type Item = {
   file: File;
   row: LogRow | null;
   secs: number | null;
+  /** The recording's own length. */
+  fileSecs: number | null;
   date: string | null;
   time: string | null;
   repId: string;
@@ -64,13 +66,13 @@ export default function BulkUpload({
 
   // Re-match whenever the log or the recordings change.
   const rematch = (list: Item[], rows: LogRow[] | null): Item[] => {
-    const idx = rows ? matchRecordings(list.map((i) => i.file.name), rows) : list.map(() => -1);
+    const idx = rows ? matchRecordings(list.map((i) => ({ name: i.file.name, secs: i.fileSecs })), rows) : list.map(() => -1);
     return list
       .map((it, k) => {
         const row = rows && idx[k] >= 0 ? rows[idx[k]] : null;
         const fromName = convosoName(it.file.name);
         const rep = row ? repForAgent(row.agent, reps) : null;
-        return { ...it, row, secs: row?.secs ?? it.secs, date: row?.date ?? fromName.date, time: row?.time ?? fromName.time, repId: rep?.id ?? it.repId };
+        return { ...it, row, secs: row?.secs ?? it.fileSecs, date: row?.date ?? fromName.date, time: row?.time ?? fromName.time, repId: rep?.id ?? it.repId };
       })
       .sort((a, b) => `${a.date ?? ""}${a.time ?? ""}`.localeCompare(`${b.date ?? ""}${b.time ?? ""}`));
   };
@@ -96,16 +98,22 @@ export default function BulkUpload({
     const added: Item[] = [];
     for (const f of Array.from(fs)) {
       if (have.has(f.name)) continue;
-      added.push({ file: f, row: null, secs: await audioSeconds(f), date: null, time: null, repId: "", state: "waiting", note: "" });
+      const fs_ = await audioSeconds(f);
+      added.push({ file: f, row: null, secs: fs_, fileSecs: fs_, date: null, time: null, repId: "", state: "waiting", note: "" });
     }
     setItems((list) => rematch([...list.filter((i) => i.state !== "done"), ...added], log));
   }
 
   const matchedRows = new Set(items.map((i) => i.row).filter(Boolean));
-  const missing = (log ?? []).filter((r) => !matchedRows.has(r));
+  // The log can hold every rep's calls (Vindico logs do): only list the reps whose recordings were dropped in,
+  // and only calls someone actually talked on (an agent, 20+ seconds).
+  const agents = new Set(items.map((i) => i.row?.agent).filter(Boolean));
+  const missing = (log ?? []).filter((r) => !matchedRows.has(r) && r.agent && (r.secs ?? 0) >= 20 && (!agents.size || agents.has(r.agent)));
   const todo = items.filter((i) => i.state === "waiting" || i.state === "error");
   const repOf = (i: Item) => i.repId || fallbackRep;
   const isVindico = (name: string) => /^recording-[0-9a-f]{8}-[0-9a-f]{4}-/i.test(name);
+  // A Vindico recording is a renew lead -- unless its row in the log says it's from a sales (non-renew) campaign.
+  const renewFor = (i: Item) => !!renew && isVindico(i.file.name) && (!i.row || /renew/i.test(`${i.row.campaign} ${i.row.service}`));
   const full = todo.filter((i) => (i.secs ?? 0) >= SHORT_SECS).length;
   const cost = est ? todo.reduce((s, i) => s + transcribeEstimate(i.secs ?? 60) + ((i.secs ?? 0) >= SHORT_SECS ? est.grade : est.quick), 0) : null;
   const needRep = todo.some((i) => !repOf(i));
@@ -120,7 +128,7 @@ export default function BulkUpload({
     for (const it of todo) {
       const set = (p: Partial<Item>) => setItems((list) => list.map((x) => (x.file === it.file ? { ...x, ...p } : x)));
       set({ state: "working", note: "Starting..." });
-      const vin = isVindico(it.file.name) && renew;
+      const vin = renewFor(it) ? renew : null;
       const res = await uploadCall(
         supabase,
         it.file,
@@ -129,7 +137,7 @@ export default function BulkUpload({
           uploadedBy: me.id,
           repId: repOf(it),
           repName: null,
-          scriptId: vin ? renew.id : scriptId,
+          scriptId: vin ? vin.id : scriptId,
           clientLabel: it.row?.clientId ?? null,
           callDate: it.date,
           callTime: it.time,
@@ -207,7 +215,16 @@ export default function BulkUpload({
                 <tr key={i.file.name}>
                   <td>{i.time ? fmtTime(i.time) : <span className="muted">--</span>}</td>
                   <td>{clock(i.secs) || "--"}</td>
-                  <td>{i.row?.clientId ?? <span className="muted" title={i.file.name}>not in the log</span>}</td>
+                  <td>
+                    {i.row ? (
+                      i.row.clientId ?? <span className="muted">…{i.row.phone.slice(-4)}</span>
+                    ) : (
+                      <span className="muted" title={i.file.name}>
+                        not matched -- pick the rep
+                      </span>
+                    )}
+                    {i.row?.disposition ? <small className="muted"> · {i.row.disposition.replace(/_/g, " ").toLowerCase()}</small> : null}
+                  </td>
                   <td>
                     <select value={i.repId} onChange={(e) => setItems((l) => l.map((x) => (x.file === i.file ? { ...x, repId: e.target.value } : x)))} disabled={running || i.state === "done"}>
                       <option value="">{fallbackRep ? "(the rep above)" : "Choose…"}</option>
@@ -218,7 +235,7 @@ export default function BulkUpload({
                       ))}
                     </select>
                   </td>
-                  <td>{isVindico(i.file.name) && renew ? "Renew grade" : (i.secs ?? 0) >= SHORT_SECS ? "Full grade" : "Quick read"}</td>
+                  <td>{renewFor(i) ? "Renew grade" : (i.secs ?? 0) >= SHORT_SECS ? "Full grade" : "Quick read"}</td>
                   <td>
                     {i.state === "done" && i.callId ? (
                       <Link href={`/admin/calls/${i.callId}`}>Uploaded</Link>
@@ -254,6 +271,7 @@ export default function BulkUpload({
                 {fmtTime(r.time)} · {clock(r.secs)} · ({r.phone.slice(0, 3)}) {r.phone.slice(3, 6)}-{r.phone.slice(6)}
                 {r.clientId ? ` · ${r.clientId}` : ""}
                 {r.agent ? ` · ${r.agent}` : ""}
+                {r.disposition ? ` · ${r.disposition.replace(/_/g, " ").toLowerCase()}` : ""}
               </li>
             ))}
           </ul>

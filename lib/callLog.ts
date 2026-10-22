@@ -18,6 +18,8 @@ export type LogRow = {
   clientId: string | null;
   campaign: string;
   service: string;
+  /** What the dialer marked it (Vindico: SALE, Answering Machine, NOT_INTERESTED...). */
+  disposition: string;
 };
 
 const digits = (v: Cell) => String(v ?? "").replace(/\D/g, "").slice(-10);
@@ -59,18 +61,36 @@ function toSecs(v: Cell): number | null {
 /** Reads the call log. Throws with a plain message when the columns aren't there. */
 export function readCallLog(name: string, bytes: Uint8Array): LogRow[] {
   const grid = readSheet(name, bytes);
-  const hi = grid.findIndex((r) => r.some((c) => /call\s*to/i.test(String(c ?? ""))) && r.some((c) => /duration/i.test(String(c ?? ""))));
-  if (hi < 0) throw new Error("This doesn't look like the call log -- it needs Date, Time, Call To and Duration columns.");
+  // Convoso: "Call To". Vindico: "Phone" (and its times are UTC).
+  const hi = grid.findIndex((r) => r.some((c) => /call\s*to|^phone$/i.test(String(c ?? "").trim())) && r.some((c) => /duration/i.test(String(c ?? ""))));
+  if (hi < 0) throw new Error("This doesn't look like a call log -- it needs Date, Time, a phone number (Call To or Phone) and Duration columns.");
   const head = grid[hi].map((c) => String(c ?? "").trim().toLowerCase());
   const col = (re: RegExp) => head.findIndex((h) => re.test(h));
-  const c = { date: col(/^date/), time: col(/^time/), to: col(/call\s*to/), agent: col(/agent|rep/), dur: col(/duration/), client: col(/client\s*id/), campaign: col(/campaign/), service: col(/service/) };
+  const c = {
+    date: col(/^date/),
+    time: col(/^time/),
+    to: col(/call\s*to/) >= 0 ? col(/call\s*to/) : col(/^phone$/),
+    agent: col(/agent|^rep/),
+    dur: col(/duration/),
+    client: col(/client\s*id/),
+    campaign: col(/campaign/),
+    service: col(/service/),
+    disp: col(/disposition/),
+  };
   if (c.date < 0 || c.time < 0) throw new Error("The call log needs its Date and Time columns.");
+  const vindico = c.disp >= 0 && head.includes("direction");
   const out: LogRow[] = [];
   for (const r of grid.slice(hi + 1)) {
-    const date = toDate(r[c.date]);
-    const time = toTime(r[c.time]);
+    let date = toDate(r[c.date]);
+    let time = toTime(r[c.time]);
     const phone = digits(r[c.to]);
     if (!date || !time || phone.length < 10) continue;
+    if (vindico) {
+      // Vindico writes UTC: show it in this computer's time.
+      const d = new Date(`${date}T${time}:00Z`);
+      date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    }
     out.push({
       date,
       time,
@@ -80,6 +100,7 @@ export function readCallLog(name: string, bytes: Uint8Array): LogRow[] {
       clientId: c.client >= 0 ? String(r[c.client] ?? "").trim() || null : null,
       campaign: c.campaign >= 0 ? String(r[c.campaign] ?? "").trim() : "",
       service: c.service >= 0 ? String(r[c.service] ?? "").trim() : "",
+      disposition: c.disp >= 0 ? String(r[c.disp] ?? "").trim() : "",
     });
   }
   return out.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
@@ -97,8 +118,8 @@ const minutesOf = (date: string, time: string) => {
  * recordings is found first, then each file takes the closest row for its
  * number. Returns the row index for each file (or -1).
  */
-export function matchRecordings(files: string[], log: LogRow[]): number[] {
-  const parsed = files.map((f) => convosoName(f));
+export function matchRecordings(files: { name: string; secs: number | null }[], log: LogRow[]): number[] {
+  const parsed = files.map((f) => ({ ...convosoName(f.name), secs: f.secs }));
   let best = 0;
   let bestHits = -1;
   for (let off = -12; off <= 12; off++) {
@@ -114,7 +135,7 @@ export function matchRecordings(files: string[], log: LogRow[]): number[] {
     }
   }
   const taken = new Set<number>();
-  return parsed.map((p) => {
+  const out = parsed.map((p) => {
     if (!p.phone) return -1;
     const cands = log.map((r, i) => ({ r, i })).filter(({ r, i }) => r.phone === p.phone && !taken.has(i));
     if (!cands.length) return -1;
@@ -130,6 +151,22 @@ export function matchRecordings(files: string[], log: LogRow[]): number[] {
     taken.add(pick.i);
     return pick.i;
   });
+  // Recordings with nothing in the name (Vindico's "recording-<id>.mp3"): match on length, longest first.
+  // A long call's length is close to unique in a day; short ones are often ambiguous and stay unmatched.
+  const order = parsed.map((p, k) => k).filter((k) => out[k] < 0 && !parsed[k].phone && parsed[k].secs).sort((a, b) => (parsed[b].secs ?? 0) - (parsed[a].secs ?? 0));
+  for (const k of order) {
+    const secs = parsed[k].secs!;
+    const cands = log
+      .map((r, i) => ({ i, d: r.secs === null ? Infinity : Math.abs(r.secs - secs) }))
+      .filter((x) => !taken.has(x.i) && x.d <= 3 && log[x.i].agent)
+      .sort((a, b) => a.d - b.d);
+    if (!cands.length) continue;
+    // Two rows equally close: can't tell which -- leave it for the manager.
+    if (cands.length > 1 && cands[1].d === cands[0].d) continue;
+    taken.add(cands[0].i);
+    out[k] = cands[0].i;
+  }
+  return out;
 }
 
 /** "RolandoGonzalez" -> the rep whose name or CRM name squashes to the same letters. */
