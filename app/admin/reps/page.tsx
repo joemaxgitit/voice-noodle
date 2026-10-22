@@ -81,7 +81,7 @@ export default function Reps() {
       supabase.from("kpi_reports").select("*"),
       supabase.from("kpi_rows").select("id, report_id, rep_id, salesman, data"),
       supabase.from("rep_notes").select("rep_id"),
-      supabase.from("rep_reviews").select("rep_id, status, created_at, trajectory:review->>trajectory, core_trajectory:review->core->>trajectory").order("created_at", { ascending: false }),
+      supabase.from("rep_reviews").select("rep_id, status, created_at, trajectory:review->>trajectory, core_trajectory:review->core->>trajectory").is("inputs->day_review", null).order("created_at", { ascending: false }),
     ]);
     const err = p.error || c.error || r.error || n.error;
     if (err) setError(/kpi_|rep_notes|rep_reviews|does not exist/i.test(err.message) ? `${err.message} -- run supabase/rep-profile.sql in the Supabase SQL Editor first.` : err.message);

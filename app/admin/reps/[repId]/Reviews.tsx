@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { RepReview, ReviewBody } from "@/lib/repHistory";
 import { okToSpend, usd, useEstimate } from "@/lib/spend";
 import type { Ctx } from "./page";
+import DayReviews from "./DayReviews";
 
 const TRAJ: Record<ReviewBody["trajectory"], string> = {
   improving: "Improving",
@@ -55,6 +56,7 @@ export default function Reviews({ ctx }: { ctx: Ctx }) {
 
   return (
     <div>
+      <DayReviews ctx={ctx} />
       <section className="card rx-noprint">
         <h3 className="rx-sec-title">Run a coaching review</h3>
         <p className="hint" style={{ marginTop: 0 }}>

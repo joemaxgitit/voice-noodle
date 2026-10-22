@@ -155,8 +155,4 @@ export function repForAgent<T extends { id: string; full_name: string | null; kp
   );
 }
 
-export const fmtTime = (hhmm: string | null) => {
-  if (!hhmm) return "";
-  const [h, m] = hhmm.split(":").map(Number);
-  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
-};
+export { fmtTime } from "@/lib/dayReview";

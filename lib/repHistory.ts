@@ -161,6 +161,8 @@ export type RepHistory = {
   notes: RepNote[];
   files: RepFile[];
   reviews: RepReview[];
+  /** One-day reviews (a bad day's calls against the rep's best call). Kept apart from the overall reviews. */
+  dayReviews: RepReview[];
   quizzes: QuizAttempt[];
   completions: Completion[];
   attendance: AttendanceRow[];
@@ -224,7 +226,7 @@ export async function loadRepHistory(
     callQ,
     supabase.from("rep_notes").select("*").eq("rep_id", repId).order("note_date", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("rep_files").select("*").eq("rep_id", repId).order("created_at", { ascending: false }),
-    supabase.from("rep_reviews").select("*").eq("rep_id", repId).order("created_at", { ascending: false }).limit(20),
+    supabase.from("rep_reviews").select("*").eq("rep_id", repId).order("created_at", { ascending: false }).limit(60),
     supabase.from("training_quiz_attempts").select("material_id, score, passed, created_at").eq("user_id", repId).order("created_at", { ascending: false }),
     supabase.from("training_progress").select("material_id, completed_at").eq("user_id", repId).not("completed_at", "is", null),
     supabase.from("mastery_attendance").select("week_start, day, status").eq("rep_id", repId).order("week_start", { ascending: false }),
@@ -267,7 +269,8 @@ export async function loadRepHistory(
     calls: rows<HistCall>(calls, errors, "calls"),
     notes: rows<RepNote>(notes, errors, "notes"),
     files: rows<RepFile>(files, errors, "files"),
-    reviews: rows<RepReview>(reviews, errors, "reviews"),
+    reviews: rows<RepReview>(reviews, errors, "reviews").filter((r) => !r.inputs?.day_review).slice(0, 20),
+    dayReviews: rows<RepReview>(reviews, [], "reviews").filter((r) => !!r.inputs?.day_review).slice(0, 30),
     quizzes: rows<QuizAttempt>(quizzes, [], "quizzes").map((q) => ({ ...q, title: matById.get(q.material_id)?.title })),
     completions: rows<Completion>(completions, [], "completions").map((c) => ({
       ...c,

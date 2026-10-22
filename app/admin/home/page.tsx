@@ -80,7 +80,7 @@ export default function ManagerHome() {
         supabase.from("training_events").select("*").gte("event_date", week).lte("event_date", addDays(week, 4)).order("event_date").order("start_time"),
         supabase.from("mastery_weeks").select("*").eq("week_start", week).maybeSingle(),
         supabase.from("meetings").select("*").eq("meeting_date", thu).maybeSingle(),
-        supabase.from("rep_reviews").select("rep_id, created_at, status, trajectory:review->>trajectory, headline:review->>headline, core_trajectory:review->core->>trajectory, core_headline:review->core->>headline").eq("status", "done").order("created_at", { ascending: false }),
+        supabase.from("rep_reviews").select("rep_id, created_at, status, trajectory:review->>trajectory, headline:review->>headline, core_trajectory:review->core->>trajectory, core_headline:review->core->>headline").is("inputs->day_review", null).eq("status", "done").order("created_at", { ascending: false }),
         supabase.from("kpi_reports").select("title, period_end").order("created_at", { ascending: false }).limit(1),
       ]);
       setPeople((p.data || []) as Person[]);
