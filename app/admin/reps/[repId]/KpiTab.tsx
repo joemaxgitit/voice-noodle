@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   compareRep,
@@ -20,7 +20,7 @@ import {
 import type { RepHistory } from "@/lib/repHistory";
 import Link from "next/link";
 import { Sparkline } from "../charts";
-import { pct, pts, reasonsText } from "@/lib/retention";
+import { reasonsText } from "@/lib/retention";
 
 const NEXT: Record<Better, Better> = { up: "down", down: "none", none: "up" };
 const ARROW: Record<Better, string> = { up: "↑ higher is better", down: "↓ lower is better", none: "· no direction" };
@@ -169,6 +169,34 @@ export default function KpiTab({
   ) : null;
 
   const ret = history.retention.slice(0, 6);
+  // Every count is for the window itself: cancels by the date the client asked to cancel (from the
+  // lookback's request list), deals by the day they were made (the nightly sales dashboards).
+  const [cancels, setCancels] = useState<{ requested: string; stage: string }[] | null>(null);
+  useEffect(() => {
+    void supabase
+      .from("retention_cancels")
+      .select("requested, stage")
+      .eq("rep_id", repId)
+      .then(({ data }) => setCancels((data || []) as { requested: string; stage: string }[]));
+  }, [supabase, repId]);
+  const dealsIn = (start: string, end: string): number | null => {
+    const days = history.daily.filter((d) => d.day >= start && d.day <= end && d.deals !== null);
+    if (days.length) return days.reduce((s, d) => s + (d.deals ?? 0), 0);
+    // No daily numbers: month-to-date Deal Clip snapshots, month by month across the window.
+    const clips = [...history.dealClips].sort((x, y) => x.day.localeCompare(y.day));
+    if (!clips.length) return null;
+    let total = 0;
+    let any = false;
+    for (let m = start.slice(0, 7); m <= end.slice(0, 7); m = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 1)).toISOString().slice(0, 7)) {
+      const inMonth = clips.filter((c) => c.day.slice(0, 7) === m);
+      const upTo = inMonth.filter((c) => c.day <= end).pop();
+      if (!upTo) continue;
+      const before = inMonth.filter((c) => c.day < start).pop();
+      total += upTo.deals - (before?.deals ?? 0);
+      any = true;
+    }
+    return any ? total : null;
+  };
   const retentionCard = ret.length ? (
     <section className="card" style={{ marginBottom: 14 }}>
       <h3 className="rx-sec-title">Retention (Friday lookbacks)</h3>
@@ -176,26 +204,26 @@ export default function KpiTab({
         <table className="rx-table">
           <thead>
             <tr>
-              <th>Requests window</th>
-              <th className="num" title="From the sale report the lookback was built on -- it covers a longer stretch than the requests window">Cancelled before 1st</th>
-              <th className="num">Requests</th>
+              <th>Window</th>
+              <th className="num">Deals made</th>
+              <th className="num">Cancelled before 1st</th>
+              <th className="num">Cancel requests</th>
               <th>Lost at the sale</th>
             </tr>
           </thead>
           <tbody>
             {ret.map((r) => {
-              const up = r.before1_rate !== null && r.prior_rate !== null ? r.before1_rate - r.prior_rate : 0;
+              const d = dealsIn(r.period_start, r.period_end);
+              const mine = (cancels ?? []).filter((c) => c.requested >= r.period_start && c.requested <= r.period_end);
+              const before = mine.filter((c) => c.stage === "before_1st").length;
               return (
                 <tr key={r.period_end}>
                   <td style={{ whiteSpace: "nowrap" }}>
                     {new Date(`${r.period_start}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })} –{" "}
                     {new Date(`${r.period_end}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                   </td>
-                  <td className="num">
-                    <b>{pct(r.before1_rate)}</b>
-                    {r.deals ? <span className="muted"> of {r.deals} deals</span> : null}{" "}
-                    {r.prior_rate !== null && <span className={up > 0.02 ? "rx-down" : up < -0.02 ? "rx-up" : "muted"}>({pts(r.before1_rate, r.prior_rate)})</span>}
-                  </td>
+                  <td className="num">{d ?? "--"}</td>
+                  <td className="num">{cancels === null ? "…" : <b>{before}</b>}</td>
                   <td className="num">{r.requests ?? "--"}</td>
                   <td style={{ fontSize: 13 }}>{reasonsText(r.pos_reasons) || <span className="muted">none</span>}</td>
                 </tr>
@@ -204,7 +232,10 @@ export default function KpiTab({
           </tbody>
         </table>
       </div>
-      <p className="hint" style={{ marginBottom: 0 }}>Lower is better. The requests (and what was lost at the sale) are from the window shown. The cancel rate comes from the sale report the lookback was built on, which covers a longer stretch -- so the so &ldquo;of 45 deals&rdquo; is every deal in that reportldquo;of N dealsso &ldquo;of 45 deals&rdquo; is every deal in that reportrdquo; count is every deal in that report, not deals made in the window. Rates are a floor while first payments are still pending; the change is against the prior period and is directional.</p>
+      <p className="hint" style={{ marginBottom: 0 }}>
+        Every number is for the window shown: deals by the day they were made (from the nightly sales dashboards), cancels by the day the client asked to cancel. Most cancels in a window
+        come from deals made before it, so the two aren&rsquo;t divided into a rate here.
+      </p>
     </section>
   ) : null;
 
