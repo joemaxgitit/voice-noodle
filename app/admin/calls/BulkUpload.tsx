@@ -1,0 +1,284 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { clock } from "@/lib/calls";
+import { fmtTime, matchRecordings, readCallLog, repForAgent, type LogRow } from "@/lib/callLog";
+import { SHORT_SECS } from "@/lib/quick";
+import { estimateFor, okToSpend, transcribeEstimate, usd } from "@/lib/spend";
+import { audioSeconds, convosoName, uploadCall } from "@/lib/uploadCall";
+
+type Person = { id: string; full_name: string | null; kpi_name?: string | null };
+type ScriptOpt = { id: string; title: string; continues_into?: string | null };
+type Item = {
+  file: File;
+  row: LogRow | null;
+  secs: number | null;
+  date: string | null;
+  time: string | null;
+  repId: string;
+  state: "waiting" | "working" | "done" | "dupe" | "error";
+  note: string;
+  callId?: string;
+};
+
+/**
+ * A whole day at once: drop the dialer's call log and that day's recordings.
+ * Each recording is matched to its row in the log (client's number and time),
+ * so the rep, client ID, date, time and order fill in by themselves. Calls
+ * over 1:30 get the full grade; voicemails and shorter calls a cheap quick read.
+ */
+export default function BulkUpload({
+  supabase,
+  me,
+  people,
+  scripts,
+  onDone,
+}: {
+  supabase: SupabaseClient;
+  me: { id: string; org_id: string | null } | null;
+  people: Person[];
+  scripts: ScriptOpt[];
+  onDone: () => void;
+}) {
+  const renew = scripts.find((x) => x.continues_into || /renew/i.test(x.title)) ?? null;
+  const [scriptId, setScriptId] = useState(() => scripts.find((x) => x.id !== renew?.id)?.id ?? scripts[0]?.id ?? "");
+  const [log, setLog] = useState<LogRow[] | null>(null);
+  const [logName, setLogName] = useState("");
+  const [items, setItems] = useState<Item[]>([]);
+  const [fallbackRep, setFallbackRep] = useState("");
+  const [error, setError] = useState("");
+  const [running, setRunning] = useState(false);
+  const [kpi, setKpi] = useState<Map<string, string | null>>(new Map());
+  const [est, setEst] = useState<{ grade: number; quick: number } | null>(null);
+
+  useEffect(() => {
+    void Promise.all([estimateFor(supabase, "grade"), estimateFor(supabase, "quickread")]).then(([grade, quick]) => setEst({ grade, quick }));
+    void supabase
+      .from("profiles")
+      .select("id, kpi_name")
+      .then(({ data }) => setKpi(new Map(((data || []) as { id: string; kpi_name: string | null }[]).map((p) => [p.id, p.kpi_name]))));
+  }, [supabase]);
+  const reps = useMemo(() => people.map((p) => ({ ...p, kpi_name: kpi.get(p.id) ?? null })), [people, kpi]);
+
+  // Re-match whenever the log or the recordings change.
+  const rematch = (list: Item[], rows: LogRow[] | null): Item[] => {
+    const idx = rows ? matchRecordings(list.map((i) => i.file.name), rows) : list.map(() => -1);
+    return list
+      .map((it, k) => {
+        const row = rows && idx[k] >= 0 ? rows[idx[k]] : null;
+        const fromName = convosoName(it.file.name);
+        const rep = row ? repForAgent(row.agent, reps) : null;
+        return { ...it, row, secs: row?.secs ?? it.secs, date: row?.date ?? fromName.date, time: row?.time ?? fromName.time, repId: rep?.id ?? it.repId };
+      })
+      .sort((a, b) => `${a.date ?? ""}${a.time ?? ""}`.localeCompare(`${b.date ?? ""}${b.time ?? ""}`));
+  };
+
+  async function pickLog(f: File | null) {
+    setError("");
+    if (!f) return;
+    try {
+      const rows = readCallLog(f.name, new Uint8Array(await f.arrayBuffer()));
+      if (!rows.length) return setError("No calls found in that call log.");
+      setLog(rows);
+      setLogName(f.name);
+      setItems((list) => rematch(list, rows));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function pickFiles(fs: FileList | null) {
+    setError("");
+    if (!fs?.length) return;
+    const have = new Set(items.map((i) => i.file.name));
+    const added: Item[] = [];
+    for (const f of Array.from(fs)) {
+      if (have.has(f.name)) continue;
+      added.push({ file: f, row: null, secs: await audioSeconds(f), date: null, time: null, repId: "", state: "waiting", note: "" });
+    }
+    setItems((list) => rematch([...list.filter((i) => i.state !== "done"), ...added], log));
+  }
+
+  const matchedRows = new Set(items.map((i) => i.row).filter(Boolean));
+  const missing = (log ?? []).filter((r) => !matchedRows.has(r));
+  const todo = items.filter((i) => i.state === "waiting" || i.state === "error");
+  const repOf = (i: Item) => i.repId || fallbackRep;
+  const isVindico = (name: string) => /^recording-[0-9a-f]{8}-[0-9a-f]{4}-/i.test(name);
+  const full = todo.filter((i) => (i.secs ?? 0) >= SHORT_SECS).length;
+  const cost = est ? todo.reduce((s, i) => s + transcribeEstimate(i.secs ?? 60) + ((i.secs ?? 0) >= SHORT_SECS ? est.grade : est.quick), 0) : null;
+  const needRep = todo.some((i) => !repOf(i));
+
+  async function run() {
+    if (!me?.org_id) return;
+    if (!scriptId) return setError("Choose the script.");
+    if (needRep) return setError("Some recordings have no rep -- pick one under “Rep for anything the log doesn’t name”.");
+    if (!(await okToSpend(supabase, cost ?? 0, `${todo.length} calls`))) return;
+    setError("");
+    setRunning(true);
+    for (const it of todo) {
+      const set = (p: Partial<Item>) => setItems((list) => list.map((x) => (x.file === it.file ? { ...x, ...p } : x)));
+      set({ state: "working", note: "Starting..." });
+      const vin = isVindico(it.file.name) && renew;
+      const res = await uploadCall(
+        supabase,
+        it.file,
+        {
+          orgId: me.org_id,
+          uploadedBy: me.id,
+          repId: repOf(it),
+          repName: null,
+          scriptId: vin ? renew.id : scriptId,
+          clientLabel: it.row?.clientId ?? null,
+          callDate: it.date,
+          callTime: it.time,
+          handoff: vin ? "renew" : null,
+        },
+        (s) => set({ note: s })
+      );
+      if (res.ok) set({ state: "done", note: "Uploaded -- transcribing, then graded or read by itself", callId: res.id });
+      else set({ state: res.dupe ? "dupe" : "error", note: res.error, callId: res.dupe?.id });
+    }
+    setRunning(false);
+    onDone();
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 18 }}>
+      <b>Upload a whole day</b>
+      <p className="hint" style={{ marginTop: 4 }}>
+        Drop the call log from the dialer, then that day&rsquo;s recordings (as many as you like). Each recording is matched to its row in the log, so the rep, client ID, date and time
+        fill in by themselves. Calls over 1:30 get the full grade; voicemails and shorter calls get a quick read that never touches the scores.
+      </p>
+
+      <div className="calls-form">
+        <label className="field">
+          <span>Call log (CSV or Excel)</span>
+          <input type="file" accept=".csv,.xlsx" onChange={(e) => void pickLog(e.target.files?.[0] ?? null)} disabled={running} />
+          {log && (
+            <small className="muted">
+              {logName}: {log.length} calls
+            </small>
+          )}
+        </label>
+        <label className="field">
+          <span>Recordings</span>
+          <input type="file" multiple accept="audio/*,.mp3,.wav,.m4a" onChange={(e) => void pickFiles(e.target.files)} disabled={running} />
+        </label>
+        <label className="field">
+          <span>Script</span>
+          <select value={scriptId} onChange={(e) => setScriptId(e.target.value)} disabled={running}>
+            {scripts.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>Rep for anything the log doesn&rsquo;t name</span>
+          <select value={fallbackRep} onChange={(e) => setFallbackRep(e.target.value)} disabled={running}>
+            <option value="">Choose&hellip;</option>
+            {reps.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.full_name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {items.length > 0 && (
+        <div className="rx-scroll" style={{ marginTop: 10 }}>
+          <table className="bu-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Length</th>
+                <th>Client</th>
+                <th>Rep</th>
+                <th>Gets</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((i) => (
+                <tr key={i.file.name}>
+                  <td>{i.time ? fmtTime(i.time) : <span className="muted">--</span>}</td>
+                  <td>{clock(i.secs) || "--"}</td>
+                  <td>{i.row?.clientId ?? <span className="muted" title={i.file.name}>not in the log</span>}</td>
+                  <td>
+                    <select value={i.repId} onChange={(e) => setItems((l) => l.map((x) => (x.file === i.file ? { ...x, repId: e.target.value } : x)))} disabled={running || i.state === "done"}>
+                      <option value="">{fallbackRep ? "(the rep above)" : "Choose…"}</option>
+                      {reps.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.full_name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>{isVindico(i.file.name) && renew ? "Renew grade" : (i.secs ?? 0) >= SHORT_SECS ? "Full grade" : "Quick read"}</td>
+                  <td>
+                    {i.state === "done" && i.callId ? (
+                      <Link href={`/admin/calls/${i.callId}`}>Uploaded</Link>
+                    ) : i.state === "dupe" && i.callId ? (
+                      <Link href={`/admin/calls/${i.callId}`} className="danger">
+                        Already on file
+                      </Link>
+                    ) : i.state === "error" ? (
+                      <span className="danger">{i.note}</span>
+                    ) : i.state === "working" ? (
+                      <span className="muted">{i.note}</span>
+                    ) : (
+                      <button onClick={() => setItems((l) => l.filter((x) => x.file !== i.file))} disabled={running} title="Leave this one out">
+                        ✕
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {missing.length > 0 && items.length > 0 && (
+        <details style={{ marginTop: 10 }}>
+          <summary className="hint" style={{ cursor: "pointer" }}>
+            {missing.length} call{missing.length === 1 ? "" : "s"} in the log with no recording dropped in
+          </summary>
+          <ul className="hint" style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+            {missing.map((r, k) => (
+              <li key={k}>
+                {fmtTime(r.time)} · {clock(r.secs)} · ({r.phone.slice(0, 3)}) {r.phone.slice(3, 6)}-{r.phone.slice(6)}
+                {r.clientId ? ` · ${r.clientId}` : ""}
+                {r.agent ? ` · ${r.agent}` : ""}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {todo.length > 0 && (
+        <div className="row" style={{ marginTop: 12, gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <button className="primary" disabled={running} onClick={() => void run()}>
+            {running ? "Uploading… keep this tab open" : `Upload ${todo.length} call${todo.length === 1 ? "" : "s"}`}
+          </button>
+          <span className="muted" style={{ fontSize: 14 }}>
+            {full} full grade{full === 1 ? "" : "s"}, {todo.length - full} quick read{todo.length - full === 1 ? "" : "s"}
+            {cost !== null ? ` · about ${usd(cost)} in all` : ""} (voicemails among the long ones cost less)
+          </span>
+        </div>
+      )}
+      {error && <div className="error">{error}</div>}
+      <style>{`
+        .bu-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        .bu-table th, .bu-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+        .bu-table th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+        .bu-table select { padding: 4px 6px; font-size: 13px; width: auto; }
+        .bu-table button { padding: 2px 8px; }
+      `}</style>
+    </div>
+  );
+}

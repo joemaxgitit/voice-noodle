@@ -17,11 +17,10 @@ import { plainWords } from "@/lib/plain";
   "Grade it fully" on the call page always runs the full grade instead.
 */
 
-export const SHORT_SECS = 90;
 const MODEL = process.env.LEARN_MODEL || "claude-haiku-5-5";
 
-import { type CallKind, type Quick, type ShortRead, type VoicemailRead } from "@/lib/quick";
-export { SHORT_LABEL, type CallKind, type Quick } from "@/lib/quick";
+import { SHORT_SECS, type CallKind, type Quick, type ShortRead, type VoicemailRead } from "@/lib/quick";
+export { SHORT_LABEL, SHORT_SECS, type CallKind, type Quick } from "@/lib/quick";
 
 const GREETING =
   /leave (me |us |your |a )*(message|name|number)|after the (tone|beep)|at the (tone|beep)|record your (message|name)|(is |are )?(not|isn'?t) available|can'?t (come to|get to|take) the phone|unable to (take|answer)|voice ?mail|mail ?box|(person|party|number|customer) you (are|were|have) (trying to |)?(reach|call|dial)|not accepting calls|has not been set up|please try (your call )?again later|the subscriber/i;

@@ -1,5 +1,8 @@
 /* Shared by the server quick read (lib/quickRead.ts) and the pages that show it. */
 
+/** Calls shorter than this get a quick read, not the full grade. */
+export const SHORT_SECS = 90;
+
 export type CallKind = "voicemail" | "short";
 
 export type VoicemailRead = {

@@ -21,8 +21,8 @@ import {
   type Outcome,
 } from "@/lib/calls";
 import { SHORT_LABEL, type Quick } from "@/lib/quick";
-import { decodeMono, encodeMp3, SHRINK_OVER_BYTES, type Decoded } from "@/lib/shrinkAudio";
-import { measureVoice, type VoiceData } from "@/lib/voice";
+import { audioSeconds, convosoName, uploadCall } from "@/lib/uploadCall";
+import BulkUpload from "./BulkUpload";
 import "./calls.css";
 
 type Person = { id: string; full_name: string | null; email: string | null; team: string | null; org_id: string | null };
@@ -71,8 +71,6 @@ type CallRow = {
 
 const BUSY: CallStatus[] = ["uploading", "uploaded", "transcribing", "grading"];
 
-// Supabase's own per-file limit on the free plan. Paid plans can raise it.
-const MAX_MB = 50;
 
 function today(): string {
   const d = new Date();
@@ -85,46 +83,10 @@ function dateLabel(iso: string | null): string {
   return new Date(y, m - 1, d).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 }
 
-/** Length of an audio file, read in the browser before upload. */
-function audioSeconds(file: File): Promise<number | null> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file);
-    const a = new Audio();
-    const done = (v: number | null) => {
-      URL.revokeObjectURL(url);
-      resolve(v);
-    };
-    a.preload = "metadata";
-    a.onloadedmetadata = () => done(isFinite(a.duration) ? Math.round(a.duration) : null);
-    a.onerror = () => done(null);
-    setTimeout(() => done(null), 5000);
-    a.src = url;
-  });
-}
-
 /**
  * Call monitoring: upload a recording downloaded from the dialer, and it is
  * transcribed (with banking numbers redacted) and graded against the script.
  */
-// The same recording saved twice often gets " (1)" or " - Copy" added to its name.
-function baseName(n: string): string {
-  return n
-    .toLowerCase()
-    .replace(/\.[a-z0-9]{2,5}$/, "")
-    .replace(/(\s*-\s*copy|\s+copy)?(\s*\(\d+\))*$/g, "")
-    .replace(/(\s*-\s*copy|\s+copy)$/g, "")
-    .trim();
-}
-
-async function fileHash(f: File): Promise<string | null> {
-  try {
-    const d = await crypto.subtle.digest("SHA-256", await f.arrayBuffer());
-    return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, "0")).join("");
-  } catch {
-    return null;
-  }
-}
-
 export default function Calls() {
   const supabase = createClient();
   const router = useRouter();
@@ -222,6 +184,7 @@ export default function Calls() {
 
   // Voicemail scores and short-call reads (needs supabase/quick_reads.sql; nothing shows before it).
   const [quick, setQuick] = useState<Map<string, Quick>>(new Map());
+  const [bulk, setBulk] = useState(false);
   const loadCalls = useCallback(async () => {
     const { data, error } = await supabase
       .from("calls")
@@ -457,148 +420,33 @@ export default function Calls() {
       );
       return;
     }
-    // The recording is decoded once, in this browser. That feeds two things:
-    // compressing long calls under the storage limit (lib/shrinkAudio.ts) and
-    // measuring the voice for tonality grading (lib/voice.ts).
-    let upFile = file;
-    let seconds: number | null = null;
-    let voice: VoiceData | null = null;
-    let decoded: Decoded | null = null;
-
-    setBusy("Reading recording...");
-    try {
-      decoded = await decodeMono(file);
-      seconds = Math.round(decoded.seconds);
-    } catch (e) {
-      // A file this browser cannot decode can still be transcribed; it just
-      // gets no voice measurements. Too big to upload uncompressed, though.
-      if (file.size > SHRINK_OVER_BYTES) {
-        setBusy("");
-        setError(e instanceof Error ? e.message : "Could not read the recording.");
-        return;
-      }
-      seconds = await audioSeconds(file);
-    }
-
-    // Never the same recording twice: same audio bytes, or the same name (ignoring "(1)", "- Copy")
-    // at the same length. The old call has to be deleted before this one can go up.
-    setBusy("Checking it isn't already on file...");
-    const hash = await fileHash(file);
-    let hashCol = true;
-    {
-      let hit: { id: string; client_label: string | null; call_date: string | null } | null = null;
-      if (hash) {
-        const { data, error: hErr } = await supabase.from("calls").select("id, client_label, call_date").eq("file_hash", hash).limit(1);
-        if (hErr) hashCol = false; // column not added yet: the name check still runs
-        else hit = data?.[0] ?? null;
-      }
-      if (!hit) {
-        const base = baseName(file.name);
-        const like = base.replace(/[\\%_]/g, (c) => "\\" + c);
-        const { data } = await supabase.from("calls").select("id, file_name, duration_secs, client_label, call_date").ilike("file_name", `${like}%`).limit(50);
-        hit =
-          ((data || []) as { id: string; file_name: string | null; duration_secs: number | null; client_label: string | null; call_date: string | null }[]).find(
-            (c) => baseName(c.file_name || "") === base && (c.duration_secs == null || seconds == null || Math.abs(c.duration_secs - seconds) <= 2)
-          ) ?? null;
-      }
-      if (hit) {
-        setBusy("");
-        setDupe({ id: hit.id, what: [hit.client_label, hit.call_date].filter(Boolean).join(" · ") });
-        setError("This recording is already on file. Delete that call first if you want to upload it again.");
-        return;
-      }
-    }
-
-    if (decoded) {
-      try {
-        voice = await measureVoice(decoded.pcm, decoded.rate, (f) =>
-          setBusy(`Measuring voice ${Math.round(f * 100)}%...`)
-        );
-      } catch {
-        voice = null; // grading still works, from the words alone
-      }
-
-      if (file.size > SHRINK_OVER_BYTES) {
-        try {
-          upFile = await encodeMp3(decoded, file.name, (f) =>
-            setBusy(`Compressing ${Math.round(f * 100)}%...`)
-          );
-        } catch (e) {
-          setBusy("");
-          setError(e instanceof Error ? e.message : "Could not compress the recording.");
-          return;
-        }
-      }
-      decoded = null; // let the browser free the decoded audio
-    }
-
-    if (upFile.size > MAX_MB * 1024 * 1024) {
-      setBusy("");
-      setError(
-        `Even compressed, this recording is ${(upFile.size / 1048576).toFixed(0)} MB, over the ${MAX_MB} MB storage limit. That is roughly a 3-hour call.`
-      );
-      return;
-    }
-
-    const ext =
-      (upFile.name.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "") || "mp3";
-
-    setBusy("Saving...");
-    const { data: row, error: insErr } = await supabase
-      .from("calls")
-      .insert({
-        org_id: me.org_id,
-        uploaded_by: me.id,
-        rep_id: repId === NEW_REP ? null : repId,
-        rep_name: repId === NEW_REP ? typed : null,
-        script_id: scriptId,
-        client_label: client.trim() || null,
-        call_date: callDate || null,
-        ...(upStatus ? { retention: upStatus } : {}),
-        ...(upNumber ? { call_number: Number(upNumber) } : {}),
-        ...(upHandoff ? { handoff: upHandoff } : {}),
-        file_name: file.name,
-        ...(hash && hashCol ? { file_hash: hash } : {}),
-        duration_secs: seconds,
-        voice,
-        status: "uploading",
-      })
-      .select("id")
-      .single();
-
-    if (insErr || !row) {
-      setBusy("");
-      setError(`Could not create the call. ${insErr?.message ?? ""}`);
-      return;
-    }
-
-    setBusy("Uploading recording...");
-    const path = `${me.org_id}/${row.id}.${ext}`;
-    const { error: upErr } = await supabase.storage
-      .from("call-audio")
-      .upload(path, upFile, { contentType: upFile.type || "audio/mpeg", upsert: false });
-
-    if (upErr) {
-      await supabase.from("calls").delete().eq("id", row.id);
-      setBusy("");
-      setError(`Upload failed. ${upErr.message}`);
-      return;
-    }
-
-    await supabase
-      .from("calls")
-      .update({ audio_path: path, status: "uploaded", updated_at: new Date().toISOString() })
-      .eq("id", row.id);
-
-    setBusy("Starting transcription...");
-    const err = await startJob(supabase, "transcribe", row.id);
+    const ct = convosoName(file.name).time;
+    const res = await uploadCall(
+      supabase,
+      file,
+      {
+        orgId: me.org_id,
+        uploadedBy: me.id,
+        repId: repId === NEW_REP ? null : repId,
+        repName: repId === NEW_REP ? typed : null,
+        scriptId,
+        clientLabel: client.trim() || null,
+        callDate: callDate || null,
+        callTime: ct,
+        retention: upStatus || null,
+        callNumber: upNumber ? Number(upNumber) : null,
+        handoff: upHandoff || null,
+      },
+      setBusy
+    );
     setBusy("");
-
-    if (err) {
-      setError(err);
+    if (!res.ok) {
+      if (res.dupe) setDupe(res.dupe);
+      setError(res.error);
       await loadCalls();
       return;
     }
+    const row = { id: res.id };
 
     setFile(null);
     setVinNote("");
@@ -717,7 +565,17 @@ export default function Calls() {
         removed, then graded against the script. Only managers and admins can see this page.
       </p>
 
-      <div className="card" style={{ marginTop: 18 }}>
+      <div className="row" style={{ gap: 8, marginTop: 14 }}>
+        <button className={bulk ? "" : "primary"} onClick={() => setBulk(false)}>
+          One recording
+        </button>
+        <button className={bulk ? "primary" : ""} onClick={() => setBulk(true)}>
+          A whole day (call log + recordings)
+        </button>
+      </div>
+      {bulk && <BulkUpload supabase={supabase} me={me} people={people} scripts={scripts} onDone={() => void loadCalls()} />}
+
+      <div className="card" style={{ marginTop: 18, display: bulk ? "none" : undefined }}>
         <div className="calls-form">
           <label className="field wide">
             <span>Recording</span>
