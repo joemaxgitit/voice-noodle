@@ -1,27 +1,23 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useLang } from "@/lib/lang";
 import { copyFor } from "@/lib/copy";
-import TodayPanel from "./TodayPanel";
-import ProgressPanel from "./ProgressPanel";
+import SectionsHome from "./SectionsHome";
 import RepShell, { useShell } from "./RepShell";
 import "./training/training.css";
 
 /**
- * The rep's home inside their menu: Today (their next best move) or
- * My progress (?s=progress). Script sections, loops and practice calls are
- * in the menu.
+ * The rep's home inside their menu: the Options Script's sections, straight
+ * into practice. Scripts and practice calls are in the menu.
  */
 export default function HomeView() {
   const supabase = createClient();
   const router = useRouter();
   const data = useShell();
   const lang = useLang();
-  // Today, or My progress from the menu (?s=progress).
-  const section: "today" | "progress" = useSearchParams().get("s") === "progress" ? "progress" : "today";
 
 
   useEffect(() => {
@@ -43,24 +39,13 @@ export default function HomeView() {
   const es = lang === "es";
 
   return (
-    <RepShell section={section}>
+    <RepShell>
       <main className="shell">
         {!data ? (
           <p className="muted">{c.loading}</p>
         ) : (
           <>
-            <div className="eyebrow">{data.name ? `${c.welcomeBack}, ${data.name.split(" ")[0]}` : c.training}</div>
-            {section === "progress" ? (
-              <>
-                <h1>{es ? "Mi progreso" : "My progress"}</h1>
-                <ProgressPanel supabase={supabase} userId={data.userId} es={es} linesDone={data.done.size} />
-              </>
-            ) : (
-              <>
-                <h1>{es ? "Hoy" : "Today"}</h1>
-                <TodayPanel supabase={supabase} userId={data.userId} es={es} roleplayOn={data.roleplayOn} modules={data.modules} lang={lang} />
-              </>
-            )}
+            <SectionsHome data={data} lang={lang} />
           </>
         )}
       </main>

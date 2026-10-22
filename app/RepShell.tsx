@@ -10,9 +10,8 @@ import "./admin/admin-frame.css";
 
 /*
   The rep's frame: a left menu like the managers', built for one job --
-  getting reps into practice. Today (their next best move), Practice calls,
-  each script with its sections, the loops, My progress, and My training for
-  reps still in training. Sales reps see the Lionside logo, service reps
+  getting reps into practice. Practice calls and each script with its
+  sections and loops; My training only for a rep a manager put in training. Sales reps see the Lionside logo, service reps
   (account managers) Bolton's.
 
   viewAs: a manager looking at exactly what one rep sees (read only).
@@ -138,8 +137,6 @@ export default function RepShell({
   const service = data?.team === "ams";
   const logo = service ? { dark: "/bolton-logo.png", light: "/bolton-logo-light.png" } : { dark: "/lionside-logo.png", light: "/lionside-logo-print.png" };
 
-  const homeActive = !viewing && (path === "/proedgesolutions" || path === "/") && section !== "progress";
-  const progressActive = section === "progress";
 
   /** A menu link; in view-as mode only Today and My progress do anything. */
   const item = (key: string, href: string, label: ReactNode, icon: Parameters<typeof Icon>[0]["name"], active: boolean) =>
@@ -235,12 +232,11 @@ export default function RepShell({
 
         <nav className="af-nav">
           <div className="af-group">
-            {item("today", "/proedgesolutions", es ? "Hoy" : "Today", "target", viewing ? section !== "progress" : homeActive)}
             {item("roleplay", "/roleplay", es ? "Llamadas de práctica" : "Practice calls", "headset", path.startsWith("/roleplay"))}
           </div>
 
           <div className="af-group">
-            <div className="af-group-title">{es ? "Practica el guion" : "Practice the script"}</div>
+            <div className="af-group-title">{es ? "Guiones" : "Scripts"}</div>
             {/* Loops sit right under the script they belong to (the Options Script). */}
             {(data?.scripts || []).map((sc) => (
               <div key={sc.id}>
@@ -257,10 +253,8 @@ export default function RepShell({
             {!(data?.scripts || []).some((sc) => sc.id === loops[0]?.script_id) && group("loops", "Loops", "loop", loops)}
           </div>
 
-          <div className="af-group">
-            {item("progress", "/proedgesolutions?s=progress", es ? "Mi progreso" : "My progress", "chart", viewing ? progressActive : path === "/proedgesolutions" && section === "progress")}
-            {data?.inTraining && item("training", "/training", es ? "Mi capacitación" : "My training", "calendar", path.startsWith("/training"))}
-          </div>
+          {/* Only for a rep a manager has put into training. */}
+          {data?.inTraining && <div className="af-group">{item("training", "/training", es ? "Mi capacitación" : "My training", "calendar", path.startsWith("/training"))}</div>}
         </nav>
 
         <div className="af-foot">
