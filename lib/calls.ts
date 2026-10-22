@@ -14,6 +14,7 @@ export type CallStatus =
   | "transcribed"
   | "grading"
   | "graded"
+  | "read" // a voicemail or short call: a quick read, not a full grade
   | "failed";
 
 export type Role = "rep" | "client" | "am" | "other";
@@ -813,6 +814,7 @@ export const STATUS_LABEL: Record<CallStatus, string> = {
   transcribed: "Ready to grade",
   grading: "Grading",
   graded: "Graded",
+  read: "Quick read",
   failed: "Failed",
 };
 

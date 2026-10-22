@@ -2,6 +2,7 @@ import { NextResponse, after } from "next/server";
 import { requireAdmin, log } from "@/lib/callsServer";
 import { prepareGrade } from "@/lib/gradeCall";
 import { afterGrade } from "@/lib/chain";
+import { prepareQuick } from "@/lib/quickRead";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
   const started = Date.now();
   const ctx = await requireAdmin(request);
   if (ctx instanceof NextResponse) return ctx;
-  const { supabase } = ctx;
+  const { supabase, orgId, userId } = ctx;
 
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) {
@@ -26,12 +27,30 @@ export async function POST(request: Request) {
   }
 
   let callId = "";
+  let full = false;
   try {
-    callId = String((await request.json())?.callId || "");
+    const body = await request.json();
+    callId = String(body?.callId || "");
+    full = !!body?.full;
   } catch {
     // fall through
   }
   if (!callId) return NextResponse.json({ error: "No call id." }, { status: 400 });
+
+  // A full grade replaces any earlier quick read (no-op before supabase/quick_reads.sql).
+  if (full) await supabase.from("calls").update({ kind: null, quick: null }).eq("id", callId).then(() => undefined, () => undefined);
+
+  // A voicemail or a short call gets a cheap read instead of the full grade ("Grade it fully" sends full).
+  if (!full) {
+    const quick = await prepareQuick(supabase, callId, key, orgId, userId);
+    if (quick) {
+      after(async () => {
+        await quick.run();
+      });
+      log("grade", callId, started, `quick read (${quick.kind})`);
+      return NextResponse.json({ ok: true, quick: quick.kind }, { status: 202 });
+    }
+  }
 
   const prep = await prepareGrade(supabase, callId, key, started);
   if (!prep.ok) return NextResponse.json({ error: prep.error }, { status: prep.status });

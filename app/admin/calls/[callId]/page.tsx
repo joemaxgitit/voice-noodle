@@ -45,6 +45,7 @@ import { measureVoice } from "@/lib/voice";
 import { cleanRecording as cleanRecordingFor } from "@/lib/cleanRecording";
 import type { RoleplayInfo } from "@/lib/roleplay";
 import JourneyBox from "./JourneyBox";
+import QuickCard from "./QuickCard";
 import "../calls.css";
 import "../../reps/reps.css";
 import { afterOutcomes } from "@/lib/outcomes";
@@ -580,7 +581,7 @@ export default function CallDetail() {
   // A re-grade costs about what the last grade of this call did.
   const regradeUsd = call?.cost?.grade_usd ?? null;
 
-  async function run(route: "transcribe" | "grade") {
+  async function run(route: "transcribe" | "grade", full = false) {
     if (!call) return;
     if (route === "grade" && !(await okToSpend(supabase, regradeUsd ?? 0.08, "Re-grading this call"))) return;
     setWorking(true);
@@ -591,7 +592,7 @@ export default function CallDetail() {
     const err =
       call.source === "roleplay" && route === "transcribe"
         ? await finishPractice(call.id)
-        : await startJob(supabase, route, call.id);
+        : await startJob(supabase, route, call.id, full ? { full: true } : {});
     if (err) setError(err);
     await load();
     setWorking(false);
@@ -913,6 +914,11 @@ export default function CallDetail() {
             Re-grade{regradeUsd ? ` · about ${usd(regradeUsd)}` : ""}
           </button>
         )}
+        {call.status === "read" && call.transcript && call.script_id && (
+          <button disabled={working} onClick={() => run("grade", true)} title="A real conversation was read as a voicemail or short call: grade it against the script">
+            Grade it fully{regradeUsd ? ` · about ${usd(regradeUsd)}` : ""}
+          </button>
+        )}
         {call.status === "transcribed" && !call.script_id && (
           <span className="muted">Pick a script below to grade this call.</span>
         )}
@@ -929,6 +935,8 @@ export default function CallDetail() {
           />
         </div>
       )}
+
+      <QuickCard supabase={supabase} callId={call.id} status={call.status} />
 
       {/* Only the latest grade is shown; earlier ones stay in the call's history but aren't offered here. */}
       {call.status === "graded" && (call.grade as unknown as { regrade_failed?: boolean } | null)?.regrade_failed && (

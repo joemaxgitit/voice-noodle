@@ -8,7 +8,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export async function startJob(
   supabase: SupabaseClient,
   route: "transcribe" | "grade" | "translate",
-  callId: string
+  callId: string,
+  extra: Record<string, unknown> = {}
 ): Promise<string> {
   const {
     data: { session },
@@ -22,7 +23,7 @@ export async function startJob(
         Authorization: `Bearer ${session.access_token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ callId }),
+      body: JSON.stringify({ callId, ...extra }),
     });
     if (res.ok) return "";
     const body = await res.json().catch(() => ({}));

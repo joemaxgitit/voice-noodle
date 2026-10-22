@@ -20,6 +20,7 @@ import {
   type CallStatus,
   type Outcome,
 } from "@/lib/calls";
+import { SHORT_LABEL, type Quick } from "@/lib/quick";
 import { decodeMono, encodeMp3, SHRINK_OVER_BYTES, type Decoded } from "@/lib/shrinkAudio";
 import { measureVoice, type VoiceData } from "@/lib/voice";
 import "./calls.css";
@@ -219,6 +220,8 @@ export default function Calls() {
   const triedBleep = useRef(new Set<string>());
   const [bleepNote, setBleepNote] = useState("");
 
+  // Voicemail scores and short-call reads (needs supabase/quick_reads.sql; nothing shows before it).
+  const [quick, setQuick] = useState<Map<string, Quick>>(new Map());
   const loadCalls = useCallback(async () => {
     const { data, error } = await supabase
       .from("calls")
@@ -230,7 +233,13 @@ export default function Calls() {
       .order("created_at", { ascending: false })
       .limit(300);
     if (error) setError(error.message);
-    setCalls((data || []) as unknown as CallRow[]);
+    const rows = (data || []) as unknown as CallRow[];
+    setCalls(rows);
+    const readIds = rows.filter((c) => c.status === "read").map((c) => c.id);
+    if (readIds.length) {
+      const { data: q, error: qErr } = await supabase.from("calls").select("id, quick").in("id", readIds);
+      if (!qErr) setQuick(new Map(((q || []) as { id: string; quick: Quick | null }[]).filter((x) => x.quick).map((x) => [x.id, x.quick!])));
+    }
   }, [supabase]);
 
   useEffect(() => {
@@ -609,7 +618,10 @@ export default function Calls() {
       calls.filter(
         (c) =>
           (!filterRep || repKeyOf(c) === filterRep) &&
+          (filterOutcome === "quick" ? c.status === "read" : filterOutcome === "" ? c.status !== "read" : true) &&
           (!filterOutcome ||
+            filterOutcome === "quick" ||
+            filterOutcome === "all" ||
             (filterOutcome === "fragile"
               ? c.close_quality === "fragile"
               : filterOutcome === "cancelled" || filterOutcome === "graduated" || filterOutcome === "paid6"
@@ -836,7 +848,7 @@ export default function Calls() {
           style={{ width: "auto", fontSize: 14, padding: "8px 10px" }}
           aria-label="Filter by outcome"
         >
-          <option value="">All outcomes</option>
+          <option value="">All full calls</option>
           {(Object.keys(OUTCOME_LABEL) as Outcome[]).map((o) => (
             <option key={o} value={o}>
               {OUTCOME_LABEL[o]}
@@ -846,6 +858,8 @@ export default function Calls() {
           <option value="cancelled">Cancelled</option>
           <option value="paid6">Made 6+ payments</option>
           <option value="graduated">Graduated</option>
+          <option value="quick">Voicemails &amp; short calls</option>
+          <option value="all">Everything, voicemails too</option>
         </select>
         {repsWithCalls.length > 1 && (
           <select
@@ -924,6 +938,19 @@ export default function Calls() {
                       </span>
                     )}
                   </span>
+                ) : c.status === "read" && quick.get(c.id) ? (
+                  (() => {
+                    const q = quick.get(c.id)!;
+                    return q.kind === "voicemail" ? (
+                      <span className={`pill ${scoreBand(q.score)}`} title="Voicemail score -- kept apart from every grade and average">
+                        Voicemail {q.score}
+                      </span>
+                    ) : (
+                      <span className="pill" title={q.read}>
+                        {SHORT_LABEL[q.what]}
+                      </span>
+                    );
+                  })()
                 ) : (
                   <span
                     className={`pill ${
