@@ -139,8 +139,8 @@ export default function DealClip() {
     const td = "border:1px solid #bbb;padding:4px 8px";
     const html =
       `<table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px">` +
-      `<tr><th style="${td};text-align:left;background:#222;color:#fff">${esc(name)}</th>${COLS.map((c) => `<th style="${td};background:#222;color:#fff">${c}</th>`).join("")}</tr>` +
-      ranked.map((r) => `<tr><td style="${td}">${esc(r.name)}</td>${cells(r).map((c) => `<td style="${td};text-align:center">${c}</td>`).join("")}</tr>`).join("") +
+      `<tr><td align="left" style="${td};text-align:left;background:#222;color:#fff;font-weight:bold"><b>${esc(name)}</b></td>${COLS.map((c) => `<th style="${td};background:#222;color:#fff">${c}</th>`).join("")}</tr>` +
+      ranked.map((r) => `<tr><td align="left" style="${td};text-align:left">${esc(r.name)}</td>${cells(r).map((c) => `<td style="${td};text-align:center">${c}</td>`).join("")}</tr>`).join("") +
       `</table>`;
     try {
       await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) })]);
