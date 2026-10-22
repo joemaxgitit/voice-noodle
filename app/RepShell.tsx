@@ -211,20 +211,24 @@ export default function RepShell({
         <button className="af-menu" aria-label="Open menu" aria-expanded={open} onClick={() => setOpen(true)}>
           <Icon name="menu" />
         </button>
+        <Link href="/proedgesolutions" aria-label="Home" style={{ display: "flex" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className="rs-mobile-logo dark-only" src={logo.dark} alt="" />
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className="rs-mobile-logo light-only" src={logo.light} alt="" />
+        </Link>
       </header>
 
       {open && <div className="af-backdrop" onClick={() => setOpen(false)} aria-hidden="true" />}
 
       <aside className={`af-side${open ? " open" : ""}`} aria-label="Menu">
         <div className="rs-brand">
+          <Link href="/proedgesolutions" aria-label="Home" style={{ display: "contents" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img className="dark-only" src={logo.dark} alt={service ? "Bolton" : "Lionside"} />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img className="light-only" src={logo.light} alt="" />
+          </Link>
           <button className="af-close" aria-label="Close menu" onClick={() => setOpen(false)}>
             <Icon name="close" />
           </button>

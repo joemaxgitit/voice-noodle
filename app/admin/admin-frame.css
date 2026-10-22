@@ -169,6 +169,15 @@ body:has(.admin-frame) .site-footer {
     padding: 18px 16px 72px;
   }
 
+  /* The sticky top bar must never cover the top of a page the browser scrolled to. */
+  html:has(.af-mobilebar) {
+    scroll-padding-top: 62px;
+  }
+  .af-main,
+  .af-main * {
+    scroll-margin-top: 62px;
+  }
+
   .af-mobilebar {
     position: sticky;
     top: 0;

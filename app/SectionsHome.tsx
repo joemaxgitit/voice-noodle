@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import type { ShellData } from "./RepShell";
 
@@ -9,6 +10,10 @@ import type { ShellData } from "./RepShell";
  */
 export default function SectionsHome({ data, lang, viewing }: { data: ShellData; lang: "en" | "es"; viewing?: boolean }) {
   const es = lang === "es";
+  // Always open at the top, with the title showing (phones restore an old scroll spot otherwise).
+  useEffect(() => {
+    if (!viewing) window.scrollTo(0, 0);
+  }, [viewing]);
   const script = data.scripts.find((s) => /options/i.test(s.title)) ?? data.scripts[0];
   const mods = data.modules.filter((m) => (m.language || "en") === lang);
   const sections = script ? mods.filter((m) => m.script_id === script.id && m.kind !== "loop") : [];
