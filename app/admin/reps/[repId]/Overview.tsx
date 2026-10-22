@@ -5,6 +5,7 @@ import { reviewView, skillAverages } from "@/lib/repHistory";
 import { scoreBand, callAt } from "@/lib/calls";
 import { LineChart } from "../charts";
 import type { Ctx } from "./page";
+import BestCalls from "./BestCalls";
 
 const DAY = 86400000;
 const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((s, x) => s + x, 0) / xs.length) : null);
@@ -60,6 +61,7 @@ export default function Overview({ ctx }: { ctx: Ctx }) {
 
   return (
     <div>
+      <BestCalls ctx={ctx} />
       <div className="rx-tiles">
         <div className="rx-tile">
           <div className="k">Straight Line, 30 days</div>

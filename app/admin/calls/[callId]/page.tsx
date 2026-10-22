@@ -797,6 +797,11 @@ export default function CallDetail() {
           &larr; Calls
         </Link>
         <div className="row">
+          {g && call?.source !== "roleplay" && call?.rep_id && (
+            <Link className="btn" href={`/admin/calls/compare?b=${call.id}`} style={{ textDecoration: "none" }}>
+              Compare to their best call
+            </Link>
+          )}
           {g && <button onClick={() => setPrintMode("report")}>Print report</button>}
           {utterances.length > 0 && <button onClick={() => setPrintMode("transcript")}>Print transcript</button>}
         </div>
