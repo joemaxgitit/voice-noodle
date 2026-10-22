@@ -1,5 +1,5 @@
 import { jsonrepair } from "jsonrepair";
-import type { Supa } from "@/lib/callsServer";
+import { thinkingFor, type Supa } from "@/lib/callsServer";
 import { clock, gradeCostUsd, voiceNotes, type Transcript, type VoiceTimeline } from "@/lib/calls";
 import { logSpend } from "@/lib/spendServer";
 import { plainWords } from "@/lib/plain";
@@ -51,14 +51,15 @@ async function ask(key: string, prompt: string): Promise<{ data: Record<string, 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODEL, max_tokens: 800, messages: [{ role: "user", content: prompt }] }),
+    body: JSON.stringify({ model: MODEL, max_tokens: 2000, ...thinkingFor(MODEL), messages: [{ role: "user", content: prompt }] }),
     signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) throw new Error(`Quick read failed (${res.status}). ${(await res.text().catch(() => "")).slice(0, 200)}`);
-  const out = (await res.json()) as { content?: { type: string; text?: string }[]; usage?: Record<string, number> };
+  const out = (await res.json()) as { content?: { type: string; text?: string }[]; usage?: Record<string, number>; stop_reason?: string };
   const text = (out.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("");
   const m = text.match(/\{[\s\S]*\}/);
-  return { data: m ? (JSON.parse(jsonrepair(m[0])) as Record<string, unknown>) : null, usage: out.usage ?? {} };
+  if (!m) throw new Error(`The quick read came back empty (stop: ${out.stop_reason ?? "?"}; ${text.length} chars).`);
+  return { data: JSON.parse(jsonrepair(m[0])) as Record<string, unknown>, usage: out.usage ?? {} };
 }
 
 const n = (x: unknown, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(Number(x) || 0)));

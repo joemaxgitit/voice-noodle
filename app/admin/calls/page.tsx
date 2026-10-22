@@ -363,6 +363,16 @@ export default function Calls() {
     })();
   }, [calls, anyBusy, supabase, loadCalls]);
 
+  // A quick read (voicemail or short call) that failed: try it once more by itself -- it costs a fraction of a cent.
+  useEffect(() => {
+    for (const c of calls) {
+      if (c.status === "failed" && (c.error || "").startsWith("Quick read:") && !kicked.current.has(c.id)) {
+        kicked.current.add(c.id);
+        void startJob(supabase, "grade", c.id).then(() => void loadCalls());
+      }
+    }
+  }, [calls, supabase, loadCalls]);
+
   // Transcript ready -> start grading.
   useEffect(() => {
     for (const c of calls) {

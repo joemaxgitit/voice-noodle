@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/callsServer";
+import { requireAdmin, thinkingFor } from "@/lib/callsServer";
 import { gradeCostUsd } from "@/lib/calls";
 import { digest, type DigestRow as Row } from "@/lib/callDigest";
 import { logSpend } from "@/lib/spendServer";
@@ -46,7 +46,7 @@ Rules: plain English, no jargon or shorthand, no client names, no scores restate
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODEL, max_tokens: 1500, messages: [{ role: "user", content: prompt }] }),
+    body: JSON.stringify({ model: MODEL, max_tokens: 4000, ...thinkingFor(MODEL), messages: [{ role: "user", content: prompt }] }),
     signal: AbortSignal.timeout(100_000),
   });
   if (!res.ok) {
