@@ -284,7 +284,7 @@ export default function Reps() {
               {head("rep", <>Rep<br />(Ten 2)</>, "num rx-hide-sm rx-wrap", "Client's trust in the rep, 1-10, last 30 days")}
               {head("company", <>Company<br />(Ten 3)</>, "num rx-hide-sm rx-wrap", "Client's certainty in the company, 1-10, last 30 days")}
               {head("hardship", "Hardship", "num", "Hardship score (0-100): how deep the client opened up, question quality, follow-ups, empathy, anchoring the pain and staying on the line. First calls and renews, last 30 days, each scored against its own target (8-12 minutes, or 2-4 on a renew); follow-ups are left out. Faded when it rests on fewer than 3 calls.")}
-              {head("calls", <>Calls 30d<br />(all time)</>, "rx-hide-sm rx-wrap rx-calls", "Real calls / practice calls graded with a call date in the last 30 days. Underneath: every graded call on file. Older calls still count in the rep's profile, trends and coaching review -- the 30-day columns only use the last 30 days.")}
+              {head("calls", <>Calls<br />30d / all</>, "rx-hide-sm rx-wrap rx-calls", "Real calls graded: with a call date in the last 30 days / every one on file. Hover a row for practice calls. Older calls still count in the rep's profile, trends and coaching review -- the 30-day columns only use the last 30 days.")}
               {superMode && (
                 <>
               <th className="num">{kpi ? `Deals ${fmtMonth(monthOf(kpi.cur), false)}` : "Deals"}</th>
@@ -364,18 +364,15 @@ export default function Reps() {
                   )}
                 </td>
                 <td className="rx-hide-sm rx-calls">
-                  {/* The 30 days, centred; the all-time count sits just off to the right so the 30-day numbers line up. */}
-                  <span className="rx-score">
-                    {r.real} / {r.practice}
-                    {(() => {
-                      const t = totals.get(r.p.id);
-                      return t && (t.real !== r.real || t.practice !== r.practice) ? (
-                        <small className="muted rx-delta" title={`${t.real} real and ${t.practice} practice calls graded in all`}>
-                          ({t.practice ? `${t.real} / ${t.practice}` : t.real})
-                        </small>
-                      ) : null;
-                    })()}
-                  </span>
+                  {/* Real calls: last 30 days / all time. Practice calls are in the hover. */}
+                  {(() => {
+                    const t = totals.get(r.p.id);
+                    return (
+                      <span className="rx-score" title={`${r.real} real call${r.real === 1 ? "" : "s"} in the last 30 days, ${t?.real ?? r.real} in all. Practice calls: ${r.practice} in 30 days, ${t?.practice ?? r.practice} in all.`}>
+                        {r.real} / {t?.real ?? r.real}
+                      </span>
+                    );
+                  })()}
                 </td>
                 {superMode && (
                   <>
