@@ -20,6 +20,8 @@ export type LogRow = {
   service: string;
   /** What the dialer marked it (Vindico: SALE, Answering Machine, NOT_INTERESTED...). */
   disposition: string;
+  /** Vindico logs name the dialer seat, not the person: "Ryan Smith" on Vindico may be someone else. */
+  dialer: "convoso" | "vindico";
 };
 
 const digits = (v: Cell) => String(v ?? "").replace(/\D/g, "").slice(-10);
@@ -101,6 +103,7 @@ export function readCallLog(name: string, bytes: Uint8Array): LogRow[] {
       campaign: c.campaign >= 0 ? String(r[c.campaign] ?? "").trim() : "",
       service: c.service >= 0 ? String(r[c.service] ?? "").trim() : "",
       disposition: c.disp >= 0 ? String(r[c.disp] ?? "").trim() : "",
+      dialer: vindico ? "vindico" : "convoso",
     });
   }
   return out.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
@@ -118,7 +121,7 @@ const minutesOf = (date: string, time: string) => {
  * recordings is found first, then each file takes the closest row for its
  * number. Returns the row index for each file (or -1).
  */
-export function matchRecordings(files: { name: string; secs: number | null }[], log: LogRow[]): number[] {
+export function matchRecordings(files: { name: string; secs: number | null }[], log: LogRow[], seat?: string | null): number[] {
   const parsed = files.map((f) => ({ ...convosoName(f.name), secs: f.secs }));
   let best = 0;
   let bestHits = -1;
@@ -158,7 +161,7 @@ export function matchRecordings(files: { name: string; secs: number | null }[], 
     const secs = parsed[k].secs!;
     const cands = log
       .map((r, i) => ({ i, d: r.secs === null ? Infinity : Math.abs(r.secs - secs) }))
-      .filter((x) => !taken.has(x.i) && x.d <= 3 && log[x.i].agent)
+      .filter((x) => !taken.has(x.i) && x.d <= 3 && log[x.i].agent && (!seat || log[x.i].agent === seat))
       .sort((a, b) => a.d - b.d);
     if (!cands.length) continue;
     // Two rows equally close: can't tell which -- leave it for the manager.

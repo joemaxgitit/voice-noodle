@@ -50,6 +50,16 @@ export default function BulkUpload({
   const [logName, setLogName] = useState("");
   const [items, setItems] = useState<Item[]>([]);
   const [fallbackRep, setFallbackRep] = useState("");
+  // Vindico: whose seat these recordings are from (the log's agent name), remembered per rep on this computer.
+  const [seat, setSeat] = useState("");
+  const SEATS = "vn_vindico_seats";
+  const seats = (): Record<string, string> => {
+    try {
+      return JSON.parse(localStorage.getItem(SEATS) || "{}");
+    } catch {
+      return {};
+    }
+  };
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
   const [kpi, setKpi] = useState<Map<string, string | null>>(new Map());
@@ -65,13 +75,16 @@ export default function BulkUpload({
   const reps = useMemo(() => people.map((p) => ({ ...p, kpi_name: kpi.get(p.id) ?? null })), [people, kpi]);
 
   // Re-match whenever the log or the recordings change.
-  const rematch = (list: Item[], rows: LogRow[] | null): Item[] => {
-    const idx = rows ? matchRecordings(list.map((i) => ({ name: i.file.name, secs: i.fileSecs })), rows) : list.map(() => -1);
+  const rematch = (list: Item[], rows: LogRow[] | null, seatName = seat): Item[] => {
+    const vin = rows?.[0]?.dialer === "vindico";
+    // A Vindico log covers every seat: only match against the chosen seat's calls (nothing until one is picked).
+    const idx = rows && (!vin || seatName) ? matchRecordings(list.map((i) => ({ name: i.file.name, secs: i.fileSecs })), rows, vin ? seatName : null) : list.map(() => -1);
     return list
       .map((it, k) => {
         const row = rows && idx[k] >= 0 ? rows[idx[k]] : null;
         const fromName = convosoName(it.file.name);
-        const rep = row ? repForAgent(row.agent, reps) : null;
+        // Vindico agent names are seats, not people: the rep is the one picked above.
+        const rep = row && row.dialer !== "vindico" ? repForAgent(row.agent, reps) : null;
         return { ...it, row, secs: row?.secs ?? it.fileSecs, date: row?.date ?? fromName.date, time: row?.time ?? fromName.time, repId: rep?.id ?? it.repId };
       })
       .sort((a, b) => `${a.date ?? ""}${a.time ?? ""}`.localeCompare(`${b.date ?? ""}${b.time ?? ""}`));
@@ -85,7 +98,9 @@ export default function BulkUpload({
       if (!rows.length) return setError("No calls found in that call log.");
       setLog(rows);
       setLogName(f.name);
-      setItems((list) => rematch(list, rows));
+      const remembered = rows[0]?.dialer === "vindico" && fallbackRep ? (seats()[fallbackRep] ?? "") : "";
+      setSeat(remembered);
+      setItems((list) => rematch(list, rows, remembered));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -104,11 +119,17 @@ export default function BulkUpload({
     setItems((list) => rematch([...list.filter((i) => i.state !== "done"), ...added], log));
   }
 
+  const isVinLog = log?.[0]?.dialer === "vindico";
+  const vinAgents = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of log ?? []) if (r.dialer === "vindico" && r.agent && (r.secs ?? 0) >= 20) m.set(r.agent, (m.get(r.agent) ?? 0) + 1);
+    return [...m].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [log]);
   const matchedRows = new Set(items.map((i) => i.row).filter(Boolean));
   // The log can hold every rep's calls (Vindico logs do): only list the reps whose recordings were dropped in,
   // and only calls someone actually talked on (an agent, 20+ seconds).
-  const agents = new Set(items.map((i) => i.row?.agent).filter(Boolean));
-  const missing = (log ?? []).filter((r) => !matchedRows.has(r) && r.agent && (r.secs ?? 0) >= 20 && (!agents.size || agents.has(r.agent)));
+  const agents = new Set(isVinLog ? (seat ? [seat] : []) : items.map((i) => i.row?.agent).filter(Boolean));
+  const missing = (log ?? []).filter((r) => !matchedRows.has(r) && r.agent && (r.secs ?? 0) >= 20 && (isVinLog ? !!seat && r.agent === seat : !agents.size || agents.has(r.agent)));
   const todo = items.filter((i) => i.state === "waiting" || i.state === "error");
   const repOf = (i: Item) => i.repId || fallbackRep;
   const isVindico = (name: string) => /^recording-[0-9a-f]{8}-[0-9a-f]{4}-/i.test(name);
@@ -121,6 +142,7 @@ export default function BulkUpload({
   async function run() {
     if (!me?.org_id) return;
     if (!scriptId) return setError("Choose the script.");
+    if (isVinLog && !fallbackRep) return setError("Pick whose calls these are -- Vindico logs don’t name the rep.");
     if (needRep) return setError("Some recordings have no rep -- pick one under “Rep for anything the log doesn’t name”.");
     if (!(await okToSpend(supabase, cost ?? 0, `${todo.length} calls`))) return;
     setError("");
@@ -185,8 +207,19 @@ export default function BulkUpload({
           </select>
         </label>
         <label className="field">
-          <span>Rep for anything the log doesn&rsquo;t name</span>
-          <select value={fallbackRep} onChange={(e) => setFallbackRep(e.target.value)} disabled={running}>
+          <span>{isVinLog ? "Whose calls these are" : "Rep for anything the log doesn’t name"}</span>
+          <select
+            value={fallbackRep}
+            onChange={(e) => {
+              setFallbackRep(e.target.value);
+              if (isVinLog) {
+                const s = seats()[e.target.value] ?? "";
+                setSeat(s);
+                setItems((l) => rematch(l, log, s));
+              }
+            }}
+            disabled={running}
+          >
             <option value="">Choose&hellip;</option>
             {reps.map((p) => (
               <option key={p.id} value={p.id}>
@@ -195,6 +228,31 @@ export default function BulkUpload({
             ))}
           </select>
         </label>
+        {isVinLog && (
+          <label className="field">
+            <span>Their name in this Vindico log</span>
+            <select
+              value={seat}
+              onChange={(e) => {
+                setSeat(e.target.value);
+                if (fallbackRep)
+                  try {
+                    localStorage.setItem(SEATS, JSON.stringify({ ...seats(), [fallbackRep]: e.target.value }));
+                  } catch {}
+                setItems((l) => rematch(l, log, e.target.value));
+              }}
+              disabled={running}
+            >
+              <option value="">Choose&hellip;</option>
+              {vinAgents.map(([a, n]) => (
+                <option key={a} value={a}>
+                  {a} ({n} calls)
+                </option>
+              ))}
+            </select>
+            <small className="muted">Vindico names the seat, not the person -- this is remembered for next time.</small>
+          </label>
+        )}
       </div>
 
       {items.length > 0 && (
