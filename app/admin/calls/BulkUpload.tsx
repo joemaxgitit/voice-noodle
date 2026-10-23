@@ -133,13 +133,8 @@ export default function BulkUpload({
   const todo = items.filter((i) => i.state === "waiting" || i.state === "error");
   const repOf = (i: Item) => i.repId || fallbackRep;
   const isVindico = (name: string) => /^recording-[0-9a-f]{8}-[0-9a-f]{4}-/i.test(name);
-  // A Vindico recording is a renew lead -- unless its row in the log says it's from a sales (non-renew) campaign.
-  // With a Vindico log, an unmatched recording goes by the chosen seat's campaign (mostly renew, or not).
-  const seatRenew = (() => {
-    const mine = (log ?? []).filter((r) => r.dialer === "vindico" && (!seat || r.agent === seat));
-    return mine.length ? mine.filter((r) => /renew/i.test(`${r.campaign} ${r.service}`)).length * 2 > mine.length : true;
-  })();
-  const renewFor = (i: Item) => !!renew && isVindico(i.file.name) && (i.row ? /renew/i.test(`${i.row.campaign} ${i.row.service}`) : seatRenew);
+  // Vindico recordings are renew leads -- always the Renew script (its campaign names say "Sales" either way).
+  const renewFor = (i: Item) => !!renew && isVindico(i.file.name);
   const full = todo.filter((i) => (i.secs ?? 0) >= SHORT_SECS).length;
   const cost = est ? todo.reduce((s, i) => s + transcribeEstimate(i.secs ?? 60) + ((i.secs ?? 0) >= SHORT_SECS ? est.grade : est.quick), 0) : null;
   const needRep = todo.some((i) => !repOf(i));
