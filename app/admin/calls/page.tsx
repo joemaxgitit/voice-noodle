@@ -21,7 +21,6 @@ import {
   type Outcome,
 } from "@/lib/calls";
 import { SHORT_LABEL, type Quick } from "@/lib/quick";
-import { byCallMade } from "@/lib/calls";
 import { fmtTime } from "@/lib/dayReview";
 import { audioSeconds, convosoName, uploadCall } from "@/lib/uploadCall";
 import BulkUpload from "./BulkUpload";
@@ -175,6 +174,9 @@ export default function Calls() {
   const [busy, setBusy] = useState("");
   const [filterRep, setFilterRep] = useState("");
   const [filterOutcome, setFilterOutcome] = useState("");
+  // The list shows 10 at a time; "Show 10 more" adds the next 10.
+  const [showN, setShowN] = useState(10);
+  useEffect(() => setShowN(10), [filterRep, filterOutcome]);
   const fileInput = useRef<HTMLInputElement>(null);
 
   // Grading is started from here once a transcript lands. Remember which
@@ -193,16 +195,22 @@ export default function Calls() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, rep_id, rep_name, client_label, call_date, call_time, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, gver:grade->>grader_version, gfail:grade->>regrade_failed, retention, redaction_count, audio_path, audio_redact_state, error, script_id, updated_at, created_at, cost, lang:transcript->>language, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
+        "id, rep_id, rep_name, client_label, call_date, call_time, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, gver:grade->>grader_version, gfail:grade->>regrade_failed, retention, redaction_count, audio_path, audio_redact_state, error, script_id, updated_at, created_at, cost, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
       )
       // Practice calls with a mock client have their own page.
       .neq("source", "roleplay")
-      .order("call_date", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
       .limit(300);
     if (error) setError(error.message);
-    // Newest first by when the call was made (date, then time of day), not when it was uploaded.
-    const rows = ((data || []) as unknown as CallRow[]).sort(byCallMade);
+    // Newest upload first. (Reading the whole transcript just for its language made this slow, so the
+    // language is read only for the last day's calls that have no translation yet.)
+    const rows = (data || []) as unknown as CallRow[];
+    const fresh = rows.filter((c) => !c.translation_status && Date.now() - new Date(c.created_at).getTime() < 86_400_000 && ["transcribed", "grading", "graded", "read"].includes(c.status)).map((c) => c.id);
+    if (fresh.length) {
+      const { data: lg } = await supabase.from("calls").select("id, lang:transcript->>language").in("id", fresh);
+      const m = new Map(((lg || []) as { id: string; lang: string | null }[]).map((x) => [x.id, x.lang]));
+      for (const c of rows) c.lang = m.get(c.id) ?? null;
+    }
     setCalls(rows);
     const readIds = rows.filter((c) => c.status === "read").map((c) => c.id);
     if (readIds.length) {
@@ -775,7 +783,7 @@ export default function Calls() {
       )}
 
       <ul className="list" style={{ marginTop: 10 }}>
-        {shown.map((c) => {
+        {shown.slice(0, showN).map((c) => {
           const stuck = isStuck(c.status, c.updated_at);
           const band = scoreBand(c.score);
           return (
@@ -789,7 +797,7 @@ export default function Calls() {
                     {c.call_time ? ` · ${fmtTime(c.call_time)}` : ""}
                     {c.duration_secs ? ` · ${clock(c.duration_secs)}` : ""}
                     {outcomeOf(c) ? ` · ${OUTCOME_LABEL[outcomeOf(c) as Outcome]}` : ""}
-                    {c.lang && langOf(c.lang) === "es" ? " · Spanish" : ""}
+                    {c.translation_status || (c.lang && langOf(c.lang) === "es") ? " · Spanish" : ""}
                     {c.close_quality === "fragile" && <span className="danger">{" · fragile close"}</span>}
                     {c.retention === "cancelled" && <strong className="danger">{" · cancelled"}</strong>}
                     {c.retention === "graduated" && <strong className="good-text">{" · graduated"}</strong>}
@@ -840,6 +848,14 @@ export default function Calls() {
           );
         })}
       </ul>
+      {shown.length > showN && (
+        <div className="row" style={{ justifyContent: "center", gap: 10, marginTop: 10 }}>
+          <button onClick={() => setShowN((n) => n + 10)}>Show 10 more</button>
+          <span className="muted" style={{ fontSize: 13 }}>
+            {shown.length - showN} older
+          </span>
+        </div>
+      )}
     </main>
   );
 }
