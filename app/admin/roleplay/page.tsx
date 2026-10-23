@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import PracticeToggle from "../PracticeToggle";
 import { realVoice, type ClientInsight } from "@/lib/learn";
 import { createClient } from "@/lib/supabase/client";
 import { clock, money, scoreBand, OUTCOME_LABEL, type Grade, type Outcome } from "@/lib/calls";
@@ -570,6 +571,11 @@ export default function RoleplayAdmin() {
                 On
               </button>
             </div>
+          </div>
+
+          {/* The other switch reps notice: recording their own takes of each script line (also on the Segments page). */}
+          <div style={{ marginTop: 14 }}>
+            <PracticeToggle />
           </div>
 
           <div className="card" style={{ marginTop: 14 }}>

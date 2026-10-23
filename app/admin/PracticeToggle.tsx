@@ -97,7 +97,7 @@ export default function PracticeToggle() {
   return (
     <div className="practice-switch">
       <div>
-        <div className="label">Practice recording</div>
+        <div className="label">Practice recording (script lines)</div>
         <div className="hint" style={{ margin: 0 }}>
           {on
             ? "Reps can record and score takes. Each scored take costs an alignment call."
