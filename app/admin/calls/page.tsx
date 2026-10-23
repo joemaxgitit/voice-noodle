@@ -133,7 +133,8 @@ export default function Calls() {
       }
     };
     void tick();
-    const t = setInterval(() => void tick(), 45_000);
+    // Every 2 minutes: each check reads every graded call, so not more often than needed.
+    const t = setInterval(() => void tick(), 120_000);
     return () => {
       stop = true;
       clearInterval(t);
