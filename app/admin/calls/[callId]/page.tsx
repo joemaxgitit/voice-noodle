@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { startJob } from "@/lib/callsClient";
 import { okToSpend, usd } from "@/lib/spend";
 import {
+  ENDED_LABEL,
   ROLE_LABEL,
   STATUS_LABEL,
   money,
@@ -959,6 +960,13 @@ export default function CallDetail() {
           <p className="muted" style={{ marginTop: 6 }}>
             Call ended: {g.furthest_point}
           </p>
+          {g.ended?.early && (
+            <p style={{ marginTop: 4 }}>
+              <span className={`pill ${g.ended.handled === "well" ? "good" : g.ended.handled === "poorly" ? "poor" : "fair"}`}>{ENDED_LABEL[g.ended.why] ?? "Ended early"}</span>{" "}
+              {g.ended.handled !== "n/a" ? <span className="muted">handled {g.ended.handled} · </span> : null}
+              {g.ended.read}
+            </p>
+          )}
           {!!call.live_notes?.length && (
             <>
               <h2>Notes from listening in</h2>

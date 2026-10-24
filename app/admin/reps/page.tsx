@@ -24,6 +24,7 @@ type CallLite = {
   script_id: string | null;
   tens: { product?: number | null; rep?: number | null; company?: number | null } | null;
   hs: number | null;
+  hst?: string | null;
   hss: number | null;
   fu: string | null;
 };
@@ -75,7 +76,7 @@ export default function Reps() {
       // By when the call happened (call date), falling back to upload date when no call date was given.
       supabase
         .from("calls")
-        .select("rep_id, created_at, call_date, source, slp_score, score, status, script_id, tens:grade->three_tens, hs:grade->spotlights->hardship->moved_on_at, hss:grade->spotlights->hardship->score, fu:grade->spotlights->followup->>kind")
+        .select("rep_id, created_at, call_date, source, slp_score, score, status, script_id, tens:grade->three_tens, hs:grade->spotlights->hardship->moved_on_at, hst:grade->spotlights->hardship->>target, hss:grade->spotlights->hardship->score, fu:grade->spotlights->followup->>kind")
         .or(`call_date.gte.${since.slice(0, 10)},and(call_date.is.null,created_at.gte.${since})`)
         .not("rep_id", "is", null),
       supabase.from("kpi_reports").select("*"),
@@ -183,7 +184,7 @@ export default function Reps() {
         // Renew calls count too: each is scored against its own target (2-4 minutes on a renew).
         const hsCalls = now30.filter((c) => c.fu !== "followup" && typeof c.hss === "number");
         const hs = avg(hsCalls.map((c) => c.hss as number));
-        const timed = hsCalls.filter((c) => typeof c.hs === "number" && (c.hs as number) > 0);
+        const timed = hsCalls.filter((c) => typeof c.hs === "number" && (c.hs as number) > 0 && c.hst !== "cut_short");
         const hsTime = timed.length ? timed.reduce((a, c) => a + (c.hs as number), 0) / timed.length : null;
         const kr = kpi?.curRows.find((r) => r.rep_id === p.id);
         const kp = kpi?.prevRows.find((r) => r.rep_id === p.id);

@@ -16,6 +16,7 @@ export function digest(c: DigestRow): string {
     h ? `Hardship: moved on at ${t(h.moved_on_at)}, score ${h.score ?? "-"}; ${h.read}` : "",
     td?.happened ? `Loan turndown at ${t(td.at)}: pickup ${td.pickup}; ${td.read}` : "",
     g.line_control ? `Staying on the line: ${g.line_control.read}` : "",
+    g.ended?.early ? `Ended early (${g.ended.why.replace(/_/g, " ")}, handled ${g.ended.handled}): ${g.ended.read}` : "",
     "Sections:",
     ...g.sections.map((s) => `- ${s.section} [${t(s.time)}] ${s.status}: ${s.coaching || s.evidence}`),
     "Emotional roadmap:",

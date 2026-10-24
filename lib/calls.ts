@@ -232,8 +232,8 @@ export type Spotlights = {
     parts?: HardshipParts;
     /** 0-100, weighted from parts (see hardshipScoreOf). */
     score?: number | null;
-    /** "renew": judged against the renew target (2-4 minutes), not 8-12. */
-    target?: "renew";
+    /** "renew": judged against the renew target (2-4 minutes), not 8-12. "cut_short": the client had to go -- not timed. */
+    target?: "renew" | "cut_short";
   };
   turndown?: {
     happened: boolean;
@@ -248,10 +248,28 @@ export type Spotlights = {
   };
 };
 
+export type Ended = {
+  early: boolean;
+  why: "client_time" | "spouse_needed" | "client_checked_out" | "rep_ended" | "hung_up" | "completed" | "other";
+  handled: "well" | "ok" | "poorly" | "n/a";
+  read: string;
+};
+export const ENDED_LABEL: Record<Ended["why"], string> = {
+  client_time: "Client had to go",
+  spouse_needed: "Wanted the spouse there",
+  client_checked_out: "Client checked out",
+  rep_ended: "Rep ended it",
+  hung_up: "Hung up",
+  completed: "Finished",
+  other: "Ended early",
+};
+
 /** The hardship target on this team: keep the client on vulnerable topics until 8-12 minutes from the start of the call. */
 export const HARDSHIP_TARGET = { from: 8 * 60, to: 12 * 60 };
 export const hardshipBand = (secs: number, target?: string) =>
-  target === "renew"
+  target === "cut_short"
+    ? "fair" // the client had to go: not judged on time
+    : target === "renew"
     ? // Renew: 2-4 minutes is the target; a little either side is fine; under a minute or past 6 isn't.
       secs >= 2 * 60 && secs <= 4 * 60
       ? "good"
@@ -263,7 +281,8 @@ export const hardshipBand = (secs: number, target?: string) =>
       : secs >= 5 * 60
         ? "fair"
         : "poor";
-export const hardshipTargetLabel = (target?: string) => (target === "renew" ? "target 2–4 min (renew)" : "target 8–12 min");
+export const hardshipTargetLabel = (target?: string) =>
+  target === "renew" ? "target 2–4 min (renew)" : target === "cut_short" ? "not timed -- the client had to go" : "target 8–12 min";
 
 export type Grade = {
   speaker_roles: { speaker: string; role: Role }[];
@@ -289,6 +308,8 @@ export type Grade = {
   /** Hardship depth and the loan-turndown pickup. Extra awareness only; never in either score. */
   spotlights?: Spotlights;
   line_control?: LineControl;
+  /** Why the call stopped where it did (grades from version 10 on). */
+  ended?: Ended;
   /** Which version of the grading rules produced this grade (missing = 1). */
   grader_version?: number;
   model?: string;

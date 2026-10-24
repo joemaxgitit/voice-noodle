@@ -1,20 +1,30 @@
 import { jsonrepair } from "jsonrepair";
-import { hardshipScoreOf, lineScoreOf } from "@/lib/calls";
+import { hardshipScoreOf, lineScoreOf, type Ended } from "@/lib/calls";
 
 /**
  * The version of the grading rules. Bump it for a MAJOR grading change (new
  * scores, new rules): every graded call on file is then re-graded by itself,
  * oldest first, the next time a manager opens the Calls page.
  */
-export const GRADER_VERSION = 9;
+export const GRADER_VERSION = 10;
 /**
  * The oldest grade that's still current, per kind of call (a change that only
  * affects renew calls raises just the renew number). Version 6: the close read
  * balanced both ways (fragile not too free, not too soft) -- every call.
  * Versions 7 and 8 only fixed re-grades that failed (those are retried; calls
  * graded fine on 6 stay as they are).
+ * Version 10: why a call ended early ("ended"), hardship not timed when the
+ * client had to go, a booked time is a callback. Only matters for calls that
+ * didn't enroll.
  */
-export const CURRENT_FROM = { renew: 6, other: 6 };
+export const CURRENT_FROM = { renew: 10, other: 10 };
+
+/**
+ * A grading change no longer re-grades everything on file -- only the newest
+ * calls (by when they were made), and only those the change can affect.
+ */
+export const REGRADE_NEWEST = 10;
+export const regradeApplies = (c: { outcome: string | null; outcome_manual?: string | null }) => (c.outcome_manual || c.outcome) !== "enrolled";
 import {
   ROADMAP,
   voiceNotes,
@@ -595,7 +605,9 @@ three_tens: your estimate of where the client ended the call on product, rep and
 
 slp_summary: two plain sentences on how well the rep ran the Straight Line, naming the roadmap stage where the arc broke (if it did) and why.
 
-outcome: how the call ended for the sale -- "enrolled" (agreement signed or payment set up), "callback" (a specific follow-up was agreed), "not_interested", "hung_up", or "other". outcome_note: a few words, for example "set Nov 15 payment, did not give bank info".
+outcome: how the call ended for the sale -- "enrolled" (agreement signed or payment set up), "callback" (a specific follow-up was agreed), "not_interested", "hung_up", or "other". If the client agreed to a specific day or time to talk again (for example "Saturday at 11 with my wife"), the outcome is "callback", never "other".
+
+ended: why the call stopped where it did. early: true if it ended before the close for a reason other than finishing (anything short of enrolled or a clear final no at the end of a full pitch). why: "client_time" (the client had to go -- work, kids, driving, a bad time), "spouse_needed" (wanted the spouse or another decision-maker there), "client_checked_out" (lost interest or got annoyed), "rep_ended" (the rep wrapped up or let it go when the client could have kept talking), "hung_up" (the line dropped or the client hung up without a reason), "completed" (not early), or "other". handled: how well the rep handled the early end -- "well" (for example booked a firm time with every decision-maker and re-anchored the pain first), "ok", "poorly" (let a willing client go, no firm next step, or pushed someone who had to leave), or "n/a" if not early. read: one plain sentence a manager can act on. When the client had to go or wanted the spouse there, the rep is not at fault for the sections the call never reached -- judge only what the time allowed, and say so. outcome_note: a few words, for example "set Nov 15 payment, did not give bank info".
 
 turning_points: the 2 or 3 moments that most moved the client toward yes or away from it. time (seconds), moment (what happened, in a few words), direction ("toward" or "away"), why (one sentence). On an enrolled call these explain what earned the yes; on a lost call, where it was lost. Do not award credit for the close itself -- explain what caused it.
 
@@ -698,9 +710,21 @@ const GRADE_SCHEMA = {
     "close_quality_reason",
     "spotlights",
     "line_control",
+    "ended",
   ],
   additionalProperties: false,
   properties: {
+    ended: {
+      type: "object",
+      additionalProperties: false,
+      required: ["early", "why", "handled", "read"],
+      properties: {
+        early: { type: "boolean" },
+        why: { type: "string" },
+        handled: { type: "string" },
+        read: { type: "string" },
+      },
+    },
     line_control: {
       type: "object",
       additionalProperties: false,
@@ -1426,6 +1450,17 @@ async function grade(
     if (prior.naming.skip.length && result.spotlights) {
       if (result.spotlights.hardship) result.spotlights.hardship.target = "renew";
       delete result.spotlights.turndown;
+    }
+    // Why it ended: a client who had to go (or wanted the spouse there) cut the hardship short, not the rep --
+    // the hardship isn't timed against 8-12 minutes then, only its depth and questions count.
+    if (result.ended && !obj(result.ended)) delete result.ended;
+    if (result.ended) {
+      const why = ["client_time", "spouse_needed", "client_checked_out", "rep_ended", "hung_up", "completed", "other"];
+      result.ended.why = (why.includes(low(result.ended.why)) ? low(result.ended.why) : "other") as Ended["why"];
+      result.ended.handled = (["well", "ok", "poorly", "n/a"].includes(low(result.ended.handled)) ? low(result.ended.handled) : "n/a") as Ended["handled"];
+      result.ended.early = !!result.ended.early && result.ended.why !== "completed";
+      const h = result.spotlights?.hardship;
+      if (result.ended.early && ["client_time", "spouse_needed"].includes(result.ended.why) && h && h.target !== "renew" && typeof h.moved_on_at === "number" && h.moved_on_at < 8 * 60) h.target = "cut_short";
     }
     if (prior.naming.lang === "es") await englishQuotes(result, key, new Set(prior.naming.english));
     result.slp ||= [];

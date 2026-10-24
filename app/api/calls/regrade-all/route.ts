@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { requireAdmin, log } from "@/lib/callsServer";
-import { CURRENT_FROM, GRADER_VERSION, prepareGrade } from "@/lib/gradeCall";
+import { CURRENT_FROM, GRADER_VERSION, prepareGrade, REGRADE_NEWEST, regradeApplies } from "@/lib/gradeCall";
 import { kick } from "@/lib/chain";
 
 export const runtime = "nodejs";
@@ -19,12 +19,12 @@ export const maxDuration = 300;
 
 const PER_RUN = 2;
 
-type Row = { id: string; status: string; call_date: string | null; created_at: string; updated_at: string; ver: string | null; script_id: string | null; handoff: string | null; fail: string | null; tries: string | null; failv: string | null };
+type Row = { id: string; status: string; call_date: string | null; created_at: string; updated_at: string; ver: string | null; script_id: string | null; handoff: string | null; fail: string | null; tries: string | null; failv: string | null; source: string | null; outcome: string | null; outcome_manual: string | null; kind?: string | null };
 
 async function stale(supabase: Awaited<ReturnType<typeof requireAdmin>> extends infer T ? (T extends { supabase: infer S } ? S : never) : never) {
   const { data, error } = await supabase
     .from("calls")
-    .select("id, status, call_date, created_at, updated_at, script_id, handoff, ver:grade->>grader_version, fail:grade->>regrade_failed, tries:grade->>regrade_tries, failv:grade->>regrade_failed_version")
+    .select("id, status, call_date, created_at, updated_at, script_id, handoff, source, outcome, outcome_manual, kind, ver:grade->>grader_version, fail:grade->>regrade_failed, tries:grade->>regrade_tries, failv:grade->>regrade_failed_version")
     .in("status", ["graded", "grading", "failed"])
     .not("transcript", "is", null)
     .not("script_id", "is", null)
@@ -40,7 +40,15 @@ async function stale(supabase: Awaited<ReturnType<typeof requireAdmin>> extends 
   const isRenew = (r: Row) => renew.has(r.script_id ?? "") || r.handoff === "renew";
   // Out of date, or a re-grade that failed (kept its old grade): retried up to 3 times per grader version,
   // so a fix to the grader (a new version) gets every failed call another go.
-  const old = rows.filter((r) => r.status !== "failed" || r.ver !== null).filter(
+  // Only the newest real calls are ever re-graded after a grading change -- and only those the change can affect.
+  const newest = new Set(
+    rows
+      .filter((r) => r.source !== "roleplay" && (r.status === "graded" || (r.status === "failed" && r.ver !== null)))
+      .sort((a, b) => (b.call_date || b.created_at.slice(0, 10)).localeCompare(a.call_date || a.created_at.slice(0, 10)) || b.created_at.localeCompare(a.created_at))
+      .slice(0, REGRADE_NEWEST)
+      .map((r) => r.id)
+  );
+  const old = rows.filter((r) => r.status !== "failed" || r.ver !== null).filter((r) => (r.status === "grading" && r.source !== "roleplay" && !r.kind) || (newest.has(r.id) && regradeApplies(r))).filter(
     (r) =>
       r.status === "failed" ||
       (Number(r.ver) || 1) < (isRenew(r) ? CURRENT_FROM.renew : CURRENT_FROM.other) ||

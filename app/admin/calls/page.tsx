@@ -47,6 +47,8 @@ type CallRow = {
   client_label: string | null;
   call_date: string | null;
   call_time?: string | null;
+  cut?: string | null;
+  cutwhy?: string | null;
   duration_secs: number | null;
   status: CallStatus;
   score: number | null;
@@ -195,7 +197,7 @@ export default function Calls() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, rep_id, rep_name, client_label, call_date, call_time, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, gver:grade->>grader_version, gfail:grade->>regrade_failed, retention, redaction_count, audio_path, audio_redact_state, error, script_id, updated_at, created_at, cost, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
+        "id, rep_id, rep_name, client_label, call_date, call_time, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, gver:grade->>grader_version, gfail:grade->>regrade_failed, cut:grade->ended->>early, cutwhy:grade->ended->>why, retention, redaction_count, audio_path, audio_redact_state, error, script_id, updated_at, created_at, cost, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
       )
       // Practice calls with a mock client have their own page.
       .neq("source", "roleplay")
@@ -569,7 +571,7 @@ export default function Calls() {
       {regrade?.error && <div className="error" style={{ marginBottom: 12 }}>Couldn&rsquo;t check the automatic re-grade: {regrade.error}</div>}
       {regrade && !regrade.error && regrade.remaining === 0 && !!regrade.total && (
         <p className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
-          All {regrade.total} graded calls are on the current grading rules{regrade.renew ? ` (${regrade.renew} renew)` : ""}.
+          The newest calls are on the current grading rules. Older calls keep the grade they have -- a grading change only re-grades the 10 newest calls it affects.
         </p>
       )}
       {regrade && regrade.remaining > 0 && (
@@ -799,6 +801,7 @@ export default function Calls() {
                     {outcomeOf(c) ? ` · ${OUTCOME_LABEL[outcomeOf(c) as Outcome]}` : ""}
                     {c.translation_status || (c.lang && langOf(c.lang) === "es") ? " · Spanish" : ""}
                     {c.close_quality === "fragile" && <span className="danger">{" · fragile close"}</span>}
+                    {c.cut === "true" && <span className="muted">{` · cut short${c.cutwhy === "client_time" ? " (client had to go)" : c.cutwhy === "spouse_needed" ? " (wanted the spouse)" : ""}`}</span>}
                     {c.retention === "cancelled" && <strong className="danger">{" · cancelled"}</strong>}
                     {c.retention === "graduated" && <strong className="good-text">{" · graduated"}</strong>}
                     {c.retention === "paid6" && <strong className="good-text">{" · 6+ payments"}</strong>}
