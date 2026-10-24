@@ -208,6 +208,10 @@ function Compare() {
         ← {A?.profiles?.full_name || B?.profiles?.full_name || "Back"}
       </Link>
       <h1 style={{ marginTop: 14 }}>Compare calls</h1>
+      <p className="hint" style={{ marginTop: -4 }}>
+        Two single calls side by side. To compare two clients&rsquo; whole journeys (every call with each client ID):{" "}
+        <Link href={`/admin/calls/compare/clients?${new URLSearchParams({ ...(B?.client_label ? { b: B.client_label } : {}), ...(A?.client_label ? { a: A.client_label } : {}), ...(A?.rep_id || B?.rep_id ? { rep: (A?.rep_id || B?.rep_id)! } : {}) })}`}>Compare client journeys</Link>
+      </p>
       {note && <p className="hint">{note}</p>}
       {error && <div className="error">{error}</div>}
 

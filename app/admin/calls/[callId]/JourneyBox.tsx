@@ -98,6 +98,11 @@ export default function JourneyBox({ supabase, callId, clientLabel, source, onCh
               <option value="renew">Renew</option>
             </select>
           </label>
+          {clientLabel?.trim() && (
+            <Link className="btn" href={`/admin/calls/compare/clients?b=${encodeURIComponent(clientLabel.trim())}`} style={{ textDecoration: "none" }}>
+              Compare this journey
+            </Link>
+          )}
           <span className="muted" style={{ fontSize: 13 }}>
             {clientLabel?.trim()
               ? `${list.length} call${list.length === 1 ? "" : "s"} with ${clientLabel.trim()} on record · ${status === "enrolled" ? "enrolled" : status === "renew" ? "went to renew" : "still open"}`
