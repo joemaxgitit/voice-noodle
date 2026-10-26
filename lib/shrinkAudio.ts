@@ -1,3 +1,4 @@
+import { yieldNow } from "@/lib/yieldNow";
 /*
   Decodes and shrinks a call recording in the browser before upload.
 
@@ -82,7 +83,7 @@ export async function encodeMp3(
     if (out.length) parts.push(out.slice());
     if (++frames % FRAMES_PER_YIELD === 0) {
       onProgress(i / length);
-      await new Promise((r) => setTimeout(r, 0));
+      await yieldNow();
     }
   }
   const tail = encoder.flush();

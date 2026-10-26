@@ -1,3 +1,4 @@
+import { yieldNow } from "@/lib/yieldNow";
 /*
   Voice measurement for call review: how the voice moves, measured from the
   recording itself. Claude cannot listen to audio, so this turns the sound
@@ -114,7 +115,7 @@ export async function measureVoice(
     if (dbs[f] > gate) f0s[f] = yin(x, f * HOP, d, tauMin, tauMax);
     if (f % FRAMES_PER_YIELD === 0) {
       onProgress(f / Math.max(1, frames));
-      await new Promise((r) => setTimeout(r, 0));
+      await yieldNow();
     }
   }
   onProgress(1);
