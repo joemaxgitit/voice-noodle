@@ -414,7 +414,8 @@ async function journeyNote(supabase: Supa, callId: string, scriptTitle: string):
   return `\n<client_journey>\n${lines.join("\n")}\n</client_journey>\n`;
 }
 
-const CORRECTIONS_IN_PROMPT = 30;
+// The standing rules carry every correction ever made; the newest few go in too, as worked examples.
+const CORRECTIONS_IN_PROMPT = 12;
 
 /*
   What managers have taught the grader, added to every grade:
@@ -426,14 +427,17 @@ const CORRECTIONS_IN_PROMPT = 30;
 type Fix = { item_kind: string; item_label: string | null; original: string; correction: string };
 
 async function managerGuidance(supabase: Supa, practice = false): Promise<string> {
-  const [{ data: gRow }, { data: f }] = await Promise.all([
+  const [{ data: gRow }, { data: f }, { data: rRow }] = await Promise.all([
     supabase.from("grading_guidance").select("lessons").maybeSingle(),
     supabase
       .from("call_corrections")
       .select("item_kind, item_label, original, correction")
       .order("created_at", { ascending: false })
       .limit(CORRECTIONS_IN_PROMPT),
+    // Needs supabase/grading_rules.sql; until then this comes back empty.
+    supabase.from("grading_guidance").select("rules").maybeSingle(),
   ]);
+  const rules = ((rRow as { rules?: { rule: string }[] | null } | null)?.rules ?? []).filter((r) => r?.rule);
   let lessonsRaw = (gRow?.lessons as string | null) ?? null;
   let fixes = (f as Fix[] | null) ?? null;
 
@@ -448,6 +452,12 @@ async function managerGuidance(supabase: Supa, practice = false): Promise<string
   const g = { lessons: lessonsRaw };
 
   const parts: string[] = [];
+  if (rules.length) {
+    parts.push(
+      "STANDING GRADING RULES -- written from every correction the sales manager has made to earlier grades. Follow these as rules on every call; where one conflicts with the general instructions above, the rule wins:\n" +
+        rules.map((r, i) => `${i + 1}. ${r.rule}`).join("\n")
+    );
+  }
   const lessons = (g?.lessons as string | null)?.trim();
   if (lessons) {
     parts.push(
@@ -457,7 +467,7 @@ async function managerGuidance(supabase: Supa, practice = false): Promise<string
   }
   if (fixes?.length) {
     parts.push(
-      "Corrections managers made to earlier grades. Apply the principle behind each one wherever it fits this call; never copy a correction onto a call where it does not apply:\n" +
+      "The most recent corrections, as worked examples of the rules above. Apply the principle behind each one wherever it fits this call; never copy a correction onto a call where it does not apply:\n" +
         fixes
           .map(
             (f) =>

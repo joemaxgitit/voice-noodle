@@ -127,6 +127,9 @@ export default function Calls() {
         const l = await fetch("/api/calls/relearn-all", { headers: { Authorization: `Bearer ${token}` } }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
         if (l?.remaining > 0) void fetch("/api/calls/relearn-all", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ background: true }) }).catch(() => null);
       }
+      // Corrections made since the grading rules were last written: rewrite them (a few cents).
+      const gr = await fetch("/api/calls/rules", { headers: { Authorization: `Bearer ${token}` } }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+      if (gr?.stale) void fetch("/api/calls/rules", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: "{}" }).catch(() => null);
       if (r.remaining > 0 && !r.grading && !started) {
         started = true;
         await fetch("/api/calls/regrade-all", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ background: true }) }).catch(() => null);

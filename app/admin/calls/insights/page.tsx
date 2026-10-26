@@ -8,6 +8,7 @@ import { TEAM_MIN_REPS, type TeamPattern } from "@/lib/fingerprint";
 import { okToSpend } from "@/lib/spend";
 import { asProven, compare, favouring, formatValue, MIN_FOR_FINDINGS, type InsightCall, type Metric } from "@/lib/insights";
 import Archetypes from "./Archetypes";
+import GradingRules from "./GradingRules";
 import { plainCounts } from "@/lib/plain";
 import "../calls.css";
 import "../../reps/reps.css";
@@ -46,6 +47,8 @@ export default function Insights() {
   const supabase = createClient();
   const [calls, setCalls] = useState<InsightCall[]>([]);
   const [fixes, setFixes] = useState<Correction[]>([]);
+  // The newest 5 corrections; "Show 10 more" for the rest.
+  const [fixN, setFixN] = useState(5);
   const [saved, setSaved] = useState("");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState("");
@@ -126,7 +129,7 @@ export default function Insights() {
         .from("call_corrections")
         .select("id, call_id, item_kind, item_label, original, correction, created_at")
         .order("created_at", { ascending: false })
-        .limit(200),
+        .limit(1000),
       supabase.from("grading_guidance").select("lessons").maybeSingle(),
     ]);
     if (c.error) setError(c.error.message);
@@ -573,13 +576,14 @@ export default function Insights() {
         cents.
       </p>
 
+      <GradingRules />
+
       <h2>Corrections ({fixes.length})</h2>
       <p className="muted" style={{ marginTop: 0 }}>
-        Made with &ldquo;Not right?&rdquo; on a report. The {Math.min(fixes.length, 30)} most recent are added to every
-        grade so the grader learns from them. Delete any that turned out to be wrong.
+        Made with &ldquo;Not right?&rdquo; on a report, newest first. All of them feed the rules above. Delete any that turned out to be wrong.
       </p>
       {fixes.length === 0 && <p className="muted">None yet.</p>}
-      {fixes.map((f) => (
+      {fixes.slice(0, fixN).map((f) => (
         <div key={f.id} className="grade-item">
           <div className="grade-item-head">
             <span>
@@ -603,6 +607,12 @@ export default function Insights() {
           <div className="calls-meta">{new Date(f.created_at).toLocaleDateString()}</div>
         </div>
       ))}
+      {fixes.length > fixN && (
+        <div className="row" style={{ justifyContent: "center", gap: 10, marginTop: 10 }}>
+          <button onClick={() => setFixN((n) => n + 10)}>Show 10 more</button>
+          <span className="muted" style={{ fontSize: 13 }}>{fixes.length - fixN} older</span>
+        </div>
+      )}
     </main>
   );
 }

@@ -288,6 +288,7 @@ export default function CallDetail() {
   const version = -1;
   const audio = useRef<HTMLAudioElement>(null);
   const kicked = useRef(false);
+  const rulesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const kickedTranslate = useRef(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState("");
@@ -741,6 +742,15 @@ export default function CallDetail() {
     still teach the grader on every future call).
   */
   const gradeKey = g?.graded_at ?? "";
+  // A correction rewrites the standing grading rules by itself, a little after the last one (corrections come in bursts).
+  const kickRules = () => {
+    if (rulesTimer.current) clearTimeout(rulesTimer.current);
+    rulesTimer.current = setTimeout(() => {
+      void supabase.auth.getSession().then(({ data }) =>
+        fetch("/api/calls/rules", { method: "POST", keepalive: true, headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}`, "Content-Type": "application/json" }, body: "{}" }).catch(() => null)
+      );
+    }, 70_000);
+  };
   const fixCtx: FixCtx = {
     fixes: new Map(fixList.filter((f) => f.item_key.startsWith(gradeKey + "|")).map((f) => [f.item_key, f])),
     save: async (k, kind, label, original, text) => {
@@ -751,6 +761,7 @@ export default function CallDetail() {
         const { error } = await supabase.from("call_corrections").update({ correction: text }).eq("id", existing.id);
         if (error) return setError(error.message);
         setFixList((l) => l.map((f) => (f.id === existing.id ? { ...f, correction: text } : f)));
+        kickRules();
         return;
       }
       if (!myOrg) return setError("Could not find your organization.");
@@ -771,6 +782,7 @@ export default function CallDetail() {
         .single();
       if (error) return setError(`${error.message} -- has the calls-learning SQL been run?`);
       setFixList((l) => [...l, data as Correction]);
+      kickRules();
     },
     remove: async (k) => {
       const key = k; // already carries the grade prefix (see fx)
@@ -779,6 +791,7 @@ export default function CallDetail() {
       const { error } = await supabase.from("call_corrections").delete().eq("id", existing.id);
       if (error) return setError(error.message);
       setFixList((l) => l.filter((f) => f.id !== existing.id));
+      kickRules();
     },
   };
   // fixCtx.fixes is keyed with the grade prefix; Fix looks up by the full key.
