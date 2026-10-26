@@ -42,6 +42,7 @@ import {
 } from "@/lib/calls";
 import { failCall, log, thinkingFor, type Supa } from "@/lib/callsServer";
 import { practiceNote, type PersonaSecret } from "@/lib/roleplay";
+import { rewriteRules } from "@/lib/gradingRulesServer";
 
 /*
   The grader, shared by uploaded calls (/api/calls/grade, managers) and
@@ -106,7 +107,7 @@ export async function prepareGrade(
   const { data: call, error } = await supabase
     .from("calls")
     .select(
-      "id, status, updated_at, transcript, voice, script_id, grade, score, slp_score, grade_history, cost, rep_name, source, roleplay, profiles:rep_id(full_name)"
+      "id, org_id, status, updated_at, transcript, voice, script_id, grade, score, slp_score, grade_history, cost, rep_name, source, roleplay, profiles:rep_id(full_name)"
     )
     .eq("id", callId)
     .single();
@@ -284,7 +285,7 @@ export async function prepareGrade(
     "the rep";
 
   const voice = (call.voice as VoiceTimeline | null) ?? null;
-  const blocks = buildPrompt(
+  const build = (guidance: string) => buildPrompt(
     script?.title || "Script",
     useModules,
     transcript,
@@ -296,6 +297,7 @@ export async function prepareGrade(
     practice,
     naming.skip
   );
+  let blocks = build(guidance);
 
   const previous: GradeVersion | null =
     call.grade && call.score !== undefined
@@ -309,13 +311,21 @@ export async function prepareGrade(
   return {
     ok: true,
     summary: `${lang}, ${useModules.length} modules${isPractice ? ", practice" : ""}`,
-    run: () =>
-      grade(supabase, callId, blocks, key, started, {
+    run: async () => {
+      // Corrections made since the last real call was graded: fold them into the standing rules
+      // first -- once, by whichever grade gets there first -- then grade by them.
+      if (!isPractice && call.org_id) {
+        const r = await rewriteRules(supabase, key, call.org_id as string, null);
+        if (r.rules && !r.skipped) blocks = build(await managerGuidance(supabase, false));
+        if (r.error && !/grading_rules\.sql/.test(r.error)) log("grade", callId, started, `rules rewrite skipped: ${r.error.slice(0, 120)}`);
+      }
+      return grade(supabase, callId, blocks, key, started, {
         naming,
         previous,
         history: (call.grade_history as GradeVersion[] | null) || [],
         cost: (call.cost as CallCost | null) || {},
-      }),
+      });
+    },
   };
 }
 

@@ -31,12 +31,8 @@ export default function GradingRules() {
   }, [supabase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    void (async () => {
-      const b = await load();
-      // Behind the corrections: catch up by itself.
-      if (b?.stale) await rewrite(false);
-    })();
-  }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
+    void load();
+  }, [load]);
 
   async function rewrite(force: boolean) {
     if (force && !(await okToSpend(supabase, est ?? 0.06, "Rewriting the grading rules"))) return;
@@ -62,9 +58,9 @@ export default function GradingRules() {
       <h2>Grading rules from your corrections</h2>
       <p className="muted" style={{ marginTop: 0 }}>
         Every &ldquo;Not right?&rdquo; you&rsquo;ve ever saved, boiled down to standing rules the grader follows on every call -- the same mistake corrected five times becomes one firm
-        rule. They rewrite themselves a minute after you correct something and apply to every call graded from then on -- calls already graded keep their grade.
+        rule. New corrections are folded in once, just before the next call is graded (not after every correction), and apply to every call graded from then on -- calls already graded keep their grade.
         {info?.updated_at ? ` Last written ${new Date(info.updated_at).toLocaleString()} from ${info.count} correction${info.count === 1 ? "" : "s"}.` : ""}
-        {info?.stale && !busy ? " New corrections since -- catching up." : ""}
+        {info?.stale && !busy ? " New corrections since -- they'll be folded in before the next call is graded." : ""}
       </p>
       {error && <div className="error">{error}</div>}
       {busy && <p className="hint">{busy}</p>}
