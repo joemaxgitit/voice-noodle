@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import ToneKey from "./ToneKey";
 import ThemeToggle from "./ThemeToggle";
+import IdleTimeout from "./IdleTimeout";
 
 /*
   Link previews. The absolute URL matters -- scrapers cannot resolve a
@@ -68,6 +69,7 @@ export default function RootLayout({
         {children}
         <ToneKey />
         <ThemeToggle />
+        <IdleTimeout />
       </body>
     </html>
   );

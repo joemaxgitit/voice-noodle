@@ -8,6 +8,7 @@ import { fmtTime, matchRecordings, readCallLog, repForAgent, type LogRow } from 
 import { SHORT_SECS } from "@/lib/quick";
 import { estimateFor, okToSpend, transcribeEstimate, usd } from "@/lib/spend";
 import { audioSeconds, convosoName, uploadCall } from "@/lib/uploadCall";
+import { stayAwake } from "@/lib/idle";
 
 type Person = { id: string; full_name: string | null; kpi_name?: string | null };
 type ScriptOpt = { id: string; title: string; continues_into?: string | null };
@@ -165,7 +166,10 @@ export default function BulkUpload({
           callTime: it.time,
           handoff: vin ? "renew" : null,
         },
-        (s) => set({ note: s })
+        (s) => {
+          set({ note: s });
+          stayAwake(); // a long upload isn't idle time
+        }
       );
       if (res.ok) set({ state: "done", note: "Uploaded -- transcribing, then graded or read by itself", callId: res.id });
       else set({ state: res.dupe ? "dupe" : "error", note: res.error, callId: res.dupe?.id });

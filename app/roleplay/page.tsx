@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { stayAwake } from "@/lib/idle";
 import { clock, scoreBand, OUTCOME_LABEL, type Outcome, type VoiceTimeline } from "@/lib/calls";
 import { decodeMono } from "@/lib/shrinkAudio";
 import { measureVoice } from "@/lib/voice";
@@ -267,6 +268,7 @@ export default function Roleplay() {
         },
         onModeChange: ({ mode }) => setMode(mode),
         onMessage: (m) => {
+          stayAwake(); // talking on a practice call isn't idle time
           if (!m.message?.trim()) return;
           const line = { who: m.role === "user" ? "rep" : "client", text: m.message };
           setLines((ls) => [...ls, line as Line]);

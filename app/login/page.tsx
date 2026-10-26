@@ -99,6 +99,7 @@ function LoginForm() {
         </form>
 
         {error && <div className="error">{error}</div>}
+        {!error && params.get("timeout") && <div className="note">You were signed out after 30 minutes without activity. Sign in again to pick up where you left off.</div>}
 
         {/*
           Attribution, deliberately small. The client's brand owns this screen;
