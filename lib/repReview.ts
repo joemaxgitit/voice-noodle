@@ -120,6 +120,12 @@ export function callLine(c: HistCall, personas: Map<string, string>): string {
   const flags = (c.flags ?? []).filter((f) => f.severity === "high" || f.severity === "medium").map((f) => `[${f.severity}] ${cut(f.issue, 140)}`);
   if (flags.length) lines.push(`  flags: ${flags.join("; ")}`);
   if (c.tonality) lines.push(`  tonality: ${cut(c.tonality, 220)}`);
+  if (c.objections?.items?.length)
+    lines.push(
+      `  objections (looping = organic, anywhere; The Loops = scripted Loop 1/2/3, after the pitch only): ${c.objections.items
+        .map((o) => `"${cut(o.said, 60)}"${o.before_pitch ? " before pitch" : ""} -> ${o.handled.replace("_", " ")}${o.loop ? ` (${o.loop})` : ""}${o.rounds >= 2 ? `, ${o.rounds} back-and-forths` : ""}`)
+        .join("; ")}`
+    );
   if (c.strengths?.length) lines.push(`  strengths: ${c.strengths.slice(0, 3).map((s) => cut(s, 140)).join(" / ")}`);
   if (c.coaching?.length) lines.push(`  coaching priorities: ${c.coaching.slice(0, 3).map((s) => cut(s, 160)).join(" / ")}`);
   if (c.slp_summary || c.summary) lines.push(`  summary: ${cut(c.slp_summary || c.summary, 320)}`);

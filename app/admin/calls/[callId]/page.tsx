@@ -9,6 +9,7 @@ import { startJob } from "@/lib/callsClient";
 import { okToSpend, usd } from "@/lib/spend";
 import {
   ENDED_LABEL,
+  HANDLED_LABEL,
   ROLE_LABEL,
   STATUS_LABEL,
   money,
@@ -1273,6 +1274,40 @@ export default function CallDetail() {
                           {e.how && <small className="muted"> &ldquo;{e.how}&rdquo;</small>}
                         </p>
                       ))
+                    )}
+                  </section>
+                </>
+              )}
+
+              {g.objections && (
+                <>
+                  <h2>Objections and looping</h2>
+                  <p className="hint" style={{ marginTop: -4 }}>
+                    Every objection on the call and how it was handled. Looping (acknowledge, back to the line, keep moving) works anywhere; The Loops (Loop 1, 2, 3) belong after The Pitch only. Two or more back-and-forths on one objection is an objection/rebuttal cycle.
+                  </p>
+                  <section className="card">
+                    <span className="muted">{g.objections.read}</span>
+                    {g.objections.items.length === 0 ? (
+                      <p className="hint" style={{ marginBottom: 0 }}>No objections on this call.</p>
+                    ) : (
+                      g.objections.items.map((o, i) => {
+                        const bad = o.handled === "rebutted" || o.handled === "caved" || o.handled === "ignored" || o.rounds >= 2 || (o.handled === "the_loop" && o.before_pitch);
+                        return (
+                          <p key={i} style={{ margin: "8px 0 0" }}>
+                            <button className="time-link" onClick={() => seek(o.at)}>
+                              {clock(o.at)}
+                            </button>{" "}
+                            &ldquo;{o.said}&rdquo; <small className="muted">· {o.before_pitch ? "before the pitch" : "after the pitch"}</small>{" "}
+                            <span className={`pill ${bad ? "poor" : "good"}`}>
+                              {HANDLED_LABEL[o.handled]}
+                              {o.handled === "the_loop" && o.loop ? `: ${o.loop}` : ""}
+                            </span>
+                            {o.rounds >= 2 && <span className="pill poor"> {o.rounds} back-and-forths</span>}
+                            {o.handled === "the_loop" && o.before_pitch && <small className="danger"> · a Loop before the pitch -- should have looped organically</small>}
+                            {o.how && <small className="muted"> &ldquo;{o.how}&rdquo;</small>}
+                          </p>
+                        );
+                      })
                     )}
                   </section>
                 </>

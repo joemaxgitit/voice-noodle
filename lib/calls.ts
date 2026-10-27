@@ -248,6 +248,25 @@ export type Spotlights = {
   };
 };
 
+/** One objection or stall: organic looping vs The Loops (scripted Loop 1/2/3, after the pitch only). */
+export type Objection = {
+  at: number;
+  before_pitch: boolean;
+  said: string;
+  handled: "looped" | "deferred" | "the_loop" | "rebutted" | "ignored" | "caved";
+  loop: string;
+  rounds: number;
+  how: string;
+};
+export const HANDLED_LABEL: Record<Objection["handled"], string> = {
+  looped: "Looped",
+  deferred: "Deferred, then handled",
+  the_loop: "Ran The Loops",
+  rebutted: "Argued it",
+  ignored: "Ignored",
+  caved: "Caved",
+};
+
 export type Ended = {
   early: boolean;
   why: "client_time" | "spouse_needed" | "client_checked_out" | "rep_ended" | "hung_up" | "completed" | "other";
@@ -310,6 +329,8 @@ export type Grade = {
   line_control?: LineControl;
   /** Why the call stopped where it did (grades from version 10 on). */
   ended?: Ended;
+  /** Every objection and how it was handled (grades from version 11 on). */
+  objections?: { items: Objection[]; read: string };
   /** Which version of the grading rules produced this grade (missing = 1). */
   grader_version?: number;
   model?: string;

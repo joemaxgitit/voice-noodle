@@ -1,12 +1,12 @@
 import { jsonrepair } from "jsonrepair";
-import { hardshipScoreOf, lineScoreOf, type Ended } from "@/lib/calls";
+import { hardshipScoreOf, lineScoreOf, type Ended, type Objection } from "@/lib/calls";
 
 /**
  * The version of the grading rules. Bump it for a MAJOR grading change (new
  * scores, new rules): every graded call on file is then re-graded by itself,
  * oldest first, the next time a manager opens the Calls page.
  */
-export const GRADER_VERSION = 10;
+export const GRADER_VERSION = 11;
 /**
  * The oldest grade that's still current, per kind of call (a change that only
  * affects renew calls raises just the renew number). Version 6: the close read
@@ -16,15 +16,19 @@ export const GRADER_VERSION = 10;
  * Version 10: why a call ended early ("ended"), hardship not timed when the
  * client had to go, a booked time is a callback. Only matters for calls that
  * didn't enroll.
+ * Version 11: The Loops (scripted Loop 1/2/3, after the pitch only) kept apart
+ * from looping (organic, any objection, anywhere); every objection listed with
+ * how it was handled and any objection/rebuttal back-and-forth. Every kind of call.
  */
-export const CURRENT_FROM = { renew: 10, other: 10 };
+export const CURRENT_FROM = { renew: 11, other: 11 };
 
 /**
  * A grading change no longer re-grades everything on file -- only the newest
  * calls (by when they were made), and only those the change can affect.
  */
 export const REGRADE_NEWEST = 10;
-export const regradeApplies = (c: { outcome: string | null; outcome_manual?: string | null }) => (c.outcome_manual || c.outcome) !== "enrolled";
+// Version 11 (looping) matters on every call, enrolled or not.
+export const regradeApplies = (_c: { outcome: string | null; outcome_manual?: string | null }) => true;
 import {
   ROADMAP,
   voiceNotes,
@@ -565,7 +569,9 @@ How the script is annotated: <AC>, <I CARE>, <PT>, <RM>, <S>, <CALM>, <PREACHER>
 
 The script is built on Jordan Belfort's Straight Line Persuasion. Its backbone is this emotional roadmap -- the sequence of feelings the call is designed to take the client through, in order:
 ${roadmap.map((r, i) => `${i + 1}. ${r.stage} -- ${r.feel}`).join("\n")}
-The script sections deliver these stages, but not one-to-one${skip.length ? "" : ': "Hopeless", for example, happens inside the SuperMoney section when the loan is not available'}. The three objection loops each rebuild one of Belfort's Three Tens: Loop 1 the product, Loop 2 trust in the rep, Loop 3 the company.
+The script sections deliver these stages, but not one-to-one${skip.length ? "" : ': "Hopeless", for example, happens inside the SuperMoney section when the loan is not available'}. Two different things are both called looping on this team -- never mix them up:
+- THE LOOPS: the scripted OBJECTION LOOPs below (Loop 1, Loop 2, Loop 3). Each one brings all three Tens -- product, rep and company -- back up to a 10 at the same time. Its name (for example Think About It, Spouse, Money) points to the objection the client voiced, which is how the rep picks which Loop to run. The Loops belong only AFTER The Pitch section.
+- LOOPING: organic objection handling, anywhere on the call, whenever the client objects. The rep acknowledges the objection (or briefly defers it -- "great question, I'll get to that"), does not argue it, loops back to the straight line (the pain, the benefit, certainty) and keeps moving. It is what stops an objection/rebuttal back-and-forth. Before The Pitch, looping (or deferring) is the right move -- not one of The Loops.
 
 The transcript will follow. Each line is [seconds from start] speaker_id: words.
 Speaker ids come from automatic diarization and can be imperfect -- work out who is who from what is said.
@@ -577,7 +583,7 @@ speaker_roles: one entry per speaker id in the transcript. role is "rep" (the re
 
 sections: exactly one entry for each SECTION below, in this order:
 ${s.sequence.map((x) => `- ${x}`).join("\n")}
-Add an entry for an OBJECTION LOOP only if that objection came up on the call; name it "Objection: <loop title>".
+Add an entry for one of The Loops (an OBJECTION LOOP) only if the rep ran it, or the client raised its objection after The Pitch section; name it "The Loops: <loop title>". "hit" if the rep ran the right Loop for the objection voiced and asked again; "partial" if the wrong Loop, cut short, or no ask after it; "missed" if the client raised that objection after The Pitch and the rep never ran a Loop. If the rep ran one of The Loops BEFORE The Pitch section, mark it "partial", say in coaching that before the pitch they should loop organically instead, and add a flag.
 - "hit": the rep delivered the substance of the section. Word-for-word is not required.
 - "partial": the rep did the section but left out something that matters. Say what in coaching.
 - "missed": the call got past this point and the rep skipped it.
@@ -606,10 +612,12 @@ slp: exactly these eight skills, in this order, each scored 1-10 (1-3 weak, 4-6 
 - "Rapport and trust (Ten 2)": the client's certainty in the rep as an expert who cares.
 - "Product certainty (Ten 1)": whether the client clearly understands the program and believes it fits them.
 - "Company certainty (Ten 3)": the client's certainty in Bolton and Lionside.
-- "Looping": recognizing which Ten is low when the client stalls and running the matching loop.
+- "Looping": organic looping (see LOOPING above), across every objection on the call: acknowledged or deferred, not argued, looped back to the line, kept moving. Two or more objection/rebuttal rounds on the same objection score this down. This is NOT about The Loops -- whether the right scripted Loop was run is graded in sections.
 - "Action and pain thresholds": raising the client's urgency honestly and lowering the risk they feel about acting.
 - "Tonality and tonal variety": whether the rep's voice matched the tones the script marks and kept moving between them, judged from the voice measurements (see Tonality below).
 evidence: a short quote (20 words or fewer) and its time (-1 if none), or "". coaching: one specific sentence.
+
+objections: every objection or stall the client raised, anywhere on the call. items, in order: at (seconds from the start), before_pitch (true if it came before The Pitch section), said (what the client said, a few words, no names), handled -- "looped" (acknowledged and looped back to the line), "deferred" (put off until later, then dealt with), "the_loop" (ran one of The Loops), "rebutted" (argued the objection itself), "ignored", or "caved" (gave up the line or dropped the ask) -- loop (the Loop's title if handled is "the_loop", else ""), rounds (how many objection/rebuttal back-and-forths on this objection before it went back on the line; 0 if the rep looped straight away), how (the rep's key line, a short quote, or ""). read: one plain sentence on how the rep handled objections. Two or more rounds on one objection is an objection/rebuttal cycle: add a flag for it. An empty list if the client raised none.
 
 How Straight Line is scored here -- this matters:
 Approved wording and guarantees (from the sales manager):
@@ -731,9 +739,35 @@ const GRADE_SCHEMA = {
     "spotlights",
     "line_control",
     "ended",
+    "objections",
   ],
   additionalProperties: false,
   properties: {
+    objections: {
+      type: "object",
+      additionalProperties: false,
+      required: ["items", "read"],
+      properties: {
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["at", "before_pitch", "said", "handled", "loop", "rounds", "how"],
+            properties: {
+              at: { type: "number" },
+              before_pitch: { type: "boolean" },
+              said: { type: "string" },
+              handled: { type: "string" },
+              loop: { type: "string" },
+              rounds: { type: "integer" },
+              how: { type: "string" },
+            },
+          },
+        },
+        read: { type: "string" },
+      },
+    },
     ended: {
       type: "object",
       additionalProperties: false,
@@ -1064,14 +1098,14 @@ export function nameSections(g: Grade, n: Naming) {
   const find = (name: string): string => {
     const raw = (name || "").trim();
     if (!raw) return raw;
-    const obj = raw.match(/^(objection|objeción)\s*:\s*/i);
+    const obj = raw.match(/^(objection|objeción|the loops)\s*:\s*/i);
     const body = obj ? raw.slice(obj[0].length) : raw;
     const a = normTitle(body);
     let i = n.titles.findIndex((t) => normTitle(t) === a);
     if (i < 0) i = n.titles.findIndex((t) => { const b = normTitle(t); return !!a && !!b && (a.startsWith(b) || b.startsWith(a)); });
     if (i < 0) i = n.english.findIndex((t) => normTitle(t) === a);
     const out = i >= 0 ? n.english[i] : body;
-    return obj ? `Objection: ${out}` : out;
+    return obj ? `The Loops: ${out}` : out;
   };
   for (const s of g.sections ?? []) s.section = find(s.section);
   if (g.emotional_arc) {
@@ -1097,7 +1131,7 @@ export async function englishQuotes(g: Grade, key: string, englishTitles: Set<st
     for (const [k, v] of entries) {
       if (typeof v === "string") {
         // Section names that found their English title stay as they are; any still in Spanish get translated too.
-        if (typeof k === "string" && NAME_KEYS.has(k) && !(k === "section" && !englishTitles.has(v.replace(/^Objection:\s*/, "")) && SPANISH_TITLE.test(v))) continue;
+        if (typeof k === "string" && NAME_KEYS.has(k) && !(k === "section" && !englishTitles.has(v.replace(/^(Objection|The Loops):\s*/, "")) && SPANISH_TITLE.test(v))) continue;
         if (v.length > 2 && (SPANISH.test(v) || (k === "section" && SPANISH_TITLE.test(v)))) spots.push({ obj: x as Record<string, unknown>, k });
       } else walk(v, depth + 1);
     }
@@ -1474,6 +1508,23 @@ async function grade(
     // Why it ended: a client who had to go (or wanted the spouse there) cut the hardship short, not the rep --
     // the hardship isn't timed against 8-12 minutes then, only its depth and questions count.
     if (result.ended && !obj(result.ended)) delete result.ended;
+    // Objections: a tidy list; anything unreadable is dropped rather than failing the grade.
+    if (result.objections && !obj(result.objections)) delete result.objections;
+    if (result.objections) {
+      const H = ["looped", "deferred", "the_loop", "rebutted", "ignored", "caved"];
+      result.objections.items = (Array.isArray(result.objections.items) ? result.objections.items : [])
+        .filter((o) => o && typeof o === "object")
+        .map((o) => ({
+          at: Math.max(0, Number(o.at) || 0),
+          before_pitch: !!o.before_pitch,
+          said: String(o.said ?? ""),
+          handled: (H.includes(low(String(o.handled))) ? low(String(o.handled)) : "ignored") as Objection["handled"],
+          loop: String(o.loop ?? ""),
+          rounds: Math.max(0, Math.round(Number(o.rounds) || 0)),
+          how: String(o.how ?? ""),
+        }));
+      result.objections.read = String(result.objections.read ?? "");
+    }
     if (result.ended) {
       const why = ["client_time", "spouse_needed", "client_checked_out", "rep_ended", "hung_up", "completed", "other"];
       result.ended.why = (why.includes(low(result.ended.why)) ? low(result.ended.why) : "other") as Ended["why"];
