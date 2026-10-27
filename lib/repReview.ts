@@ -3,6 +3,7 @@ import { gradeCostUsd, OUTCOME_LABEL, type Outcome, callAt } from "@/lib/calls";
 import { thinkingFor } from "@/lib/callsServer";
 import { compareRep, fmtChange, fmtKpi, fmtMonth, KIND_LABEL, monthlyReports, type KpiRow } from "@/lib/kpi";
 import { TAG_LABEL, type HistCall, type RepHistory, type ReviewBody } from "@/lib/repHistory";
+import { correctionsFor } from "@/lib/callDigest";
 import { readSheet, sheetAsText } from "@/lib/xlsx";
 
 /*
@@ -256,6 +257,8 @@ export async function buildReviewInput(opts: {
   const done = h.completions.filter((c) => inWindow(c.completed_at)).slice(0, 60);
   const att = h.attendance.filter((a) => inWindow(a.week_start)).slice(0, 26);
   const prior = h.reviews.find((r) => r.status === "done" && r.review);
+  // A manager's "Not right?" on a call overrides what the grader said about it.
+  const fixes = await correctionsFor(supabase, calls.filter((c) => c.source !== "roleplay").map((c) => ({ id: c.id, graded_at: c.graded_at ?? null })));
   const files = await fileBlocks(supabase, h, since);
   const kpi = kpiText(h, repId);
   // Renews: leads this rep didn't close that came back later, and renews this rep took. Anonymous -- no client names.
@@ -274,7 +277,7 @@ export async function buildReviewInput(opts: {
     focus ? `THE MANAGER ASKED YOU TO LOOK ESPECIALLY AT: ${focus}` : "",
     "",
     `GRADED CALLS (${calls.length}, newest first; scores are 0-100):`,
-    calls.length ? calls.map((c) => callLine(c, h.personas)).join("\n") : "(none in this window)",
+    calls.length ? calls.map((c) => callLine(c, h.personas) + (fixes.get(c.id) ? `\n  ${fixes.get(c.id)!.replace(/\n/g, "\n  ")}` : "")).join("\n") : "(none in this window)",
     "",
     `RENEWS OF THIS REP'S LEADS (${renewLost.length}: clients this rep's call didn't close, reached again later${renewLost.some((r) => !r.same_rep) ? ", mostly by other reps" : ""}):`,
     renewLost.length

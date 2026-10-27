@@ -28,3 +28,33 @@ export function digest(c: DigestRow): string {
     .join("\n");
 }
 
+
+/**
+ * The "Not right?" corrections a manager made to each call's current grade,
+ * as a block to put under that call: they override what the grader said.
+ * Corrections to an earlier grade of the call (before a re-grade) are left out.
+ */
+export async function correctionsFor(
+  supabase: { from: (t: string) => any }, // eslint-disable-line @typescript-eslint/no-explicit-any
+  calls: { id: string; graded_at?: string | null }[]
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const ids = calls.map((c) => c.id);
+  if (!ids.length) return out;
+  const { data } = await supabase.from("call_corrections").select("call_id, item_key, item_kind, item_label, original, correction").in("call_id", ids.slice(0, 300));
+  const at = new Map(calls.map((c) => [c.id, c.graded_at ?? null]));
+  type F = { call_id: string; item_key: string; item_kind: string; item_label: string | null; original: string; correction: string };
+  const by = new Map<string, F[]>();
+  for (const f of (data || []) as F[]) {
+    const g = at.get(f.call_id);
+    if (g && !f.item_key.startsWith(`${g}|`)) continue;
+    by.set(f.call_id, [...(by.get(f.call_id) ?? []), f]);
+  }
+  for (const [id, fs] of by)
+    out.set(
+      id,
+      `MANAGER CORRECTIONS to this grade (they override what the grader said):\n` +
+        fs.map((f) => `- [${f.item_kind}${f.item_label ? `: ${f.item_label}` : ""}] the grader said "${String(f.original).slice(0, 200)}" -- the manager says: "${String(f.correction).slice(0, 400)}"`).join("\n")
+    );
+  return out;
+}

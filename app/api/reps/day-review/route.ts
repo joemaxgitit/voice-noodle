@@ -3,7 +3,7 @@ import { requireAdmin } from "@/lib/callsServer";
 import { askJsonCost, REVIEW_MODEL } from "@/lib/repReview";
 import { logSpend } from "@/lib/spendServer";
 import { bestPool, pickBest } from "@/lib/bestCall";
-import { digest, type DigestRow } from "@/lib/callDigest";
+import { correctionsFor, digest, type DigestRow } from "@/lib/callDigest";
 import { clock } from "@/lib/calls";
 import { SHORT_LABEL, type Quick } from "@/lib/quick";
 import { fmtTime, type DayReview } from "@/lib/dayReview";
@@ -78,12 +78,17 @@ export async function POST(request: Request) {
     const what = qk ? (qk.kind === "voicemail" ? `voicemail ${qk.score}` : SHORT_LABEL[qk.what]) : `${c.outcome ?? "call"} · SLP ${c.slp_score ?? "--"}`;
     return { n: i + 1, id: c.id, time: c.call_time ?? null, what };
   });
+  const fixes = await correctionsFor(supabase, [
+    ...calls.filter((c) => c.grade).map((c) => ({ id: c.id, graded_at: (c.grade as { graded_at?: string } | null)?.graded_at ?? null })),
+    ...(best ? [{ id: best.call.id }] : []),
+  ]);
+  if (best && fixes.get(best.call.id)) bestText += `\n${fixes.get(best.call.id)}`;
   const lines = calls.map((c, i) => {
     const head = `#${i + 1} ${c.call_time ? fmtTime(c.call_time) : ""} · ${clock(c.duration_secs)}`;
     const qk = c.quick;
     if (qk?.kind === "voicemail") return `${head} · VOICEMAIL (score ${qk.score}/100; mood ${qk.mood}/10 ${qk.mood_word}): ${qk.said} -- ${qk.read}${qk.flag ? ` FLAG: ${qk.flag}` : ""}`;
     if (qk?.kind === "short") return `${head} · SHORT CALL, ${SHORT_LABEL[qk.what]} (mood ${qk.mood}/10 ${qk.mood_word}): opening ${qk.opening}; ended ${qk.ended_at != null ? `at ${clock(qk.ended_at)}` : ""} by ${qk.ended_by} -- ${qk.read}`;
-    return `${head} · FULL CALL\n${digest(c)}`;
+    return `${head} · FULL CALL\n${digest(c)}${fixes.get(c.id) ? `\n${fixes.get(c.id)}` : ""}`;
   });
 
   const prompt = `A sales manager at a debt-relief company wants to understand one day for one sales rep -- usually a bad day, where the rep isn't closing. Below is every call the rep made that day that has been read, in order: full calls graded against the script and Jordan Belfort's Straight Line method, plus voicemails and short calls (under a minute and a half) that only got a quick read of what happened and the rep's mood. Then the rep's own best call, for comparison -- what they do on their best day.

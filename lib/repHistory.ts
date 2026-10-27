@@ -16,6 +16,7 @@ export type HistCall = {
   call_date: string | null;
   /** "HH:MM" when known. */
   call_time?: string | null;
+  graded_at?: string | null;
   source: string; // 'upload' | 'roleplay'
   persona_id: string | null;
   status: string;
@@ -203,6 +204,7 @@ const CALL_COLS = [
   "line_control:grade->line_control",
   "archetype:roleplay->archetype->>name",
   "retention",
+  "graded_at:grade->>graded_at",
 ].join(", ");
 
 /** Supabase returns an error for a missing table; treat those as empty so one gap doesn't blank the page. */
