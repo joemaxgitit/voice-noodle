@@ -54,6 +54,7 @@ import {
 import { failCall, log, thinkingFor, type Supa } from "@/lib/callsServer";
 import { practiceNote, type PersonaSecret } from "@/lib/roleplay";
 import { rewriteRules } from "@/lib/gradingRulesServer";
+import { FOCUS_CHECKS, focusResult, type CoachFocus, type FocusCheckGrade } from "@/lib/coachFocus";
 
 /*
   The grader, shared by uploaded calls (/api/calls/grade, managers) and
@@ -129,7 +130,7 @@ export async function prepareGrade(
   const { data: call, error } = await supabase
     .from("calls")
     .select(
-      "id, org_id, rep_id, status, updated_at, transcript, voice, script_id, grade, score, slp_score, grade_history, cost, rep_name, source, roleplay, profiles:rep_id(full_name)"
+      "id, org_id, rep_id, call_date, created_at, status, updated_at, transcript, voice, script_id, grade, score, slp_score, grade_history, cost, rep_name, source, roleplay, profiles:rep_id(full_name)"
     )
     .eq("id", callId)
     .single();
@@ -297,6 +298,9 @@ export async function prepareGrade(
   if (!isPractice) practice += await closeCalibration(supabase);
   // What this rep has been coached on lately, so Coach Now can tell a pattern from a one-off.
   if (!isPractice && call.rep_id) practice += await recentFocus(supabase, call.rep_id as string, callId);
+  // A "Coach this" focus being tracked for this rep: check this call for it (never on answer-key test grades).
+  const focus = !dry && !isPractice && call.rep_id ? await activeFocus(supabase, call.rep_id as string, callId, (call.call_date as string | null) || String(call.created_at).slice(0, 10)) : null;
+  if (focus) practice += `\n<coaching_focus>\nA manager is coaching this rep on: ${focus.title}.${focus.next_call ? ` What the rep should do: ${focus.next_call}` : ""}${focus.check_for ? ` What to listen for: ${focus.check_for}` : ""}\nFill focus_check for it.\n</coaching_focus>\n`;
 
   // After the claim: a rep grading their own practice call can only read
   // the managers' lessons while that call is marked as grading.
@@ -348,6 +352,7 @@ export async function prepareGrade(
         history: (call.grade_history as GradeVersion[] | null) || [],
         cost: (call.cost as CallCost | null) || {},
         dry,
+        focusId: focus?.id ?? null,
       });
     },
   };
@@ -388,6 +393,52 @@ How earlier close calls on this team held up (clients whose result is known): ca
   }
 </close_track_record>
 `;
+}
+
+/**
+ * The rep's "Coach this" focus, if one is being tracked and this call counts
+ * toward it: made on or after the day it was started, and not the call it was
+ * coached from. Needs supabase/coaching_focus.sql; before that, nothing.
+ */
+async function activeFocus(supabase: Supa, repId: string, callId: string, callDate: string): Promise<CoachFocus | null> {
+  const { data, error } = await supabase
+    .from("coaching_focus")
+    .select("*")
+    .eq("rep_id", repId)
+    .eq("status", "active")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (error) return null;
+  const f = ((data || []) as CoachFocus[])[0];
+  if (!f || f.call_id === callId || callDate < f.created_at.slice(0, 10)) return null;
+  return f;
+}
+
+/** Files this call's check against the focus; after FOCUS_CHECKS calls that gave a chance, the focus closes with a result. */
+async function recordFocusCheck(supabase: Supa, focusId: string, callId: string, fc: FocusCheckGrade) {
+  try {
+    const { data: c } = await supabase.from("calls").select("org_id, call_date, created_at").eq("id", callId).single();
+    if (!c) return;
+    if (!fc.chance || fc.shown === "n/a") {
+      // A re-grade can take a chance away: then this call no longer counts.
+      await supabase.from("coaching_focus_checks").delete().eq("focus_id", focusId).eq("call_id", callId);
+      return;
+    }
+    await supabase.from("coaching_focus_checks").upsert(
+      { focus_id: focusId, call_id: callId, org_id: c.org_id, call_date: c.call_date || String(c.created_at).slice(0, 10), shown: fc.shown, quote: fc.quote || null, at_secs: fc.time, note: fc.note || null },
+      { onConflict: "focus_id,call_id" }
+    );
+    const { data: checks } = await supabase.from("coaching_focus_checks").select("shown, call_date").eq("focus_id", focusId).order("call_date", { ascending: true });
+    const list = (checks || []) as { shown: "yes" | "partly" | "no" }[];
+    if (list.length < FOCUS_CHECKS) return;
+    await supabase
+      .from("coaching_focus")
+      .update({ status: "done", result: focusResult(list.slice(0, FOCUS_CHECKS)), finished_at: new Date().toISOString() })
+      .eq("id", focusId)
+      .eq("status", "active");
+  } catch {
+    // The grade is saved either way; a missed check is not worth failing it.
+  }
 }
 
 /**
@@ -703,6 +754,8 @@ loan: the SuperMoney loan request. discussed: true if a loan amount came up. amo
 
 Facts, readings and guesses: in every field, say what happened (what was said, by whom, when) as fact; say what it probably meant as a reading ("this suggests..."); and keep anything the call can't confirm out of the fact fields -- put it in coach_now.hypotheses. Never state a conclusion about the client's mind as fact from brief agreement, silence or a callback request alone.
 
+focus_check: only when a <coaching_focus> block comes with this call; otherwise chance false, shown "n/a", quote "", time -1, note "". chance: true if this call gave the rep a fair chance to do what they were coached on (the call reached that moment). shown: "yes" if they did it, "partly", "no", or "n/a" if there was no chance. quote: the moment that shows it (a short quote, or ""), time: its seconds (-1 if none). note: one plain sentence on what they did there. Judge it on its own evidence -- the coaching doesn't change anything else in the grade.
+
 coach_now: what the manager coaches first, read in ten seconds. Everything else in the grade stays as detail underneath it.
 - priority: the ONE behavior change that would most improve this rep's next call. Choose it by, in order: impact (how much it cost this call), recurrence (whether it also shows in this rep's recent calls, listed with the call if known), coachability (a specific thing the rep can do differently, not a trait), and how clearly the recording shows it. Never pick a stage the call didn't reach, something that belonged to an earlier call, or an off-script compliance claim (those are flags). skill: the area in two or three words (for example "Hardship discovery", "Deferred decision", "Rapport to the line"). title: the change, one line, as an instruction ("Dig past the first 'no hardship'"). time: seconds of the clearest moment. quote: what was said there, 25 words or fewer. observed: what happened, facts only. why_it_matters: what it cost on this call. next_call: exactly what to do or say differently next time, one or two sentences, concrete enough to practice ("After the client says there's no hardship, ask what made them reach out now and what they'd want to change -- then follow their answer one layer deeper"). drill: one practice exercise (a script section to drill, or a practice call with a certain kind of client). check: what a manager should hear on the next calls to know it improved. confidence: "high", "medium" or "low" that the recording shows this. reasons: one line on why this comes first (impact, recurrence, coachability, evidence).
 - also: up to 2 more opportunities, most important first: title, time (seconds, or -1), note (one sentence: what to do differently).
@@ -801,9 +854,16 @@ const GRADE_SCHEMA = {
     "objections",
     "loan",
     "coach_now",
+    "focus_check",
   ],
   additionalProperties: false,
   properties: {
+    focus_check: {
+      type: "object",
+      additionalProperties: false,
+      required: ["chance", "shown", "quote", "time", "note"],
+      properties: { chance: { type: "boolean" }, shown: { type: "string" }, quote: { type: "string" }, time: { type: "number" }, note: { type: "string" } },
+    },
     loan: {
       type: "object",
       additionalProperties: false,
@@ -1227,7 +1287,7 @@ export function nameSections(g: Grade, n: Naming) {
 
 const SPANISH = /[¿¡ñ]|\b(qué|cómo|porque|usted|tengo|está|estoy|puedo|quiero|tarjetas|deuda|pagar|ahorita|bueno|gracias|también|entonces|necesito|dinero)\b/i;
 const SPANISH_TITLE = /[áéíóúñ¿¡]|\b(el|la|los|las|del|sobre|cierre|contrato|presentación|crédito|villano|remate|apertura|dificultad)\b/i;
-const NAME_KEYS = new Set(["section", "stage", "status", "landed", "outcome", "close_quality", "model", "graded_at", "role", "speaker", "severity", "direction", "kind", "skill", "delivered", "confidence", "state", "product_state", "rep_state", "company_state", "weak", "addressed", "after", "asked_by"]);
+const NAME_KEYS = new Set(["section", "stage", "status", "landed", "outcome", "close_quality", "model", "graded_at", "role", "speaker", "severity", "direction", "kind", "skill", "delivered", "confidence", "state", "product_state", "rep_state", "company_state", "weak", "addressed", "after", "asked_by", "shown", "focus_id"]);
 
 /**
  * The grader is told to write in English, but quotes from a Spanish call
@@ -1525,7 +1585,7 @@ async function grade(
   blocks: { type: string; text: string }[],
   key: string,
   started: number,
-  prior: { naming: Naming; previous: GradeVersion | null; history: GradeVersion[]; cost: CallCost; dry?: boolean }
+  prior: { naming: Naming; previous: GradeVersion | null; history: GradeVersion[]; cost: CallCost; dry?: boolean; focusId?: string | null }
 ): Promise<DryGrade | void> {
   try {
     let res = await askClaude(blocks, key, true);
@@ -1669,6 +1729,20 @@ async function grade(
       const h = result.spotlights?.hardship;
       if (result.ended.early && ["client_time", "spouse_needed"].includes(result.ended.why) && h && h.target !== "renew" && typeof h.moved_on_at === "number" && h.moved_on_at < 8 * 60) h.target = "cut_short";
     }
+    // The coaching-focus check: tidy, and dropped when there was no focus to check.
+    if (result.focus_check && (!obj(result.focus_check) || !prior.focusId)) delete result.focus_check;
+    if (result.focus_check) {
+      const sh = low(String(result.focus_check.shown ?? ""));
+      const chance = !!result.focus_check.chance && ["yes", "partly", "no"].includes(sh);
+      result.focus_check = {
+        focus_id: prior.focusId ?? undefined,
+        chance,
+        shown: (chance ? sh : "n/a") as FocusCheckGrade["shown"],
+        quote: String(result.focus_check.quote ?? ""),
+        time: typeof result.focus_check.time === "number" && result.focus_check.time >= 0 ? result.focus_check.time : null,
+        note: String(result.focus_check.note ?? ""),
+      };
+    }
     // Script lines have been through legal review: anything the grader still marked as in the script is not a flag.
     result.flags = result.flags.filter((f) => !f.in_script);
     // The loan ask: who named the amount.
@@ -1775,6 +1849,7 @@ async function grade(
       .eq("id", callId);
 
     if (error) throw new Error(`Could not save the grade. ${error.message}`);
+    if (prior.focusId && result.focus_check) await recordFocusCheck(supabase, prior.focusId, callId, result.focus_check);
     log(
       "grade",
       callId,

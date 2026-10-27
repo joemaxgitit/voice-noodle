@@ -54,6 +54,7 @@ import type { RoleplayInfo } from "@/lib/roleplay";
 import JourneyBox from "./JourneyBox";
 import QuickCard from "./QuickCard";
 import AnswerKeyBox from "./AnswerKeyBox";
+import CoachThis from "./CoachThis";
 import "../calls.css";
 import "../../reps/reps.css";
 import { afterOutcomes } from "@/lib/outcomes";
@@ -284,7 +285,7 @@ function Said({ text }: { text: string }) {
  * moment" walks through them in order. Managers only: this page is never
  * shown to reps.
  */
-function CoachNowCard({ cn, seek, fix }: { cn: CoachNow; seek: (t: number | null) => void; fix: ReactNode }) {
+function CoachNowCard({ cn, seek, fix, track }: { cn: CoachNow; seek: (t: number | null) => void; fix: ReactNode; track?: ReactNode }) {
   const p = cn.priority;
   const moments = [p.time, ...cn.also.map((a) => a.time)].filter((t): t is number => typeof t === "number");
   const [at, setAt] = useState(0);
@@ -381,6 +382,7 @@ function CoachNowCard({ cn, seek, fix }: { cn: CoachNow; seek: (t: number | null
         Why this first: {p.reasons || "—"} · evidence {p.confidence}
       </div>
       {fix}
+      {track}
     </section>
   );
 }
@@ -1094,6 +1096,7 @@ export default function CallDetail() {
         <CoachNowCard
           cn={g.coach_now}
           seek={seek}
+          track={call.source !== "roleplay" ? <CoachThis supabase={supabase} callId={call.id} repId={call.rep_id} orgId={myOrg} cn={g.coach_now} check={g.focus_check} /> : undefined}
           fix={
             <Fix
               ctx={fixCtx}

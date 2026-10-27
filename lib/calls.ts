@@ -392,6 +392,8 @@ export type Grade = {
   objections?: { items: Objection[]; read: string };
   /** v12: the one thing to coach first (see CoachNow). */
   coach_now?: CoachNow;
+  /** v12: the check for a manager's "Coach this" focus, when one was being tracked for this rep. */
+  focus_check?: import("@/lib/coachFocus").FocusCheckGrade;
   /** v12: the loan amount and who asked for it. */
   loan?: LoanAsk;
   /** Which version of the grading rules produced this grade (missing = 1). */
