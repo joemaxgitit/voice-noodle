@@ -416,7 +416,12 @@ export default function Calls() {
     if (id === NEW_REP) return;
     const team = people.find((p) => p.id === id)?.team;
     const match = scripts.find((s) => s.team && s.team === team);
-    if (match) setScriptId(match.id);
+    if (match) return setScriptId(match.id);
+    // No team (a manager, or you uploading your own call): the sales Options Script, unless one's already picked.
+    if (!scriptId) {
+      const sales = scripts.find((s) => s.team === "closers" && !s.continues_into && !/renew/i.test(s.title)) ?? scripts.find((s) => !s.continues_into && !/renew/i.test(s.title));
+      if (sales) setScriptId(sales.id);
+    }
   }
 
   // What this upload will cost: transcription by the minute, grading from recent calls.
@@ -436,16 +441,14 @@ export default function Calls() {
   async function upload() {
     setError("");
     setDupe(null);
-    if (est && !(await okToSpend(supabase, est.usd, "This call"))) return;
     const typed = repId === NEW_REP ? repName.trim() : "";
     if (!file || !repId || (repId === NEW_REP && !typed) || !scriptId || !me?.org_id) {
-      setError(
-        repId === NEW_REP && !typed
-          ? "Type the rep's name."
-          : "Choose a recording, the rep, and the script."
-      );
+      // Say exactly what's missing.
+      const missing = [!file && "the recording", !repId && "the rep", repId === NEW_REP && !typed && "the rep's name", !scriptId && "the script to grade against (Grade against)"].filter(Boolean) as string[];
+      setError(missing.length ? `Choose ${missing.join(", ")}.` : "Couldn't find your organization -- sign out and back in.");
       return;
     }
+    if (est && !(await okToSpend(supabase, est.usd, "This call"))) return;
     const ct = convosoName(file.name).time;
     const res = await uploadCall(
       supabase,
@@ -801,7 +804,7 @@ export default function Calls() {
                     {outcomeOf(c) ? ` · ${OUTCOME_LABEL[outcomeOf(c) as Outcome]}` : ""}
                     {c.translation_status || (c.lang && langOf(c.lang) === "es") ? " · Spanish" : ""}
                     {c.close_quality === "fragile" && <span className="danger">{" · fragile close"}</span>}
-                    {c.cut === "true" && <span className="muted">{` · cut short${c.cutwhy === "client_time" ? " (client had to go)" : c.cutwhy === "spouse_needed" ? " (wanted the spouse)" : ""}`}</span>}
+                    {c.cut === "true" && c.cutwhy && c.cutwhy !== "other" && <span className="muted">{` · cut short${c.cutwhy === "client_time" ? " (client had to go)" : c.cutwhy === "spouse_needed" ? " (wanted the spouse)" : ""}`}</span>}
                     {c.retention === "cancelled" && <strong className="danger">{" · cancelled"}</strong>}
                     {c.retention === "graduated" && <strong className="good-text">{" · graduated"}</strong>}
                     {c.retention === "paid6" && <strong className="good-text">{" · 6+ payments"}</strong>}
