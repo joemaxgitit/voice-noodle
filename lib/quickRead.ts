@@ -124,17 +124,33 @@ Reply with only this JSON:
  * Called before the full grade. Returns null when the call should get the full
  * grade; otherwise marks it and returns the cheap read to run instead.
  */
-export async function prepareQuick(supabase: Supa, callId: string, key: string, orgId: string, userId: string): Promise<{ kind: CallKind; run: () => Promise<boolean> } | null> {
-  const { data: c } = await supabase.from("calls").select("id, source, status, grade, transcript, duration_secs, voice").eq("id", callId).maybeSingle();
-  if (!c || c.source === "roleplay" || c.grade || !c.transcript) return null;
-  if (!["transcribed", "read", "failed"].includes(c.status as string)) return null;
+export async function prepareQuick(
+  supabase: Supa,
+  callId: string,
+  key: string,
+  orgId: string,
+  userId: string,
+  opts: { regrade?: boolean } = {}
+): Promise<{ kind: CallKind; run: () => Promise<boolean> } | null> {
+  let { data: c, error: ce } = await supabase.from("calls").select("id, source, status, grade, score, slp_score, grade_history, transcript, duration_secs, voice, kind").eq("id", callId).maybeSingle();
+  if (ce) ({ data: c } = await supabase.from("calls").select("id, source, status, grade, score, slp_score, grade_history, transcript, duration_secs, voice").eq("id", callId).maybeSingle());
+  if (!c || c.source === "roleplay" || !c.transcript) return null;
+  // A manager pressed "Grade it fully": never turn it back into a quick read.
+  if ((c as { kind?: string | null }).kind === "full") return null;
+  // A re-grade can turn an old full grade of a voicemail or short call into a quick read (graded before quick reads existed).
+  if (c.grade && !opts.regrade) return null;
+  if (!["transcribed", "read", "failed", ...(opts.regrade ? ["graded"] : [])].includes(c.status as string)) return null;
   const t = c.transcript as Transcript;
   const vm = detectVoicemail(t);
   const secs = (c.duration_secs as number | null) ?? (t.utterances.length ? t.utterances[t.utterances.length - 1].end : 0);
   const kind: CallKind | null = vm.yes ? "voicemail" : secs < SHORT_SECS ? "short" : null;
   if (!kind) return null;
   // Needs supabase/quick_reads.sql; without it the call just gets the full grade.
-  const { error } = await supabase.from("calls").update({ status: "grading", kind, error: null, updated_at: new Date().toISOString() }).eq("id", callId);
+  // An old full grade moves into the call's history (kept, not lost) and its scores leave every average.
+  const old = c.grade
+    ? { grade: null, score: null, slp_score: null, grade_history: [{ grade: c.grade, score: c.score ?? null, slp_score: c.slp_score ?? null }, ...((c.grade_history as unknown[] | null) ?? [])].slice(0, 10) }
+    : {};
+  const { error } = await supabase.from("calls").update({ status: "grading", kind, error: null, updated_at: new Date().toISOString(), ...old }).eq("id", callId);
   if (error) return null;
   const voice = (c.voice as VoiceTimeline | null) ?? null;
   return {

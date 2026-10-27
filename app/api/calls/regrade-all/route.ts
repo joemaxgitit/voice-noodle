@@ -1,6 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { requireAdmin, log } from "@/lib/callsServer";
 import { CURRENT_FROM, GRADER_VERSION, prepareGrade, REGRADE_NEWEST, regradeApplies } from "@/lib/gradeCall";
+import { prepareQuick } from "@/lib/quickRead";
 import { kick } from "@/lib/chain";
 
 export const runtime = "nodejs";
@@ -96,6 +97,12 @@ export async function POST(request: Request) {
   for (const c of next) {
     // Marked Renew but still on another script (uploaded before Renew switched it): grade it on the Renew script.
     if (s.wrongScript.has(c.id) && s.renewScript) await supabase.from("calls").update({ script_id: s.renewScript.id }).eq("id", c.id);
+    // A voicemail or short call graded in full before quick reads existed gets the quick read instead.
+    const quick = await prepareQuick(supabase, c.id, key, ctx.orgId, ctx.userId, { regrade: true });
+    if (quick) {
+      preps.push(quick);
+      continue;
+    }
     const prep = await prepareGrade(supabase, c.id, key, started);
     if (prep.ok && !prep.already) preps.push(prep);
     else if (!prep.ok) {

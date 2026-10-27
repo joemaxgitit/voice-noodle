@@ -38,11 +38,13 @@ export async function POST(request: Request) {
   if (!callId) return NextResponse.json({ error: "No call id." }, { status: 400 });
 
   // A full grade replaces any earlier quick read (no-op before supabase/quick_reads.sql).
-  if (full) await supabase.from("calls").update({ kind: null, quick: null }).eq("id", callId).then(() => undefined, () => undefined);
+  // "full" remembers the manager's choice, so a later re-grade never turns it back into a quick read.
+  if (full) await supabase.from("calls").update({ kind: "full", quick: null }).eq("id", callId).then(() => undefined, () => undefined);
 
   // A voicemail or a short call gets a cheap read instead of the full grade ("Grade it fully" sends full).
   if (!full) {
-    const quick = await prepareQuick(supabase, callId, key, orgId, userId);
+    // Re-grade included: a voicemail or short call graded in full before quick reads existed gets its quick read.
+    const quick = await prepareQuick(supabase, callId, key, orgId, userId, { regrade: true });
     if (quick) {
       after(async () => {
         await quick.run();
