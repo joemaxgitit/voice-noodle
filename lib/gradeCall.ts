@@ -299,7 +299,7 @@ export async function prepareGrade(
   // What this rep has been coached on lately, so Coach Now can tell a pattern from a one-off.
   if (!isPractice && call.rep_id) practice += await recentFocus(supabase, call.rep_id as string, callId);
   // A "Coach this" focus being tracked for this rep: check this call for it (never on answer-key test grades).
-  const focus = !dry && !isPractice && call.rep_id ? await activeFocus(supabase, call.rep_id as string, callId, (call.call_date as string | null) || String(call.created_at).slice(0, 10)) : null;
+  const focus = !dry && !isPractice && call.rep_id ? await activeFocus(supabase, call.rep_id as string, callId, (call.call_date as string | null) || null) : null;
   if (focus) practice += `\n<coaching_focus>\nA manager is coaching this rep on: ${focus.title}.${focus.next_call ? ` What the rep should do: ${focus.next_call}` : ""}${focus.check_for ? ` What to listen for: ${focus.check_for}` : ""}\nFill focus_check for it.\n</coaching_focus>\n`;
 
   // After the claim: a rep grading their own practice call can only read
@@ -400,7 +400,7 @@ How earlier close calls on this team held up (clients whose result is known): ca
  * toward it: made on or after the day it was started, and not the call it was
  * coached from. Needs supabase/coaching_focus.sql; before that, nothing.
  */
-async function activeFocus(supabase: Supa, repId: string, callId: string, callDate: string): Promise<CoachFocus | null> {
+async function activeFocus(supabase: Supa, repId: string, callId: string, callDate: string | null): Promise<CoachFocus | null> {
   const { data, error } = await supabase
     .from("coaching_focus")
     .select("*")
@@ -410,7 +410,20 @@ async function activeFocus(supabase: Supa, repId: string, callId: string, callDa
     .limit(1);
   if (error) return null;
   const f = ((data || []) as CoachFocus[])[0];
-  if (!f || f.call_id === callId || callDate < f.created_at.slice(0, 10)) return null;
+  if (!f || f.call_id === callId) return null;
+  // Only calls MADE after the coaching count -- never one made before it and uploaded later.
+  // Compared in the team's own clock (date + time of day as the dialer gives them).
+  if (!callDate) return null;
+  const started = f.started_local || f.created_at.slice(0, 10);
+  const startDay = started.slice(0, 10);
+  if (callDate < startDay) return null;
+  if (callDate === startDay) {
+    // Same day: only a call whose time is known and is after the coaching; no time, no count.
+    const { data: t } = await supabase.from("calls").select("call_time").eq("id", callId).maybeSingle();
+    const callTime = (t as { call_time?: string | null } | null)?.call_time ?? null;
+    const startTime = started.slice(11, 16);
+    if (!callTime || !startTime || callTime < startTime) return null;
+  }
   return f;
 }
 

@@ -75,6 +75,11 @@ export default function CoachThis({
       drill: p.drill || null,
       check_for: p.check || null,
       shared: share,
+      started_local: (() => {
+        const d = new Date();
+        const z = (n: number) => String(n).padStart(2, "0");
+        return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`;
+      })(),
     });
     setBusy(false);
     if (error) return setMsg(/coaching_focus/.test(error.message) ? "Run supabase/coaching_focus.sql in the Supabase SQL Editor first." : error.message);
@@ -132,7 +137,7 @@ export default function CoachThis({
                 Replaces the focus being tracked now: <Link href={active.call_id ? `/admin/calls/${active.call_id}` : "#"}>{active.title}</Link> ({checked} of {FOCUS_CHECKS} checked)
               </>
             ) : (
-              <>After you&rsquo;ve coached it: the rep&rsquo;s next {FOCUS_CHECKS} calls that give a chance are checked for it.</>
+              <>After you&rsquo;ve coached it: the next {FOCUS_CHECKS} calls the rep <i>makes</i> from now on that give a chance are checked for it. Calls made before now never count, even if uploaded later.</>
             )}
           </small>
         </div>

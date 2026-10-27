@@ -16,8 +16,10 @@ create table if not exists public.coaching_focus (
   result      text,                                    -- improved | mixed | not_yet
   created_by  uuid references auth.users(id) on delete set null,
   created_at  timestamptz not null default now(),
+  started_local text,                                  -- 'YYYY-MM-DD HH:MM' in the manager's clock; only calls made after it count
   finished_at timestamptz
 );
+alter table public.coaching_focus add column if not exists started_local text;
 create index if not exists coaching_focus_rep on public.coaching_focus (rep_id, status, created_at desc);
 
 create table if not exists public.coaching_focus_checks (

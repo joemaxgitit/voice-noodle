@@ -21,6 +21,8 @@ export type CoachFocus = {
   status: "active" | "done" | "stopped" | "replaced";
   result: "improved" | "mixed" | "not_yet" | null;
   created_at: string;
+  /** "YYYY-MM-DD HH:MM" in the manager's own clock when it was started (calls are dated the same way). */
+  started_local?: string | null;
   finished_at: string | null;
 };
 
