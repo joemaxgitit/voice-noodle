@@ -1471,15 +1471,16 @@ export default function CallDetail() {
                       <p className="hint" style={{ marginBottom: 0 }}>No objections on this call.</p>
                     ) : (
                       g.objections.items.map((o, i) => {
-                        const bad = o.handled === "rebutted" || o.handled === "caved" || o.handled === "ignored" || o.rounds >= 2 || (o.handled === "the_loop" && o.before_pitch);
+                        const putOff = o.handled === "deferred" && !!o.addressed && o.addressed !== "yes";
+                        const bad = o.handled === "rebutted" || o.handled === "caved" || o.handled === "ignored" || o.rounds >= 2 || (o.handled === "the_loop" && o.before_pitch) || (putOff && o.addressed === "no");
                         return (
                           <p key={i} style={{ margin: "8px 0 0" }}>
                             <button className="time-link" onClick={() => seek(o.at)}>
                               {clock(o.at)}
                             </button>{" "}
                             &ldquo;{o.said}&rdquo; <small className="muted">· {o.before_pitch ? "before the pitch" : "after the pitch"}</small>{" "}
-                            <span className={`pill ${bad ? "poor" : "good"}`}>
-                              {HANDLED_LABEL[o.handled]}
+                            <span className={`pill ${bad ? "poor" : putOff ? "fair" : "good"}`}>
+                              {putOff ? (o.addressed === "partly" ? "Put off, partly dealt with" : "Put off, never dealt with") : HANDLED_LABEL[o.handled]}
                               {o.handled === "the_loop" && o.loop ? `: ${o.loop}` : ""}
                             </span>
                             {o.rounds >= 2 && <span className="pill poor"> {o.rounds} back-and-forths</span>}

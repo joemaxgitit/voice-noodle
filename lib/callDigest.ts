@@ -19,7 +19,7 @@ export function digest(c: DigestRow): string {
     td?.happened ? `Loan turndown at ${t(td.at)}: pickup ${td.pickup}; ${td.read}` : "",
     g.line_control ? `Staying on the line: ${g.line_control.read}` : "",
     g.objections?.items.length
-      ? `Objections: ${g.objections.items.map((o) => `[${clock(o.at)}${o.before_pitch ? ", before pitch" : ""}] "${o.said}" -> ${o.handled.replace("_", " ")}${o.loop ? ` (${o.loop})` : ""}${o.rounds >= 2 ? `, ${o.rounds} back-and-forths` : ""}`).join("; ")}. ${g.objections.read}`
+      ? `Objections: ${g.objections.items.map((o) => `[${clock(o.at)}${o.before_pitch ? ", before pitch" : ""}] "${o.said}" -> ${o.handled === "deferred" && o.addressed && o.addressed !== "yes" ? `put off, ${o.addressed === "no" ? "never dealt with" : "partly dealt with"}` : o.handled.replace("_", " ")}${o.loop ? ` (${o.loop})` : ""}${o.rounds >= 2 ? `, ${o.rounds} back-and-forths` : ""}`).join("; ")}. ${g.objections.read}`
       : "",
     g.ended?.early ? `Ended early (${g.ended.why.replace(/_/g, " ")}, handled ${g.ended.handled}): ${g.ended.read}` : "",
     "Sections:",

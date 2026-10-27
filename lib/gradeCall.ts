@@ -6,7 +6,7 @@ import { hardshipScoreOf, lineScoreOf, type CoachNow, type Ended, type LoanAsk, 
  * scores, new rules): every graded call on file is then re-graded by itself,
  * oldest first, the next time a manager opens the Calls page.
  */
-export const GRADER_VERSION = 12;
+export const GRADER_VERSION = 13;
 /**
  * The oldest grade that's still current, per kind of call (a change that only
  * affects renew calls raises just the renew number). Version 6: the close read
@@ -26,8 +26,13 @@ export const GRADER_VERSION = 12;
  * invents pain; who asked for the loan amount; deferred decisions with a set
  * callback are not "checked out"; script lines are never flagged. Scores keep
  * the same weights. Every kind of call.
+ * Version 13: a client's decision (or putting it off) is not proof a stage
+ * landed or failed; "landed" needs the client's own words, engagement alone
+ * is "partly"; a stage whose script section was never reached stays "not
+ * reached"; diagnose a stall before re-anchoring, in the client's own words;
+ * the Coach Now point isn't repeated across sections. Hardship unchanged.
  */
-export const CURRENT_FROM = { renew: 12, other: 12 };
+export const CURRENT_FROM = { renew: 13, other: 13 };
 
 /**
  * A grading change no longer re-grades everything on file -- only the newest
@@ -712,6 +717,9 @@ List at most 15 flags. If there are more, keep the most serious. If the same cla
 emotional_arc: this is the backbone of the grade. Exactly one entry per roadmap stage, in roadmap order, using the stage names exactly as written. Find each stage wherever it actually happened on the call. intended: the roadmap feeling for that stage, sharpened with the script's "client should feel" lines where they apply. observed: what the client actually showed, in a few words, judged only from what the client said. landed: "yes" if the client's own words show they reached the feeling, "partial", "no", or "not_reached" if the call never got there.
 A stage only lands if the client genuinely understood. Agreement given while confused ("okay", "I guess") is not a landed pitch, close or contract stage -- mark it "partial" or "no" and say why in observed. If the loan was approved, "Hopeless" did not happen: mark it "not_reached".
 Keep three things apart for every stage. delivered: did the REP deliver this stage's part of the script -- "yes", "partial", "no" (the call got there and the rep skipped it) or "not_reached". landed: how the CLIENT actually responded. confidence: how sure you are about that response -- "high" (the client's own words clearly show the feeling), "medium", or "low" (only brief agreement, silence, or a request for a callback). Brief agreement on its own ("yes sir", "okay", "correct", "mm-hmm") never shows a real emotional change: landed at most "partial", confidence "low", and observed says the client only acknowledged it. Never state a feeling as fact that the client's words don't show.
+landed "yes" needs the client's own words to show the feeling (for example saying it isn't their fault, saying they're relieved, saying the program fits them). Taking part -- answering questions, filling in an application, staying on the line -- shows engagement, not the feeling: that is "partial" at most.
+A client's decision is not proof a stage landed or failed. Choosing, putting it off, or asking for a callback doesn't by itself mean the options, the pitch or the close did or didn't land -- judge the client's response to the stage itself (what they said about it), and if understanding wasn't checked, landed is "partial" with confidence "low", and say understanding was unconfirmed. Grade the delivery in delivered.
+A roadmap stage is "not_reached" when the call never got to its script section -- even if something like it came up earlier in passing; mention that in observed ("touched on earlier at 5:54") but keep it "not_reached". The one exception is "Hopeless", which happens inside the SuperMoney section.
 "Hopeless": the stage is the client absorbing the loan decline. Judge whether the client understood the result and stayed engaged, and how the rep handled it -- visible despair is not required. A client who takes the decline calmly and stays on the call has landed it.
 evidence: a short quote of the CLIENT (20 words or fewer) or "", and its time (-1 if none).
 section: the script section where this stage actually happened -- or, if it was not reached, the section where it belongs -- copied exactly as that section is titled in the script above.
@@ -730,7 +738,7 @@ evidence: a short quote (20 words or fewer) and its time (-1 if none), or "". co
 state, for each skill: "demonstrated" (enough evidence to score it), "partial" (some evidence, limited chance), "missed" (there was a clear chance to use it and the rep didn't), "not_reached" (no fair chance on this call -- score 0), or "uncertain" (evidence too thin or conflicting -- say so in coaching). Not reached is never a failure: a skill whose moment never came scores 0, not low.
 Product certainty and Company certainty are judged ONLY by what the client showed -- understanding the program in their own words, asking real questions and getting real answers, believing it fits. The rep explaining the product or the company is not the client being certain. If the call never got to the pitch, Product certainty is "not_reached" unless the client clearly showed it earlier; if it never got to the company (More about Bolton), Company certainty is "not_reached".
 
-objections: every objection or stall the client raised, anywhere on the call. items, in order: at (seconds from the start), before_pitch (true if it came before The Pitch section), said (what the client said, a few words, no names), handled -- "looped" (acknowledged and looped back to the line), "deferred" (put off until later, then dealt with), "the_loop" (ran one of The Loops), "rebutted" (argued the objection itself), "ignored", or "caved" (gave up the line or dropped the ask) -- loop (the Loop's title if handled is "the_loop", else ""), rounds (how many objection/rebuttal back-and-forths on this objection before it went back on the line; 0 if the rep looped straight away), how (the rep's key line, a short quote, or ""), real (what was really behind it as far as the call shows -- "unclear" if the rep never found out; don't guess past the evidence), weak (which certainty was missing: "product", "rep", "company", "pain", "action" or "unclear"), addressed ("yes", "partly", "no": did the rep deal with that real reason), after ("better", "same", "worse", "unclear": how the client was afterward, judged from what they said next). read: one plain sentence on how the rep handled objections. Before The Pitch, judge whether the rep diagnosed the hesitation and responded well -- never mark them down for not running a Loop that wasn't triggered. "I want to think about it" calls for one respectful question to find out what they want to think about. Two or more rounds on one objection is an objection/rebuttal cycle: add a flag for it. An empty list if the client raised none.
+objections: every objection or stall the client raised, anywhere on the call. items, in order: at (seconds from the start), before_pitch (true if it came before The Pitch section), said (what the client said, a few words, no names), handled -- "looped" (acknowledged and looped back to the line), "deferred" (put off until later, then dealt with), "the_loop" (ran one of The Loops), "rebutted" (argued the objection itself), "ignored", or "caved" (gave up the line or dropped the ask) -- loop (the Loop's title if handled is "the_loop", else ""), rounds (how many objection/rebuttal back-and-forths on this objection before it went back on the line; 0 if the rep looped straight away), how (the rep's key line, a short quote, or ""), real (what was really behind it as far as the call shows -- "unclear" if the rep never found out; don't guess past the evidence), weak (which certainty was missing: "product", "rep", "company", "pain", "action" or "unclear"), addressed ("yes", "partly", "no": did the rep deal with that real reason), after ("better", "same", "worse", "unclear": how the client was afterward, judged from what they said next). read: one plain sentence on how the rep handled objections. Before The Pitch, judge whether the rep diagnosed the hesitation and responded well -- never mark them down for not running a Loop that wasn't triggered. "I want to think about it" calls for one respectful question to find out what they want to think about. Diagnose first, then respond to what the client actually says. Re-anchoring the pain before booking the next call is right, in the CLIENT's own words from earlier in the call -- never coach the rep to repeat a figure or claim the client never said (such as the rep's own estimate of how much of a payment goes to interest). "deferred" means put off AND dealt with later on the call; an objection that was put off and never dealt with is "deferred" with addressed "no". Two or more rounds on one objection is an objection/rebuttal cycle: add a flag for it. An empty list if the client raised none.
 
 How Straight Line is scored here -- this matters:
 Approved wording and guarantees (from the sales manager):
@@ -772,6 +780,7 @@ focus_check: only when a <coaching_focus> block comes with this call; otherwise 
 coach_now: what the manager coaches first, read in ten seconds. Everything else in the grade stays as detail underneath it.
 - priority: the ONE behavior change that would most improve this rep's next call. Choose it by, in order: impact (how much it cost this call), recurrence (whether it also shows in this rep's recent calls, listed with the call if known), coachability (a specific thing the rep can do differently, not a trait), and how clearly the recording shows it. Never pick a stage the call didn't reach, something that belonged to an earlier call, or an off-script compliance claim (those are flags). skill: the area in two or three words (for example "Hardship discovery", "Deferred decision", "Rapport to the line"). title: the change, one line, as an instruction ("Dig past the first 'no hardship'"). time: seconds of the clearest moment. quote: what was said there, 25 words or fewer. observed: what happened, facts only. why_it_matters: what it cost on this call. next_call: exactly what to do or say differently next time, one or two sentences, concrete enough to practice ("After the client says there's no hardship, ask what made them reach out now and what they'd want to change -- then follow their answer one layer deeper"). drill: one practice exercise (a script section to drill, or a practice call with a certain kind of client). check: what a manager should hear on the next calls to know it improved. confidence: "high", "medium" or "low" that the recording shows this. reasons: one line on why this comes first (impact, recurrence, coachability, evidence).
 - also: up to 2 more opportunities, most important first: title, time (seconds, or -1), note (one sentence: what to do differently).
+- Say each coaching point once. The coach_now priority is the coaching for that behavior: in sections, skills, coaching_priorities and turning points, keep each one's own evidence and score but don't re-coach the same point in other words -- give that field's coaching "" or something different it adds. The hardship spotlight always gives its full read as it is.
 - strengths: up to 3 things the rep did well, each with a time (-1 if none) -- specific, not generic praise.
 - hypotheses: up to 3 things that might be true but the call can't confirm, worded as possibilities. Empty if none.
 
@@ -1705,6 +1714,19 @@ async function grade(
     for (const t of result.turning_points) t.direction = low(t.direction);
     clean(result);
     nameSections(result, prior.naming);
+    // Consistency: a roadmap stage whose script section the call never reached is "not reached", whatever came up earlier.
+    // (Hopeless lives inside SuperMoney by design.) Hardship is left exactly as graded.
+    {
+      const unreached = new Set(result.sections.filter((x) => x.status === "not_reached").map((x) => x.section.toLowerCase()));
+      for (const a of result.emotional_arc ?? []) {
+        if (a.landed === "not_reached" || !a.section) continue;
+        if (/hopeless|hope spike|intelligence gathering/i.test(a.stage)) continue;
+        if (!unreached.has(a.section.toLowerCase())) continue;
+        a.observed = `Its section wasn't reached. ${a.observed ? `Earlier: ${a.observed}` : ""}`.trim();
+        a.landed = "not_reached";
+        if (a.delivered && a.delivered !== "not_reached") a.delivered = "not_reached";
+      }
+    }
     // Renew calls: a short hardship (2-4 minutes, marked so every page uses that target) and no loan turndown.
     if (prior.naming.skip.length && result.spotlights) {
       if (result.spotlights.hardship) result.spotlights.hardship.target = "renew";
