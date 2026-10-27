@@ -13,6 +13,7 @@ import {
   SKILL_STATE_LABEL,
   TEN_STATE_LABEL,
   coverageOf,
+  clockify,
   skillCounts,
   type CoachNow,
   ROLE_LABEL,
@@ -832,7 +833,8 @@ export default function CallDetail() {
       : call.grade
         ? { grade: call.grade, score: call.score, slp_score: call.slp_score }
         : null;
-  const g = viewing?.grade ?? null;
+  // Times the grader wrote as seconds ("440s") read as minutes and seconds ("7:20").
+  const g = viewing?.grade ? clockify(viewing.grade) : null;
   const shownScore = viewing?.score ?? null;
   // Older grades predate the Straight Line scorecard; recompute when absent.
   const shownSlp = viewing ? viewing.slp_score ?? slpScoreOf(viewing.grade) : null;

@@ -925,6 +925,30 @@ export function coverageOf(grade: Grade): { pct: number; level: "high" | "medium
   return { pct, level: pct >= 75 ? "high" : pct >= 40 ? "medium" : "low", stages, sections };
 }
 
+/**
+ * Times written as seconds in the grader's sentences ("440s", "at 125 seconds") become
+ * minutes and seconds ("7:20"), so nobody does math. Quotes of what people said are
+ * left exactly as said. Works on old grades too (the call page runs it on load).
+ */
+const SAID_KEYS = new Set(["quote", "evidence", "how", "said", "exchange", "best_question", "cut_short", "stall_stated", "pickup_evidence"]);
+export function clockText(text: string): string {
+  return text.replace(/\b(\d{2,5}(?:\.\d+)?)\s?(?:s|secs?|seconds?)\b/gi, (m, n) => {
+    const v = Number(n);
+    return v >= 60 ? clock(v) : m;
+  });
+}
+export function clockify<T>(x: T, key = "", depth = 0): T {
+  if (depth > 8 || x == null) return x;
+  if (typeof x === "string") return (SAID_KEYS.has(key) ? x : clockText(x)) as T;
+  if (Array.isArray(x)) return x.map((v) => clockify(v, key, depth + 1)) as T;
+  if (typeof x === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(x as Record<string, unknown>)) out[k] = clockify(v, k, depth + 1);
+    return out as T;
+  }
+  return x;
+}
+
 export function clock(secs: number | null | undefined): string {
   if (secs === null || secs === undefined || !isFinite(secs)) return "";
   const s = Math.max(0, Math.floor(secs));

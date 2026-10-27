@@ -1,5 +1,5 @@
 import { jsonrepair } from "jsonrepair";
-import { hardshipScoreOf, lineScoreOf, type CoachNow, type Ended, type LoanAsk, type Objection } from "@/lib/calls";
+import { clockify, hardshipScoreOf, lineScoreOf, type CoachNow, type Ended, type LoanAsk, type Objection } from "@/lib/calls";
 
 /**
  * The version of the grading rules. Bump it for a MAJOR grading change (new
@@ -811,6 +811,7 @@ If there are no measurements for this call, judge tonality from wording only and
 
 tonality: summary: two sentences on how the rep used tone and variety across the call. flat_stretches: each long flat stretch from the summary that matters, with start and end in seconds and a note on what was being said (empty if none). tone_checks: up to 8 of the most telling moments where the script marks a tone -- time, tone (the marker, for example "I CARE"), expected (what it should sound like, a few words), heard (what the measurements show, a few words), match ("yes", "partial" or "no").
 In emotional_arc, voice: a few words on how the rep's voice served that stage (for example "softened and slowed for the hardship -- I Care landed"), or "" if not reached.
+Whenever a sentence you write mentions a time or a length of time, write it as minutes and seconds ("at 7:20", "for 2:05"), never as seconds ("440s"). The numeric time fields stay in seconds.
 Judge content from the words and delivery from the measurements. Do not guess at tone of voice beyond what the measurements show.
 ${guidance}
 Return only the JSON object described by the schema.`;
@@ -1837,6 +1838,8 @@ async function grade(
       result.line_control.excursions = (result.line_control.excursions ?? []).map((e) => ({ ...e, by: by(String(e.by).toLowerCase()), back: back(e.back), secs: Math.max(0, Number(e.secs) || 0), at: Math.max(0, Number(e.at) || 0) }));
       result.line_control.score = lineScoreOf(result.line_control);
     }
+    // Any time still written as seconds in a sentence ("440s") becomes minutes and seconds ("7:20").
+    result = clockify(result);
     result.grader_version = GRADER_VERSION;
     result.model = MODEL;
     result.graded_at = new Date().toISOString();

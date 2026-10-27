@@ -13,8 +13,7 @@ import {
   type CallStatus,
   type Grade,
   type Outcome,
-  type Transcript,
-} from "@/lib/calls";
+  type Transcript, clockify } from "@/lib/calls";
 import { RIGHT_OUTCOME_LABEL, verdictOf, type PersonaSecret, type RoleplayInfo } from "@/lib/roleplay";
 import "../../admin/calls/calls.css";
 import "../roleplay.css";
@@ -142,7 +141,7 @@ export default function PracticeResult() {
   }
 
   const rp = row.roleplay || ({ persona: "the client", lang: "en" } as RoleplayInfo);
-  const g = row.grade;
+  const g = row.grade ? clockify(row.grade) : row.grade;
   const first = rp.persona.split(" ")[0];
   const stuck = (row.status === "transcribing" || row.status === "grading") && isStuck(row.status, row.updated_at);
   const verdict = g && secret ? verdictOf(secret.right_outcome, row.outcome, g.close_quality) : null;
