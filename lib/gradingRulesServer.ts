@@ -59,6 +59,7 @@ Turn them into standing grading rules the grader will follow on every future cal
 - Keep every current rule marked manual exactly as written (manual: true), unless a newer correction clearly says otherwise -- then rewrite it and drop the manual mark.
 - Leave out a correction that only fixed a fact about one call (a wrong time, a name, a typo) and teaches nothing general.
 - Never write a rule that rewards pressure, overstated promises, or closing a confused client; compliance problems stay problems.
+- Never write a rule about which claims or wording are allowed, or about flagging what the script says: approved wording comes from the company's legal review, not from corrections. Leave such corrections out.
 - Plain English, no jargon or shorthand. At most 40 rules, most important first.
 
 <current_rules>

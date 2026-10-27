@@ -10,6 +10,11 @@ import { okToSpend, usd } from "@/lib/spend";
 import {
   ENDED_LABEL,
   HANDLED_LABEL,
+  SKILL_STATE_LABEL,
+  TEN_STATE_LABEL,
+  coverageOf,
+  skillCounts,
+  type CoachNow,
   ROLE_LABEL,
   STATUS_LABEL,
   money,
@@ -102,7 +107,7 @@ const ARC_PILL: Record<string, string> = { yes: "good", partial: "fair", no: "po
 const COMPLIANCE_LABEL = { yes: "Yes", no: "No", unclear: "Unclear", not_reached: "Not reached" };
 
 const FOLD_KEY = "vn-call-folds";
-const FOLD_IDS = ["roadmap", "skills", "tonality", "flags", "sections", "disclosures", "speakers", "transcript"];
+const FOLD_IDS = ["spotlights", "line", "objections", "turns", "coach", "welldone", "roadmap", "skills", "tonality", "flags", "sections", "disclosures", "speakers", "transcript"];
 
 /** "3 landed · 1 partly · 2 didn't land" -- counts in a fixed order, zeros left out. */
 function countLine(values: string[], labels: Record<string, string>): string {
@@ -268,6 +273,114 @@ function Said({ text }: { text: string }) {
         )
       )}
     </>
+  );
+}
+
+/**
+ * Coach Now (grades from v12): the one thing to coach first, the evidence,
+ * what to do differently, a drill and how to tell it worked -- then two more
+ * opportunities and three strengths. Every time plays that moment; "Next
+ * moment" walks through them in order. Managers only: this page is never
+ * shown to reps.
+ */
+function CoachNowCard({ cn, seek, fix }: { cn: CoachNow; seek: (t: number | null) => void; fix: ReactNode }) {
+  const p = cn.priority;
+  const moments = [p.time, ...cn.also.map((a) => a.time)].filter((t): t is number => typeof t === "number");
+  const [at, setAt] = useState(0);
+  const time = (t: number | null) =>
+    t === null ? null : (
+      <button className="time-link" onClick={() => seek(t)}>
+        {clock(t)}
+      </button>
+    );
+  return (
+    <section className="coach-now">
+      <div className="cn-head">
+        <span className="cn-kicker">Coach this first{p.skill ? ` · ${p.skill}` : ""}</span>
+        {moments.length > 0 && (
+          <button
+            className="no-print"
+            onClick={() => {
+              seek(moments[at % moments.length]);
+              setAt((n) => n + 1);
+            }}
+          >
+            {at === 0 ? "Play the moment" : `Next moment (${(at % moments.length) + 1} of ${moments.length})`}
+          </button>
+        )}
+      </div>
+      <div className="cn-title">{p.title}</div>
+      {p.quote && (
+        <div className="grade-quote">
+          {time(p.time)}&ldquo;{p.quote}&rdquo;
+        </div>
+      )}
+      <div className="cn-grid">
+        <div>
+          <span className="cn-label">What happened</span>
+          {p.observed}
+        </div>
+        <div>
+          <span className="cn-label">Why it matters</span>
+          {p.why_it_matters}
+        </div>
+        <div>
+          <span className="cn-label">Next call</span>
+          <b>{p.next_call}</b>
+        </div>
+        <div>
+          <span className="cn-label">Practice</span>
+          {p.drill}
+        </div>
+      </div>
+      {p.check && (
+        <>
+          <span className="cn-label">How you&rsquo;ll know it worked</span>
+          {p.check}
+        </>
+      )}
+      {cn.also.length > 0 && (
+        <>
+          <span className="cn-label">Also worth a word</span>
+          <ul className="cn-list">
+            {cn.also.map((a, i) => (
+              <li key={i}>
+                {time(a.time)} <b>{a.title}</b>
+                {a.note ? ` — ${a.note}` : ""}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {cn.strengths.length > 0 && (
+        <>
+          <span className="cn-label">Did well</span>
+          <ul className="cn-list">
+            {cn.strengths.map((a, i) => (
+              <li key={i}>
+                {time(a.time)} {a.text}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {cn.hypotheses.length > 0 && (
+        <>
+          <span className="cn-label">Worth finding out (not confirmed by the call)</span>
+          <ul className="cn-list">
+            {cn.hypotheses.map((h, i) => (
+              <li key={i} className="muted">
+                {h}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <div className="cn-why">
+        Why this first: {p.reasons || "—"} · evidence {p.confidence}
+      </div>
+      {fix}
+    </section>
   );
 }
 
@@ -789,6 +902,19 @@ export default function CallDetail() {
     .replace("/lionside-logo-light.png", "/lionside-logo-print.png");
   const utterances = call.transcript?.utterances ?? [];
   const speakers = call.transcript?.speakers ?? [];
+  // With Coach Now on top (grades from v12), the detail sections fold away underneath it,
+  // closed until opened (remembered per browser). Older grades keep the open layout they always had.
+  const part = (id: string, title: string, preview: string, body: ReactNode) =>
+    g?.coach_now ? (
+      <Fold {...foldProps(id)} title={title} preview={preview}>
+        {body}
+      </Fold>
+    ) : (
+      <>
+        <h2>{title}</h2>
+        {body}
+      </>
+    );
   const flags = [...(g?.flags ?? [])].sort(
     (a, b) => ["high", "medium", "low"].indexOf(a.severity) - ["high", "medium", "low"].indexOf(b.severity)
   );
@@ -875,6 +1001,7 @@ export default function CallDetail() {
           )}
         </div>
         {(shownScore !== null || shownSlp !== null) && (
+          <div>
           <div className="score-pair">
             {shownScore !== null && (
               <div>
@@ -888,6 +1015,15 @@ export default function CallDetail() {
                 <div className="muted" style={{ fontSize: 12 }}>straight line</div>
               </div>
             )}
+          </div>
+          {g && (() => {
+            const cov = coverageOf(g);
+            return cov ? (
+              <div className="coverage" title="How much of the call's selling process could be judged: roadmap stages and script sections reached. Scores on low-coverage calls rest on less.">
+                coverage <b>{cov.level}</b> &middot; {cov.stages[0]}/{cov.stages[1]} stages &middot; {cov.sections[0]}/{cov.sections[1]} sections
+              </div>
+            ) : null;
+          })()}
           </div>
         )}
       </div>
@@ -953,6 +1089,21 @@ export default function CallDetail() {
       )}
 
       <div className="report-part">
+      {g?.coach_now && (
+        <CoachNowCard
+          cn={g.coach_now}
+          seek={seek}
+          fix={
+            <Fix
+              ctx={fixCtx}
+              k={fx("coach_now")}
+              kind="Coach Now"
+              label={g.coach_now.priority.skill || "Coach Now"}
+              original={`${g.coach_now.priority.title}. ${g.coach_now.priority.observed} Next call: ${g.coach_now.priority.next_call}`}
+            />
+          }
+        />
+      )}
       {g && (
         <>
           <h2>Summary</h2>
@@ -1010,6 +1161,23 @@ export default function CallDetail() {
                   )}
                 </div>
                 {g.outcome_note && <div className="grade-coach">{g.outcome_note}</div>}
+                {g.loan?.discussed && (
+                  <div className="grade-coach">
+                    Loan: {g.loan.amount || "an amount"}{" "}
+                    {g.loan.asked_by === "client" ? "asked for by the client" : g.loan.asked_by === "rep" ? "suggested by the rep" : ""}
+                    {g.loan.exchange && (
+                      <>
+                        {" "}
+                        {g.loan.time !== null && (
+                          <button className="time-link" onClick={() => seek(g.loan!.time)}>
+                            {clock(g.loan.time)}
+                          </button>
+                        )}
+                        <span className="muted">&ldquo;{g.loan.exchange}&rdquo;</span>
+                      </>
+                    )}
+                  </div>
+                )}
                 {g.close_quality_reason && <div className="grade-coach">{g.close_quality_reason}</div>}
                 {g.close_quality && g.close_quality !== "n/a" && (
                   <Fix
@@ -1160,10 +1328,12 @@ export default function CallDetail() {
                 const hs = g.spotlights.hardship;
                 const td = g.spotlights.turndown;
                 const pill = (v: string, good: string[], fair: string[]) => (good.includes(v) ? "good" : fair.includes(v) ? "fair" : v === "n/a" ? "" : "poor");
-                return (
+                return part(
+                  "spotlights",
+                  "Spotlights",
+                  [hs && typeof hs.score === "number" ? `hardship ${hs.score}` : "", td?.happened ? `turndown pickup ${td.pickup}` : ""].filter(Boolean).join(" \u00b7 "),
                   <>
-                    <h2>Spotlights</h2>
-                    <p className="hint" style={{ marginTop: -4 }}>The moments that decide most sales, and the follow-up game. Extra awareness only -- they don&rsquo;t change either score.</p>
+                    <p className="hint" style={{ marginTop: 0 }}>The moments that decide most sales, and the follow-up game. Extra awareness only -- they don&rsquo;t change either score.</p>
                     <div className="rx-grid2">
                       {hs && (
                       <section className="card">
@@ -1250,10 +1420,13 @@ export default function CallDetail() {
                 );
               })()}
 
-              {g.line_control && (
-                <>
-                  <h2>Staying on the line</h2>
-                  <p className="hint" style={{ marginTop: -4 }}>
+              {g.line_control &&
+                part(
+                  "line",
+                  "Staying on the line",
+                  typeof g.line_control.score === "number" ? `line control ${g.line_control.score}` : "",
+                  <>
+                  <p className="hint" style={{ marginTop: 0 }}>
                     Every trip off the straight line (&ldquo;off to Pluto&rdquo;). A minute or less that the rep brought back smoothly builds rapport and counts as a plus; every minute past that counts against. A tenth of the Straight Line score.
                   </p>
                   <section className="card">
@@ -1276,12 +1449,15 @@ export default function CallDetail() {
                       ))
                     )}
                   </section>
-                </>
-              )}
+                  </>
+                )}
 
-              {g.objections && (
-                <>
-                  <h2>Objections and looping</h2>
+              {g.objections &&
+                part(
+                  "objections",
+                  "Objections and looping",
+                  `${g.objections.items.length} objection${g.objections.items.length === 1 ? "" : "s"}`,
+                  <>
                   <p className="hint" style={{ marginTop: -4 }}>
                     Every objection on the call and how it was handled. Looping (acknowledge, back to the line, keep moving) works anywhere; The Loops (Loop 1, 2, 3) belong after The Pitch only. Two or more back-and-forths on one objection is an objection/rebuttal cycle.
                   </p>
@@ -1305,17 +1481,31 @@ export default function CallDetail() {
                             {o.rounds >= 2 && <span className="pill poor"> {o.rounds} back-and-forths</span>}
                             {o.handled === "the_loop" && o.before_pitch && <small className="danger"> · a Loop before the pitch -- should have looped organically</small>}
                             {o.how && <small className="muted"> &ldquo;{o.how}&rdquo;</small>}
+                            {(o.real || o.weak) && (
+                              <>
+                                <br />
+                                <small className="muted">
+                                  {o.real ? `Really: ${o.real}` : ""}
+                                  {o.weak && o.weak !== "unclear" ? ` \u00b7 missing ${o.weak === "rep" ? "trust in the rep" : o.weak === "pain" ? "pain" : o.weak === "action" ? "the push to act" : `${o.weak} certainty`}` : ""}
+                                  {o.addressed ? ` \u00b7 addressed: ${o.addressed}` : ""}
+                                  {o.after && o.after !== "unclear" ? ` \u00b7 client after: ${o.after}` : ""}
+                                </small>
+                              </>
+                            )}
                           </p>
                         );
                       })
                     )}
                   </section>
-                </>
-              )}
+                  </>
+                )}
 
-              {(g.turning_points?.length ?? 0) > 0 && (
-                <>
-                  <h2>Turning points</h2>
+              {(g.turning_points?.length ?? 0) > 0 &&
+                part(
+                  "turns",
+                  "Turning points",
+                  `${g.turning_points!.length} moments`,
+                  <>
                   {g.turning_points!.map((t, i) => (
                     <div key={i} className={`grade-item turn ${t.direction}`}>
                       <div className="grade-item-head">
@@ -1334,14 +1524,17 @@ export default function CallDetail() {
                       <div className="grade-coach">{t.why}</div>
                     </div>
                   ))}
-                </>
-              )}
+                  </>
+                )}
             </>
           )}
 
-          {g.coaching_priorities.length > 0 && (
-            <>
-              <h2>Coach on</h2>
+          {g.coaching_priorities.length > 0 &&
+            part(
+              "coach",
+              "Coach on",
+              g.coaching_priorities[0]?.slice(0, 70) ?? "",
+              <>
               <ol className="plain-list">
                 {g.coaching_priorities.map((c, i) => (
                   <li key={i}>
@@ -1350,19 +1543,22 @@ export default function CallDetail() {
                   </li>
                 ))}
               </ol>
-            </>
-          )}
+              </>
+            )}
 
-          {g.strengths.length > 0 && (
-            <>
-              <h2>Did well</h2>
+          {g.strengths.length > 0 &&
+            part(
+              "welldone",
+              "Did well",
+              `${g.strengths.length} things`,
+              <>
               <ul className="plain-list">
                 {g.strengths.map((c, i) => (
                   <li key={i}>{c}</li>
                 ))}
               </ul>
-            </>
-          )}
+              </>
+            )}
 
           {((g.slp?.length ?? 0) > 0 || (g.emotional_arc?.length ?? 0) > 0) && (
             <>
@@ -1403,6 +1599,16 @@ export default function CallDetail() {
                       <span className="muted">Built to feel:</span> {a.intended}
                       <br />
                       <span className="muted">Client showed:</span> {a.observed}
+                      {(a.delivered || a.confidence) && (
+                        <>
+                          <br />
+                          <small className="muted">
+                            {a.delivered ? `Rep delivered it: ${a.delivered === "yes" ? "yes" : a.delivered === "partial" ? "partly" : a.delivered === "no" ? "no" : "not reached"}` : ""}
+                            {a.delivered && a.confidence ? " \u00b7 " : ""}
+                            {a.confidence ? `how sure about the client's response: ${a.confidence}` : ""}
+                          </small>
+                        </>
+                      )}
                       {a.voice && (
                         <>
                           <br />
@@ -1446,14 +1652,15 @@ export default function CallDetail() {
                 <div className="tens">
                   {(
                     [
-                      ["Product", g.three_tens.product],
-                      ["Rep", g.three_tens.rep],
-                      ["Company", g.three_tens.company],
-                    ] as [string, number | null][]
-                  ).map(([name, n]) => (
+                      ["Product", g.three_tens.product, g.three_tens.product_state],
+                      ["Rep", g.three_tens.rep, g.three_tens.rep_state],
+                      ["Company", g.three_tens.company, g.three_tens.company_state],
+                    ] as [string, number | null, keyof typeof TEN_STATE_LABEL | undefined][]
+                  ).map(([name, n, st]) => (
                     <div key={name} className="ten">
                       <div className={`ten-n ${n === null ? "" : scoreBand(n * 10)}`}>{n ?? "\u2013"}</div>
                       <div className="muted" style={{ fontSize: 12 }}>{name} certainty</div>
+                      {st && <div className="muted" style={{ fontSize: 11 }}>{TEN_STATE_LABEL[st]}</div>}
                     </div>
                   ))}
                 </div>
@@ -1465,9 +1672,15 @@ export default function CallDetail() {
               {g.slp!.map((k, i) => (
                 <div key={i} className="grade-item">
                   <div className="grade-item-head">
-                    <span>{k.skill}</span>
-                    <span className={`pill ${k.score === null ? "" : scoreBand(k.score * 10)}`}>
-                      {k.score === null ? "n/a" : `${k.score}/10`}
+                    <span>
+                      {k.skill}
+                      {!skillCounts(k.skill) && <small className="muted"> &middot; new, not in the score yet</small>}
+                    </span>
+                    <span>
+                      {k.state && k.state !== "demonstrated" && <span className="pill">{SKILL_STATE_LABEL[k.state]}</span>}{" "}
+                      <span className={`pill ${k.score === null ? "" : scoreBand(k.score * 10)}`}>
+                        {k.score === null ? (k.state === "not_reached" ? "not reached" : "n/a") : `${k.score}/10`}
+                      </span>
                     </span>
                   </div>
                   {k.score !== null && (

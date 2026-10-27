@@ -76,6 +76,19 @@ export type ArcStage = {
   landed: "yes" | "partial" | "no" | "not_reached";
   evidence: string;
   time: number | null;
+  /** v12: did the rep deliver this stage's part of the script (separate from how the client took it). */
+  delivered?: "yes" | "partial" | "no" | "not_reached";
+  /** v12: how sure the grader is about the client's emotional response. Brief agreement alone = low. */
+  confidence?: "high" | "medium" | "low";
+};
+
+export type SkillState = "demonstrated" | "partial" | "missed" | "not_reached" | "uncertain";
+export const SKILL_STATE_LABEL: Record<SkillState, string> = {
+  demonstrated: "Shown",
+  partial: "Partly shown",
+  missed: "Missed a chance",
+  not_reached: "Not reached",
+  uncertain: "Unclear",
 };
 
 export type SlpSkill = {
@@ -84,6 +97,8 @@ export type SlpSkill = {
   evidence: string;
   time: number | null;
   coaching: string;
+  /** v12: shown, partly, missed despite a chance, not reached, or unclear. */
+  state?: SkillState;
 };
 
 export type Tonality = {
@@ -98,19 +113,57 @@ export type Tonality = {
   }[];
 };
 
+export type TenState = "evidenced" | "mentioned_only" | "not_reached" | "uncertain";
+export const TEN_STATE_LABEL: Record<TenState, string> = {
+  evidenced: "client showed it",
+  mentioned_only: "rep covered it, client didn't show it",
+  not_reached: "not reached",
+  uncertain: "unclear",
+};
+
 export type ThreeTens = {
   product: number | null;
   rep: number | null;
   company: number | null;
   evidence: string;
+  /** v12: whether each number rests on what the client showed, or the rep only talked about it. */
+  product_state?: TenState;
+  rep_state?: TenState;
+  company_state?: TenState;
 };
 
-export type Outcome = "enrolled" | "callback" | "not_interested" | "hung_up" | "other";
+/** v12: the one thing to coach first, two more opportunities and three strengths, each tied to a moment. */
+export type CoachNow = {
+  priority: {
+    skill: string;
+    title: string;
+    time: number | null;
+    quote: string;
+    observed: string;
+    why_it_matters: string;
+    next_call: string;
+    drill: string;
+    check: string;
+    confidence: "high" | "medium" | "low";
+    reasons: string;
+  };
+  also: { title: string; time: number | null; note: string }[];
+  strengths: { text: string; time: number | null }[];
+  /** Possibilities the call can't confirm -- shown as such, never as fact. */
+  hypotheses: string[];
+};
+
+/** v12: the loan amount and who asked for it. */
+export type LoanAsk = { discussed: boolean; amount: string; asked_by: "client" | "rep" | "n/a"; exchange: string; time: number | null };
+
+export type Outcome = "enrolled" | "callback" | "callback_vague" | "not_interested" | "interrupted" | "hung_up" | "other";
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
   enrolled: "Enrolled",
   callback: "Callback set",
-  not_interested: "Not interested",
+  callback_vague: "Callback, no set time",
+  not_interested: "Client declined",
+  interrupted: "Call interrupted",
   hung_up: "Hung up",
   other: "Other",
 };
@@ -257,6 +310,11 @@ export type Objection = {
   loop: string;
   rounds: number;
   how: string;
+  /** v12: what was really behind it, which certainty was missing, whether the rep addressed it, and how the client was after. */
+  real?: string;
+  weak?: "product" | "rep" | "company" | "pain" | "action" | "unclear";
+  addressed?: "yes" | "partly" | "no";
+  after?: "better" | "same" | "worse" | "unclear";
 };
 export const HANDLED_LABEL: Record<Objection["handled"], string> = {
   looped: "Looped",
@@ -269,13 +327,14 @@ export const HANDLED_LABEL: Record<Objection["handled"], string> = {
 
 export type Ended = {
   early: boolean;
-  why: "client_time" | "spouse_needed" | "client_checked_out" | "rep_ended" | "hung_up" | "completed" | "other";
+  why: "client_time" | "spouse_needed" | "deferred" | "client_checked_out" | "rep_ended" | "hung_up" | "completed" | "other";
   handled: "well" | "ok" | "poorly" | "n/a";
   read: string;
 };
 export const ENDED_LABEL: Record<Ended["why"], string> = {
   client_time: "Client had to go",
   spouse_needed: "Wanted the spouse there",
+  deferred: "Wanted time to think",
   client_checked_out: "Client checked out",
   rep_ended: "Rep ended it",
   hung_up: "Hung up",
@@ -331,6 +390,10 @@ export type Grade = {
   ended?: Ended;
   /** Every objection and how it was handled (grades from version 11 on). */
   objections?: { items: Objection[]; read: string };
+  /** v12: the one thing to coach first (see CoachNow). */
+  coach_now?: CoachNow;
+  /** v12: the loan amount and who asked for it. */
+  loan?: LoanAsk;
   /** Which version of the grading rules produced this grade (missing = 1). */
   grader_version?: number;
   model?: string;
@@ -810,9 +873,18 @@ export function arcScoreOf(grade: Grade): number | null {
   return Math.round((100 * points) / reached.length);
 }
 
-/** 0-100 from the 8-skill scorecard. */
+/**
+ * Skills the grader scores and shows, but that don't count toward the
+ * Straight Line score yet -- they wait until the answer-key calls show they
+ * grade consistently. Taking a name off this list puts it into the score.
+ */
+export const SKILLS_NOT_SCORED = ["Decision and commitment"];
+export const skillCounts = (skill: string) => !SKILLS_NOT_SCORED.some((x) => x.toLowerCase() === String(skill).toLowerCase());
+
+/** 0-100 from the 8-skill scorecard (skills still being proven are shown but not counted). */
 export function skillsScoreOf(grade: Grade): number | null {
   const scored = (grade.slp ?? [])
+    .filter((k) => skillCounts(k.skill))
     .map((k) => k.score)
     .filter((n): n is number => typeof n === "number");
   if (scored.length === 0) return null;
@@ -832,6 +904,23 @@ export function slpScoreOf(grade: Grade): number | null {
   const line = lineScoreOf(grade.line_control);
   if (line === null) return Math.round((arc + skills) / 2);
   return Math.round(0.45 * arc + 0.45 * skills + 0.1 * line);
+}
+
+/**
+ * How much of the selling process this grade could actually judge: roadmap
+ * stages and script sections the call reached, out of all of them. Shown next
+ * to the scores so a call that only got through the opening isn't read as
+ * equal to one that went all the way through the close. Never part of a score.
+ */
+export function coverageOf(grade: Grade): { pct: number; level: "high" | "medium" | "low"; stages: [number, number]; sections: [number, number] } | null {
+  const arc = grade.emotional_arc ?? [];
+  const secs = (grade.sections ?? []).filter((s) => !/^(the loops|objection)\s*:/i.test(s.section));
+  if (!arc.length && !secs.length) return null;
+  const stages: [number, number] = [arc.filter((a) => a.landed !== "not_reached").length, arc.length];
+  const sections: [number, number] = [secs.filter((s) => s.status !== "not_reached").length, secs.length];
+  const parts = [stages, sections].filter(([, n]) => n > 0);
+  const pct = Math.round((100 * parts.reduce((a, [k, n]) => a + k / n, 0)) / parts.length);
+  return { pct, level: pct >= 75 ? "high" : pct >= 40 ? "medium" : "low", stages, sections };
 }
 
 export function clock(secs: number | null | undefined): string {

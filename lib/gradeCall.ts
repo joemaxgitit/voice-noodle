@@ -1,12 +1,12 @@
 import { jsonrepair } from "jsonrepair";
-import { hardshipScoreOf, lineScoreOf, type Ended, type Objection } from "@/lib/calls";
+import { hardshipScoreOf, lineScoreOf, type CoachNow, type Ended, type LoanAsk, type Objection } from "@/lib/calls";
 
 /**
  * The version of the grading rules. Bump it for a MAJOR grading change (new
  * scores, new rules): every graded call on file is then re-graded by itself,
  * oldest first, the next time a manager opens the Calls page.
  */
-export const GRADER_VERSION = 11;
+export const GRADER_VERSION = 12;
 /**
  * The oldest grade that's still current, per kind of call (a change that only
  * affects renew calls raises just the renew number). Version 6: the close read
@@ -19,8 +19,15 @@ export const GRADER_VERSION = 11;
  * Version 11: The Loops (scripted Loop 1/2/3, after the pitch only) kept apart
  * from looping (organic, any objection, anywhere); every objection listed with
  * how it was handled and any objection/rebuttal back-and-forth. Every kind of call.
+ * Version 12: Coach Now (one priority, two more, three strengths, each tied to
+ * a moment); facts kept apart from guesses; skill and Three Tens states (not
+ * reached is not a failure); roadmap stages record delivery, client response
+ * and confidence separately; hardship digs past the first "no" but never
+ * invents pain; who asked for the loan amount; deferred decisions with a set
+ * callback are not "checked out"; script lines are never flagged. Scores keep
+ * the same weights. Every kind of call.
  */
-export const CURRENT_FROM = { renew: 11, other: 11 };
+export const CURRENT_FROM = { renew: 12, other: 12 };
 
 /**
  * A grading change no longer re-grades everything on file -- only the newest
@@ -111,7 +118,7 @@ export async function prepareGrade(
   const { data: call, error } = await supabase
     .from("calls")
     .select(
-      "id, org_id, status, updated_at, transcript, voice, script_id, grade, score, slp_score, grade_history, cost, rep_name, source, roleplay, profiles:rep_id(full_name)"
+      "id, org_id, rep_id, status, updated_at, transcript, voice, script_id, grade, score, slp_score, grade_history, cost, rep_name, source, roleplay, profiles:rep_id(full_name)"
     )
     .eq("id", callId)
     .single();
@@ -278,6 +285,8 @@ export async function prepareGrade(
   if (!isPractice) practice = await journeyNote(supabase, callId, script?.title ?? "");
   // How the close calls have held up on this team's real retention, so the fragile read stays honest.
   if (!isPractice) practice += await closeCalibration(supabase);
+  // What this rep has been coached on lately, so Coach Now can tell a pattern from a one-off.
+  if (!isPractice && call.rep_id) practice += await recentFocus(supabase, call.rep_id as string, callId);
 
   // After the claim: a rep grading their own practice call can only read
   // the managers' lessons while that call is marked as grading.
@@ -368,6 +377,30 @@ How earlier close calls on this team held up (clients whose result is known): ca
   }
 </close_track_record>
 `;
+}
+
+/**
+ * The Coach Now priority (or the top coaching item, on older grades) from this
+ * rep's last few graded real calls. Lets the grader weigh recurrence: a
+ * behavior that keeps showing up comes before a one-off. Names of clients
+ * never appear here -- only the coaching lines.
+ */
+async function recentFocus(supabase: Supa, repId: string, callId: string): Promise<string> {
+  const { data } = await supabase
+    .from("calls")
+    .select("id, call_date, focus:grade->coach_now->priority->>title, top:grade->coaching_priorities->>0")
+    .eq("rep_id", repId)
+    .eq("status", "graded")
+    .neq("source", "roleplay")
+    .neq("id", callId)
+    .order("call_date", { ascending: false, nullsFirst: false })
+    .limit(8);
+  const lines = ((data || []) as { call_date: string | null; focus: string | null; top: string | null }[])
+    .map((r) => (r.focus || r.top || "").trim())
+    .filter(Boolean)
+    .map((t) => `- ${t.slice(0, 200)}`);
+  if (!lines.length) return "";
+  return `\n<recent_coaching>\nThe main coaching point on this rep's most recent graded calls, newest first. Use it only to judge recurrence for coach_now -- grade this call on its own evidence:\n${lines.join("\n")}\n</recent_coaching>\n`;
 }
 
 /*
@@ -468,7 +501,7 @@ async function managerGuidance(supabase: Supa, practice = false): Promise<string
   const parts: string[] = [];
   if (rules.length) {
     parts.push(
-      "STANDING GRADING RULES -- written from every correction the sales manager has made to earlier grades. Follow these as rules on every call; where one conflicts with the general instructions above, the rule wins:\n" +
+      "STANDING GRADING RULES -- written from every correction the sales manager has made to earlier grades. Follow these as rules on every call; where one conflicts with the general instructions above, the rule wins -- except the approved wording and the rule never to flag what the script says, which no rule can change:\n" +
         rules.map((r, i) => `${i + 1}. ${r.rule}`).join("\n")
     );
   }
@@ -594,19 +627,21 @@ coaching: one specific, practical sentence for the rep. "" if nothing to improve
 compliance: every required disclosure or confirmation question that appears in the script itself -- for example the call-recording notice, each compliance question the client must answer yes to, and statements about cancellation rights. One entry each, worded as the item. status "yes" if clearly done (for questions: asked and answered yes), "no" if the call reached that point and it was not done or the answer was not a clear yes, "unclear", or "not_reached".
 
 flags: anything a compliance reviewer should listen to:
-- every promise or claim about results (credit scores, timelines, savings, legal awards, debt being "gone"), even if the script contains it -- set in_script true when the script says essentially the same thing;
+- every promise or claim about results (credit scores, timelines, savings, legal awards, debt being "gone") that the rep made OFF the script. Never flag anything the script itself says, or says in essence, however strong it sounds: every line of the script has been through the company's legal review. in_script is always false;
 - anything said that contradicts the client acknowledgements (for example calling the program a loan or debt settlement, or saying the debt is no longer owed);
 - misstatements, pressure, rushing past a client question or hesitation, or a client who sounds confused about what they agreed to;
 - the rep reading sensitive numbers back aloud.
 severity: "high" for anything that could mislead a client about what they are buying or what will happen to them; "medium" for overstated claims; "low" for minor wording. Quote 25 words or fewer. time: seconds, or -1.
-List at most 15 flags. If there are more, keep the most serious, and prefer claims that are NOT in the script over ones that are. If the same claim is repeated, flag it once.
+List at most 15 flags. If there are more, keep the most serious. If the same claim is repeated, flag it once.
 
 emotional_arc: this is the backbone of the grade. Exactly one entry per roadmap stage, in roadmap order, using the stage names exactly as written. Find each stage wherever it actually happened on the call. intended: the roadmap feeling for that stage, sharpened with the script's "client should feel" lines where they apply. observed: what the client actually showed, in a few words, judged only from what the client said. landed: "yes" if the client's own words show they reached the feeling, "partial", "no", or "not_reached" if the call never got there.
 A stage only lands if the client genuinely understood. Agreement given while confused ("okay", "I guess") is not a landed pitch, close or contract stage -- mark it "partial" or "no" and say why in observed. If the loan was approved, "Hopeless" did not happen: mark it "not_reached".
+Keep three things apart for every stage. delivered: did the REP deliver this stage's part of the script -- "yes", "partial", "no" (the call got there and the rep skipped it) or "not_reached". landed: how the CLIENT actually responded. confidence: how sure you are about that response -- "high" (the client's own words clearly show the feeling), "medium", or "low" (only brief agreement, silence, or a request for a callback). Brief agreement on its own ("yes sir", "okay", "correct", "mm-hmm") never shows a real emotional change: landed at most "partial", confidence "low", and observed says the client only acknowledged it. Never state a feeling as fact that the client's words don't show.
+"Hopeless": the stage is the client absorbing the loan decline. Judge whether the client understood the result and stayed engaged, and how the rep handled it -- visible despair is not required. A client who takes the decline calmly and stays on the call has landed it.
 evidence: a short quote of the CLIENT (20 words or fewer) or "", and its time (-1 if none).
 section: the script section where this stage actually happened -- or, if it was not reached, the section where it belongs -- copied exactly as that section is titled in the script above.
 
-slp: exactly these eight skills, in this order, each scored 1-10 (1-3 weak, 4-6 developing, 7-8 solid, 9-10 textbook), or 0 if the call never gave the rep a chance to show it:
+slp: exactly these nine skills, in this order, each scored 1-10 (1-3 weak, 4-6 developing, 7-8 solid, 9-10 textbook), or 0 if the call never gave the rep a chance to show it:
 - "Control and the straight line": the rep leads the conversation, brings tangents back, and moves the call forward on purpose.
 - "Intelligence gathering": depth and quality of the hardship questions, listening, and summarizing back what the client said.
 - "Rapport and trust (Ten 2)": the client's certainty in the rep as an expert who cares.
@@ -615,9 +650,12 @@ slp: exactly these eight skills, in this order, each scored 1-10 (1-3 weak, 4-6 
 - "Looping": organic looping (see LOOPING above), across every objection on the call: acknowledged or deferred, not argued, looped back to the line, kept moving. Two or more objection/rebuttal rounds on the same objection score this down. This is NOT about The Loops -- whether the right scripted Loop was run is graded in sections.
 - "Action and pain thresholds": raising the client's urgency honestly and lowering the risk they feel about acting.
 - "Tonality and tonal variety": whether the rep's voice matched the tones the script marks and kept moving between them, judged from the voice measurements (see Tonality below).
+- "Decision and commitment": whether the rep asked clearly for a decision on a solution the client understood and could afford, and came away with a real decision or a firm next step (a set time, who will be on the call, what the client will have ready). Asking for the decision is the skill -- a client who says "let me think" after a clear ask still counts as an ask; never reward pushing past a clear "no" or a client who doesn't understand.
 evidence: a short quote (20 words or fewer) and its time (-1 if none), or "". coaching: one specific sentence.
+state, for each skill: "demonstrated" (enough evidence to score it), "partial" (some evidence, limited chance), "missed" (there was a clear chance to use it and the rep didn't), "not_reached" (no fair chance on this call -- score 0), or "uncertain" (evidence too thin or conflicting -- say so in coaching). Not reached is never a failure: a skill whose moment never came scores 0, not low.
+Product certainty and Company certainty are judged ONLY by what the client showed -- understanding the program in their own words, asking real questions and getting real answers, believing it fits. The rep explaining the product or the company is not the client being certain. If the call never got to the pitch, Product certainty is "not_reached" unless the client clearly showed it earlier; if it never got to the company (More about Bolton), Company certainty is "not_reached".
 
-objections: every objection or stall the client raised, anywhere on the call. items, in order: at (seconds from the start), before_pitch (true if it came before The Pitch section), said (what the client said, a few words, no names), handled -- "looped" (acknowledged and looped back to the line), "deferred" (put off until later, then dealt with), "the_loop" (ran one of The Loops), "rebutted" (argued the objection itself), "ignored", or "caved" (gave up the line or dropped the ask) -- loop (the Loop's title if handled is "the_loop", else ""), rounds (how many objection/rebuttal back-and-forths on this objection before it went back on the line; 0 if the rep looped straight away), how (the rep's key line, a short quote, or ""). read: one plain sentence on how the rep handled objections. Two or more rounds on one objection is an objection/rebuttal cycle: add a flag for it. An empty list if the client raised none.
+objections: every objection or stall the client raised, anywhere on the call. items, in order: at (seconds from the start), before_pitch (true if it came before The Pitch section), said (what the client said, a few words, no names), handled -- "looped" (acknowledged and looped back to the line), "deferred" (put off until later, then dealt with), "the_loop" (ran one of The Loops), "rebutted" (argued the objection itself), "ignored", or "caved" (gave up the line or dropped the ask) -- loop (the Loop's title if handled is "the_loop", else ""), rounds (how many objection/rebuttal back-and-forths on this objection before it went back on the line; 0 if the rep looped straight away), how (the rep's key line, a short quote, or ""), real (what was really behind it as far as the call shows -- "unclear" if the rep never found out; don't guess past the evidence), weak (which certainty was missing: "product", "rep", "company", "pain", "action" or "unclear"), addressed ("yes", "partly", "no": did the rep deal with that real reason), after ("better", "same", "worse", "unclear": how the client was afterward, judged from what they said next). read: one plain sentence on how the rep handled objections. Before The Pitch, judge whether the rep diagnosed the hesitation and responded well -- never mark them down for not running a Loop that wasn't triggered. "I want to think about it" calls for one respectful question to find out what they want to think about. Two or more rounds on one objection is an objection/rebuttal cycle: add a flag for it. An empty list if the client raised none.
 
 How Straight Line is scored here -- this matters:
 Approved wording and guarantees (from the sales manager):
@@ -629,13 +667,13 @@ Approved wording and guarantees (from the sales manager):
 
 Straight Line is about building real certainty and closing qualified buyers. A client who says they do not understand, cannot afford it, or want to stop is telling you their product certainty is low or that they may not qualify. In that moment the rep earns credit for slowing down, re-explaining in plain words, and confirming understanding and fit -- or for letting them go and setting a callback. Pushing forward, piling on new claims, or looping past real confusion or real inability to pay is NOT good control or good looping: score it down on "Control", "Product certainty" and "Looping", and it also belongs in flags. Never reward pressure on a client who has not understood what they are agreeing to.
 
-three_tens: your estimate of where the client ended the call on product, rep and company, each 1-10, or 0 if the call did not get far enough to tell, plus one sentence of evidence.
+three_tens: your estimate of where the client ended the call on product, rep and company, each 1-10, or 0 if the call did not get far enough to tell, plus one sentence of evidence. Rate each Ten only on certainty the CLIENT showed. product_state, rep_state, company_state: "evidenced" (the client's own words show it), "mentioned_only" (the rep covered it but the client gave no real sign either way -- keep the number modest and say so), "not_reached" (the call never got there -- the number is 0, not a low score), or "uncertain".
 
 slp_summary: two plain sentences on how well the rep ran the Straight Line, naming the roadmap stage where the arc broke (if it did) and why.
 
-outcome: how the call ended for the sale -- "enrolled" (agreement signed or payment set up), "callback" (a specific follow-up was agreed), "not_interested", "hung_up", or "other". If the client agreed to a specific day or time to talk again (for example "Saturday at 11 with my wife"), the outcome is "callback", never "other".
+outcome: how the call ended for the sale -- "enrolled" (agreement signed or payment set up), "callback" (the decision was put off and a specific day or time to talk again was agreed), "callback_vague" (they agreed to talk again but no set time), "not_interested" (the client declined), "interrupted" (the call was cut off or the client had to go with nothing set), "hung_up", or "other". If the client agreed to a specific day or time (for example "Saturday at 11 with my wife" or "tomorrow at 10"), the outcome is "callback", never "other". A specific, mutually agreed callback is a real result, never a failure just because nobody enrolled today.
 
-ended: why the call stopped where it did. early: true if it ended before the close for a reason other than finishing (anything short of enrolled or a clear final no at the end of a full pitch). why: "client_time" (the client had to go -- work, kids, driving, a bad time), "spouse_needed" (wanted the spouse or another decision-maker there), "client_checked_out" (lost interest or got annoyed), "rep_ended" (the rep wrapped up or let it go when the client could have kept talking), "hung_up" (the line dropped or the client hung up without a reason), "completed" (not early), or "other". handled: how well the rep handled the early end -- "well" (for example booked a firm time with every decision-maker and re-anchored the pain first), "ok", "poorly" (let a willing client go, no firm next step, or pushed someone who had to leave), or "n/a" if not early. read: one plain sentence a manager can act on. When the client had to go or wanted the spouse there, the rep is not at fault for the sections the call never reached -- judge only what the time allowed, and say so. outcome_note: a few words, for example "set Nov 15 payment, did not give bank info".
+ended: why the call stopped where it did. early: true if it ended before the close for a reason other than finishing (anything short of enrolled or a clear final no at the end of a full pitch). why: "client_time" (the client had to go -- work, kids, driving, a bad time), "spouse_needed" (wanted the spouse or another decision-maker there), "deferred" (the client wanted time to think and the call ended on a next step), "client_checked_out" (lost interest or got annoyed -- ONLY with specific evidence: the client says they're not interested, gives short annoyed answers, stops engaging or tries to get off the phone; quote it in read. Wanting time to think and agreeing a callback is "deferred", not checked out), "rep_ended" (the rep wrapped up or let it go when the client could have kept talking), "hung_up" (the line dropped or the client hung up without a reason), "completed" (not early), or "other". handled: how well the rep handled the early end -- "well" (for example booked a firm time with every decision-maker and re-anchored the pain first), "ok", "poorly" (let a willing client go, no firm next step, or pushed someone who had to leave), or "n/a" if not early. read: one plain sentence a manager can act on. When the client had to go or wanted the spouse there, the rep is not at fault for the sections the call never reached -- judge only what the time allowed, and say so. A deferred decision with a specific callback is handled "ok" at worst; "well" if the rep also found out what the client wanted to think about. outcome_note: a few words, for example "set Nov 15 payment, did not give bank info".
 
 turning_points: the 2 or 3 moments that most moved the client toward yes or away from it. time (seconds), moment (what happened, in a few words), direction ("toward" or "away"), why (one sentence). On an enrolled call these explain what earned the yes; on a lost call, where it was lost. Do not award credit for the close itself -- explain what caused it.
 
@@ -643,12 +681,22 @@ close_quality: only for an enrolled call, otherwise "n/a". Judge the client's st
 
 spotlights: two moments that decide most sales on this team. They are EXTRA awareness only. Grade everything else exactly as described above, and never let these change any other field or either score.
 - hardship: the hardship / intelligence-gathering stretch. On this team the strongest calls keep the client talking about personal, vulnerable things (what happened, how it hits their family, how they feel about it) until roughly 8-12 minutes from the START of the call before moving on to the loan, credit report or options. moved_on_at: seconds from the start of the call when the rep moved off hardship (0 if the call never reached hardship; the call's end if they never moved on). vulnerable_secs: about how many seconds the client spent on genuinely personal, vulnerable talk. deepest: what the client opened up about, in a few words, no names. best_question: the rep's best follow-up that took it deeper (a quote), or "". cut_short and cut_short_time: the moment the rep cut it short while the client was still opening up (a quote, and seconds), or "" and 0. read: one plain sentence.
-  Time alone is not the skill: the hardship is about getting the client vulnerable enough to share the sensitive, painful things that caused the debt, through empathy and the right questions. depth_reached: the deepest layer the client actually reached, judged only from the client's own words -- "facts" (amounts, accounts), "cause" (what happened that caused the debt), "impact" (how it hit their life, work, family), "feelings" (fear, shame, exhaustion, said in their own words), or "future" (what happens if nothing changes, and they feel it) -- or "none".
+  Time alone is not the skill: the hardship is about getting the client vulnerable enough to share the sensitive, painful things that caused the debt, through empathy and the right questions. That vulnerability is what builds trust between the rep and the client, so the rep is expected to draw it out. Many clients first say "no hardship" or "I'm fine": a strong rep doesn't accept that first "no" -- they dig past it with open, caring questions about what's really behind the debt, how it's affecting them and what they want to change. Never invent pain the client didn't show, and never mark the stage failed just because no distress came out: if the rep genuinely dug and the client still showed none, credit the digging (questions, followups, empathy), set depth by what the client actually reached, and say so in read. Mark it down when the rep took the first "no" at face value, or filled the time with small talk or their own stories instead of digging. depth_reached: the deepest layer the client actually reached, judged only from the client's own words -- "facts" (amounts, accounts), "cause" (what happened that caused the debt), "impact" (how it hit their life, work, family), "feelings" (fear, shame, exhaustion, said in their own words), or "future" (what happens if nothing changes, and they feel it) -- or "none".
   parts, each 0-10: depth -- how far the client opened up (facts 2, cause 4, impact 6, feelings 8, future pain felt 10); questions -- open questions that moved from facts to cause to impact to feelings, not a yes/no checklist; followups -- whether the rep followed the client's own thread one layer deeper rather than jumping to the next question; empathy -- I Care tone, slowing down, pauses, letting silence work, not interrupting, reflecting back what they heard; anchoring -- whether the rep summed the pain back and got the client to own it before moving on to Create the Villain; on_line -- whether the hardship stayed on the straight line (the client's painful story about the debt IS on the line; unrelated stories, small talk and tangents are not) or the rep brought it back. If the call never reached hardship, all parts 0.
 line_control: the straight line from open to close. Clients constantly try to pull the call "off to Pluto" -- stories that have nothing to do with the debt, side questions, debates, small talk -- and reps sometimes take it there themselves (chasing a tangent, oversharing). Going off the line briefly to build rapport is good when the rep brings it back; the longer it runs, the harder it is to bring the client back. The client's painful story about what caused the debt is ON the line, as is anything that moves the sale forward. excursions: every trip off the line longer than about 15 seconds -- at (seconds from the start), by ("client" or "rep" -- who took it off the line), about (a few words, no names), secs (how long it ran), back ("smooth" if the rep brought it back with a question or a tone shift, "slow" if it took several tries or the rep only got back after the client ran out, "never" if the call drifted and did not return), how (the line the rep used to bring it back, as a short quote, or ""). read: one plain sentence on how well the rep kept control of the line.
 - turndown: the moment the SuperMoney loan comes back declined (the Hopeless stage). happened: false if there was no decline on this call (then the rest is "" / 0 / "n/a"). at: seconds. client_reaction: how the client took it, in a few words. pickup: the rep's next 60-90 seconds -- "strong" if they came back with real, positive certainty and energy that lifted the client out of despair (use the voice measurements in braces when present: energy and pitch up against the rep's own level, steady pace, no rush), "ok", or "flat" if they sounded deflated, unsure, apologetic or rushed. pickup_evidence: a quote or measurement. options_even: the three options exactly as the script presents them (credit counseling, debt settlement, financial wellness -- use the script's own wording and order) -- "yes" if all three were first laid out evenly and without bias, "partly", "no" if the rep steered before presenting all three neutrally, "n/a" if options were never reached. Steering toward one AFTER all three were presented evenly is fine and expected -- never count it against them. options_note: one short sentence. recovered: "yes", "partly", "no" or "n/a" -- did the client come back up afterwards, judged by what they said next. read: one plain sentence.
 
 - followup: the follow-up game. More than half of this team's enrollments take more than one call, so how a rep handles a call that doesn't close, and how they re-open a follow-up, matters. kind: "followup" if this call picks up a conversation from an earlier call (see the client journey note, or clear cues in the call itself like "as we talked about", jumping straight into the application), "one_call" if the whole sale happened on this call, otherwise "first". ended_open: true if the call ended without an enrollment. stall_stated: the reason the client gave for not going ahead today ("need to talk to my wife", "call me Friday"), or "". stall_real: what was really underneath it, as far as the call shows, or "". got_to_bottom: "yes" if the rep found the real reason and dealt with it, "partly", "no" if they accepted the brush-off, "n/a" if there was no stall. next_step: "set" if a specific next step was agreed (a time, who needs to be on the call, what the client will have ready), "vague", "none", or "n/a" if the call enrolled. next_step_detail: a few words. reopen: on a follow-up, how the rep opened -- did they bring the pain and certainty back first, or jump straight to paperwork -- one sentence, else "". rebuilt: on a follow-up, "yes", "partly" or "no" for whether they rebuilt pain and certainty before asking again, else "n/a". repeat_stall: true if the client raised the same stall as on an earlier call. read: one plain sentence.
+
+loan: the SuperMoney loan request. discussed: true if a loan amount came up. amount: the amount requested, as said ("$12,000"), or "". asked_by: who first named or pushed for that amount -- "client" if the client asked for it, "rep" if the rep suggested or raised it, "n/a" if no loan. exchange: the exact words where the amount was set (a short quote). time: seconds, or -1. Never describe an amount the client asked for as the rep inflating it; if the rep accepted it without asking why, that is the coaching point.
+
+Facts, readings and guesses: in every field, say what happened (what was said, by whom, when) as fact; say what it probably meant as a reading ("this suggests..."); and keep anything the call can't confirm out of the fact fields -- put it in coach_now.hypotheses. Never state a conclusion about the client's mind as fact from brief agreement, silence or a callback request alone.
+
+coach_now: what the manager coaches first, read in ten seconds. Everything else in the grade stays as detail underneath it.
+- priority: the ONE behavior change that would most improve this rep's next call. Choose it by, in order: impact (how much it cost this call), recurrence (whether it also shows in this rep's recent calls, listed with the call if known), coachability (a specific thing the rep can do differently, not a trait), and how clearly the recording shows it. Never pick a stage the call didn't reach, something that belonged to an earlier call, or an off-script compliance claim (those are flags). skill: the area in two or three words (for example "Hardship discovery", "Deferred decision", "Rapport to the line"). title: the change, one line, as an instruction ("Dig past the first 'no hardship'"). time: seconds of the clearest moment. quote: what was said there, 25 words or fewer. observed: what happened, facts only. why_it_matters: what it cost on this call. next_call: exactly what to do or say differently next time, one or two sentences, concrete enough to practice ("After the client says there's no hardship, ask what made them reach out now and what they'd want to change -- then follow their answer one layer deeper"). drill: one practice exercise (a script section to drill, or a practice call with a certain kind of client). check: what a manager should hear on the next calls to know it improved. confidence: "high", "medium" or "low" that the recording shows this. reasons: one line on why this comes first (impact, recurrence, coachability, evidence).
+- also: up to 2 more opportunities, most important first: title, time (seconds, or -1), note (one sentence: what to do differently).
+- strengths: up to 3 things the rep did well, each with a time (-1 if none) -- specific, not generic praise.
+- hypotheses: up to 3 things that might be true but the call can't confirm, worded as possibilities. Empty if none.
 
 furthest_point: one short phrase for where the call ended (for example "Enrolled and handed to account manager" or "Client hung up during options").
 summary: 2-3 plain sentences a busy manager can read in ten seconds.
@@ -740,9 +788,51 @@ const GRADE_SCHEMA = {
     "line_control",
     "ended",
     "objections",
+    "loan",
+    "coach_now",
   ],
   additionalProperties: false,
   properties: {
+    loan: {
+      type: "object",
+      additionalProperties: false,
+      required: ["discussed", "amount", "asked_by", "exchange", "time"],
+      properties: { discussed: { type: "boolean" }, amount: { type: "string" }, asked_by: { type: "string" }, exchange: { type: "string" }, time: { type: "number" } },
+    },
+    coach_now: {
+      type: "object",
+      additionalProperties: false,
+      required: ["priority", "also", "strengths", "hypotheses"],
+      properties: {
+        priority: {
+          type: "object",
+          additionalProperties: false,
+          required: ["skill", "title", "time", "quote", "observed", "why_it_matters", "next_call", "drill", "check", "confidence", "reasons"],
+          properties: {
+            skill: { type: "string" },
+            title: { type: "string" },
+            time: { type: "number" },
+            quote: { type: "string" },
+            observed: { type: "string" },
+            why_it_matters: { type: "string" },
+            next_call: { type: "string" },
+            drill: { type: "string" },
+            check: { type: "string" },
+            confidence: { type: "string" },
+            reasons: { type: "string" },
+          },
+        },
+        also: {
+          type: "array",
+          items: { type: "object", additionalProperties: false, required: ["title", "time", "note"], properties: { title: { type: "string" }, time: { type: "number" }, note: { type: "string" } } },
+        },
+        strengths: {
+          type: "array",
+          items: { type: "object", additionalProperties: false, required: ["text", "time"], properties: { text: { type: "string" }, time: { type: "number" } } },
+        },
+        hypotheses: { type: "array", items: { type: "string" } },
+      },
+    },
     objections: {
       type: "object",
       additionalProperties: false,
@@ -753,8 +843,12 @@ const GRADE_SCHEMA = {
           items: {
             type: "object",
             additionalProperties: false,
-            required: ["at", "before_pitch", "said", "handled", "loop", "rounds", "how"],
+            required: ["at", "before_pitch", "said", "handled", "loop", "rounds", "how", "real", "weak", "addressed", "after"],
             properties: {
+              real: { type: "string" },
+              weak: { type: "string" },
+              addressed: { type: "string" },
+              after: { type: "string" },
               at: { type: "number" },
               before_pitch: { type: "boolean" },
               said: { type: "string" },
@@ -800,9 +894,11 @@ const GRADE_SCHEMA = {
       type: "array",
       items: {
         type: "object",
-        required: ["stage", "section", "intended", "observed", "landed", "evidence", "time", "voice"],
+        required: ["stage", "section", "intended", "observed", "landed", "evidence", "time", "voice", "delivered", "confidence"],
         additionalProperties: false,
         properties: {
+          delivered: { type: "string" },
+          confidence: { type: "string" },
           stage: { type: "string" },
           intended: { type: "string" },
           observed: { type: "string" },
@@ -818,9 +914,10 @@ const GRADE_SCHEMA = {
       type: "array",
       items: {
         type: "object",
-        required: ["skill", "score", "evidence", "time", "coaching"],
+        required: ["skill", "score", "evidence", "time", "coaching", "state"],
         additionalProperties: false,
         properties: {
+          state: { type: "string" },
           skill: { type: "string" },
           score: { type: "integer" },
           evidence: { type: "string" },
@@ -831,9 +928,12 @@ const GRADE_SCHEMA = {
     },
     three_tens: {
       type: "object",
-      required: ["product", "rep", "company", "evidence"],
+      required: ["product", "rep", "company", "evidence", "product_state", "rep_state", "company_state"],
       additionalProperties: false,
       properties: {
+        product_state: { type: "string" },
+        rep_state: { type: "string" },
+        company_state: { type: "string" },
         product: { type: "integer" },
         rep: { type: "integer" },
         company: { type: "integer" },
@@ -1116,7 +1216,7 @@ export function nameSections(g: Grade, n: Naming) {
 
 const SPANISH = /[¿¡ñ]|\b(qué|cómo|porque|usted|tengo|está|estoy|puedo|quiero|tarjetas|deuda|pagar|ahorita|bueno|gracias|también|entonces|necesito|dinero)\b/i;
 const SPANISH_TITLE = /[áéíóúñ¿¡]|\b(el|la|los|las|del|sobre|cierre|contrato|presentación|crédito|villano|remate|apertura|dificultad)\b/i;
-const NAME_KEYS = new Set(["section", "stage", "status", "landed", "outcome", "close_quality", "model", "graded_at", "role", "speaker", "severity", "direction", "kind", "skill"]);
+const NAME_KEYS = new Set(["section", "stage", "status", "landed", "outcome", "close_quality", "model", "graded_at", "role", "speaker", "severity", "direction", "kind", "skill", "delivered", "confidence", "state", "product_state", "rep_state", "company_state", "weak", "addressed", "after", "asked_by"]);
 
 /**
  * The grader is told to write in English, but quotes from a Spanish call
@@ -1219,7 +1319,28 @@ function clean(g: Grade) {
     x.time = t(x.time);
     x.direction = one(x.direction, ["toward", "away"] as const, "away");
   }
-  g.outcome = one(g.outcome, ["enrolled", "callback", "not_interested", "hung_up", "other"] as const, "other");
+  g.outcome = one(g.outcome, ["enrolled", "callback", "callback_vague", "not_interested", "interrupted", "hung_up", "other"] as const, "other");
+  // v12 additions: every value snapped to its allowed set; anything unreadable falls back to the cautious choice.
+  const lc = (v: unknown) => String(v ?? "").toLowerCase().trim().replace(/[ -]+/g, "_");
+  for (const x of g.emotional_arc ?? []) {
+    if (x.delivered !== undefined) x.delivered = one(lc(x.delivered), ["yes", "partial", "no", "not_reached"] as const, "partial");
+    if (x.confidence !== undefined) x.confidence = one(lc(x.confidence), ["high", "medium", "low"] as const, "low");
+  }
+  for (const x of g.slp ?? []) {
+    if (x.state === undefined) continue;
+    x.state = one(lc(x.state), ["demonstrated", "partial", "missed", "not_reached", "uncertain"] as const, "uncertain");
+    // Not reached is not a failure: no number, so it stays out of the average (as 0 always did).
+    if (x.state === "not_reached") x.score = null;
+  }
+  if (g.three_tens) {
+    const tens = ["product", "rep", "company"] as const;
+    for (const k of tens) {
+      const sk = `${k}_state` as const;
+      if (g.three_tens[sk] === undefined) continue;
+      g.three_tens[sk] = one(lc(g.three_tens[sk]), ["evidenced", "mentioned_only", "not_reached", "uncertain"] as const, "uncertain");
+      if (g.three_tens[sk] === "not_reached") g.three_tens[k] = null;
+    }
+  }
   g.close_quality = one(g.close_quality, ["solid", "ok", "fragile", "n/a"] as const, "n/a");
   const sp = g.spotlights;
   if (sp?.hardship) {
@@ -1522,16 +1643,61 @@ async function grade(
           loop: String(o.loop ?? ""),
           rounds: Math.max(0, Math.round(Number(o.rounds) || 0)),
           how: String(o.how ?? ""),
+          real: String(o.real ?? ""),
+          weak: (["product", "rep", "company", "pain", "action"].includes(low(String(o.weak ?? ""))) ? low(String(o.weak)) : "unclear") as Objection["weak"],
+          addressed: (["yes", "partly", "no"].includes(low(String(o.addressed ?? ""))) ? low(String(o.addressed)) : "no") as Objection["addressed"],
+          after: (["better", "same", "worse"].includes(low(String(o.after ?? ""))) ? low(String(o.after)) : "unclear") as Objection["after"],
         }));
       result.objections.read = String(result.objections.read ?? "");
     }
     if (result.ended) {
-      const why = ["client_time", "spouse_needed", "client_checked_out", "rep_ended", "hung_up", "completed", "other"];
+      const why = ["client_time", "spouse_needed", "deferred", "client_checked_out", "rep_ended", "hung_up", "completed", "other"];
       result.ended.why = (why.includes(low(result.ended.why)) ? low(result.ended.why) : "other") as Ended["why"];
       result.ended.handled = (["well", "ok", "poorly", "n/a"].includes(low(result.ended.handled)) ? low(result.ended.handled) : "n/a") as Ended["handled"];
       result.ended.early = !!result.ended.early && result.ended.why !== "completed";
       const h = result.spotlights?.hardship;
       if (result.ended.early && ["client_time", "spouse_needed"].includes(result.ended.why) && h && h.target !== "renew" && typeof h.moved_on_at === "number" && h.moved_on_at < 8 * 60) h.target = "cut_short";
+    }
+    // Script lines have been through legal review: anything the grader still marked as in the script is not a flag.
+    result.flags = result.flags.filter((f) => !f.in_script);
+    // The loan ask: who named the amount.
+    if (result.loan && !obj(result.loan)) delete result.loan;
+    if (result.loan) {
+      const by = low(String(result.loan.asked_by ?? ""));
+      result.loan = {
+        discussed: !!result.loan.discussed,
+        amount: String(result.loan.amount ?? ""),
+        asked_by: (by === "client" || by === "rep" ? by : "n/a") as LoanAsk["asked_by"],
+        exchange: String(result.loan.exchange ?? ""),
+        time: typeof result.loan.time === "number" && result.loan.time >= 0 ? result.loan.time : null,
+      };
+    }
+    // Coach Now: one priority, at most two more and three strengths; times of -1 mean none.
+    if (result.coach_now && (!obj(result.coach_now) || !obj(result.coach_now.priority))) delete result.coach_now;
+    if (result.coach_now) {
+      const tm = (v: unknown) => (typeof v === "number" && v >= 0 ? v : null);
+      const st = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+      const p = result.coach_now.priority;
+      const conf = low(String(p.confidence ?? ""));
+      result.coach_now = {
+        priority: {
+          skill: st(p.skill),
+          title: st(p.title),
+          time: tm(p.time),
+          quote: st(p.quote),
+          observed: st(p.observed),
+          why_it_matters: st(p.why_it_matters),
+          next_call: st(p.next_call),
+          drill: st(p.drill),
+          check: st(p.check),
+          confidence: (conf === "high" || conf === "medium" ? conf : "low") as CoachNow["priority"]["confidence"],
+          reasons: st(p.reasons),
+        },
+        also: (Array.isArray(result.coach_now.also) ? result.coach_now.also : []).filter(obj).slice(0, 2).map((a) => ({ title: st(a.title), time: tm(a.time), note: st(a.note) })),
+        strengths: (Array.isArray(result.coach_now.strengths) ? result.coach_now.strengths : []).filter(obj).slice(0, 3).map((a) => ({ text: st(a.text), time: tm(a.time) })),
+        hypotheses: (Array.isArray(result.coach_now.hypotheses) ? result.coach_now.hypotheses : []).filter((h) => typeof h === "string" && h.trim()).slice(0, 3),
+      };
+      if (!result.coach_now.priority.title) delete result.coach_now;
     }
     if (prior.naming.lang === "es") await englishQuotes(result, key, new Set(prior.naming.english));
     result.slp ||= [];

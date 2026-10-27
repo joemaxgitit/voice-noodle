@@ -12,6 +12,8 @@ export function digest(c: DigestRow): string {
   return [
     `Length ${clock(c.duration_secs)} · outcome ${c.outcome ?? "?"}${c.retention ? ` · client ${c.retention}` : ""} · SLP ${c.slp_score ?? "--"} · script ${c.score ?? "--"} · close ${g.close_quality ?? "--"}${g.close_quality_reason ? ` (${g.close_quality_reason})` : ""}`,
     `Summary: ${g.summary}`,
+    g.coach_now ? `Coach first [${t(g.coach_now.priority.time)}]: ${g.coach_now.priority.title} -- ${g.coach_now.priority.observed} Next call: ${g.coach_now.priority.next_call}` : "",
+    g.loan?.discussed ? `Loan: ${g.loan.amount || "an amount"} asked for by the ${g.loan.asked_by === "n/a" ? "?" : g.loan.asked_by}` : "",
     g.three_tens ? `Three Tens: product ${g.three_tens.product ?? "-"}, rep ${g.three_tens.rep ?? "-"}, company ${g.three_tens.company ?? "-"}` : "",
     h ? `Hardship: moved on at ${t(h.moved_on_at)}, score ${h.score ?? "-"}; ${h.read}` : "",
     td?.happened ? `Loan turndown at ${t(td.at)}: pickup ${td.pickup}; ${td.read}` : "",
@@ -23,7 +25,7 @@ export function digest(c: DigestRow): string {
     "Sections:",
     ...g.sections.map((s) => `- ${s.section} [${t(s.time)}] ${s.status}: ${s.coaching || s.evidence}`),
     "Emotional roadmap:",
-    ...(g.emotional_arc ?? []).map((a) => `- ${a.stage} [${t(a.time)}] landed ${a.landed}: ${a.observed}`),
+    ...(g.emotional_arc ?? []).map((a) => `- ${a.stage} [${t(a.time)}] landed ${a.landed}${a.confidence ? ` (confidence ${a.confidence})` : ""}: ${a.observed}`),
     "Turning points:",
     ...(g.turning_points ?? []).map((p) => `- [${t(p.time)}] ${p.direction === "toward" ? "toward the sale" : "away from the sale"}: ${p.moment} -- ${p.why}`),
   ]
