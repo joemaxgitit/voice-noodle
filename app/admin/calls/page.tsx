@@ -111,6 +111,7 @@ export default function Calls() {
     let stop = false;
     let started = false;
     let relearnAt = 0;
+    let keyAt = 0;
     const tick = async () => {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
       if (!token || stop) return;
@@ -126,6 +127,11 @@ export default function Calls() {
         relearnAt = Date.now();
         const l = await fetch("/api/calls/relearn-all", { headers: { Authorization: `Bearer ${token}` } }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
         if (l?.remaining > 0) void fetch("/api/calls/relearn-all", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ background: true }) }).catch(() => null);
+      }
+      // The answer key: test a new grader version or new grading rules once they're due (does nothing until there are enough keyed calls).
+      if (Date.now() - keyAt > 10 * 60_000) {
+        keyAt = Date.now();
+        void fetch("/api/calls/answer-key", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "auto" }) }).catch(() => null);
       }
       if (r.remaining > 0 && !r.grading && !started) {
         started = true;

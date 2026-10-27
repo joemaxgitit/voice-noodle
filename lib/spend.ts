@@ -11,7 +11,7 @@ import { TRANSCRIBE_USD_PER_HOUR } from "@/lib/calls";
   "Today" and "this month" are in the viewer's own time zone.
 */
 
-export type SpendKind = "transcribe" | "grade" | "translate" | "roleplay" | "review" | "card_draft" | "dropbox" | "lessons" | "coaching" | "archetypes" | "compare" | "voicemail" | "quickread" | "rules";
+export type SpendKind = "transcribe" | "grade" | "translate" | "roleplay" | "review" | "card_draft" | "dropbox" | "lessons" | "coaching" | "archetypes" | "compare" | "voicemail" | "quickread" | "rules" | "benchmark";
 
 export const SPEND_LABEL: Record<string, string> = {
   transcribe: "Call transcription",
@@ -28,6 +28,7 @@ export const SPEND_LABEL: Record<string, string> = {
   voicemail: "Voicemail scores",
   quickread: "Short-call reads",
   rules: "Grading rules from corrections",
+  benchmark: "Answer-key tests",
 };
 
 /** Used until there's history to average. Rough list-price guesses. */
@@ -44,6 +45,7 @@ const FALLBACK: Record<string, number> = {
   voicemail: 0.005,
   quickread: 0.01,
   rules: 0.06,
+  benchmark: 0.09,
 };
 
 export type SpendRow = { at: string; kind: string; usd: number; user_id: string | null; ref_id: string | null };

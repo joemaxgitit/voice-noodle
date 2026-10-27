@@ -33,6 +33,15 @@ export default function GradingRules() {
   useEffect(() => {
     void load();
   }, [load]);
+  // New rules waiting on an answer-key test (supabase/grading_benchmark.sql); nothing before that's run.
+  const [pending, setPending] = useState(0);
+  useEffect(() => {
+    void supabase
+      .from("grading_guidance")
+      .select("rules_pending")
+      .maybeSingle()
+      .then(({ data, error: e }) => setPending(e ? 0 : ((data as { rules_pending?: unknown[] | null } | null)?.rules_pending ?? []).length));
+  }, [supabase, rules]);
 
   async function rewrite(force: boolean) {
     if (force && !(await okToSpend(supabase, est ?? 0.06, "Rewriting the grading rules"))) return;
@@ -63,6 +72,11 @@ export default function GradingRules() {
         {info?.stale && !busy ? " New corrections since -- they'll be folded in before the next call is graded." : ""}
       </p>
       {error && <div className="error">{error}</div>}
+      {pending && (
+        <div className="note">
+          {pending} new rule{pending === 1 ? "" : "s"} from your latest corrections {pending === 1 ? "is" : "are"} being tested against the answer key before going live. The rules below keep grading meanwhile.
+        </div>
+      )}
       {busy && <p className="hint">{busy}</p>}
       {!rules.length && !busy && <p className="muted">No rules yet.</p>}
       <ol style={{ paddingLeft: 20 }}>

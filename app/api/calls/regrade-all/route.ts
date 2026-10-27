@@ -92,7 +92,7 @@ export async function POST(request: Request) {
   const next = s.todo.slice(0, PER_RUN);
   if (!next.length) return NextResponse.json({ ok: true, remaining: 0 });
 
-  const preps: { run: () => Promise<void> }[] = [];
+  const preps: { run: () => Promise<unknown> }[] = [];
   for (const c of next) {
     // Marked Renew but still on another script (uploaded before Renew switched it): grade it on the Renew script.
     if (s.wrongScript.has(c.id) && s.renewScript) await supabase.from("calls").update({ script_id: s.renewScript.id }).eq("id", c.id);

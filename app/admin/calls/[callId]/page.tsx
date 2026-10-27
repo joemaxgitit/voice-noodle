@@ -53,6 +53,7 @@ import { cleanRecording as cleanRecordingFor } from "@/lib/cleanRecording";
 import type { RoleplayInfo } from "@/lib/roleplay";
 import JourneyBox from "./JourneyBox";
 import QuickCard from "./QuickCard";
+import AnswerKeyBox from "./AnswerKeyBox";
 import "../calls.css";
 import "../../reps/reps.css";
 import { afterOutcomes } from "@/lib/outcomes";
@@ -1990,6 +1991,9 @@ export default function CallDetail() {
       )}
 
       <div className="no-print">
+      {call.source !== "roleplay" && call.transcript && (
+        <AnswerKeyBox supabase={supabase} callId={call.id} orgId={myOrg} enrolled={(call.outcome_manual ?? call.outcome ?? g?.outcome) === "enrolled"} />
+      )}
       <JourneyBox supabase={supabase} callId={call.id} clientLabel={call.client_label} source={call.source} onChanged={() => void load()} version={`${call.status}|${call.updated_at ?? ""}`} />
 
       <h2>Settings</h2>

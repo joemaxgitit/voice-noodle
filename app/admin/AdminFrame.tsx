@@ -38,9 +38,10 @@ const GROUPS: { title: string; items: Item[] }[] = [
         href: "/admin/calls",
         label: "Calls",
         icon: "phone",
-        match: (p) => p.startsWith("/admin/calls") && !p.startsWith("/admin/calls/insights"),
+        match: (p) => p.startsWith("/admin/calls") && !p.startsWith("/admin/calls/insights") && !p.startsWith("/admin/calls/answer-key"),
       },
       { href: "/admin/calls/insights", label: "Insights & tuning", icon: "chart", match: (p) => p.startsWith("/admin/calls/insights") },
+      { href: "/admin/calls/answer-key", label: "Answer key", icon: "target", match: (p) => p.startsWith("/admin/calls/answer-key"), superAdminOnly: true },
     ],
   },
   {

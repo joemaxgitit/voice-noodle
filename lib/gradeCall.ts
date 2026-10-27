@@ -101,7 +101,16 @@ const MODULE_SELECT =
 export type GradePrep =
   | { ok: false; status: number; error: string }
   | { ok: true; already: true }
-  | { ok: true; already?: false; run: () => Promise<void>; summary: string };
+  | { ok: true; already?: false; run: () => Promise<DryGrade | void>; summary: string };
+
+/** A test grade for the answer key: graded exactly as normal, but never saved onto the call. */
+export type DryGrade = { grade: Grade; usd: number | null };
+export type GradeOptions = {
+  /** Grade without touching the call: no claim, no save, no rules rewrite. Returns the grade. */
+  dryRun?: boolean;
+  /** Grade by these standing rules instead of the live ones (testing new rules against the answer key). */
+  rules?: { rule: string }[] | null;
+};
 
 /**
  * Loads everything the grader needs and claims the call. Returns run(),
@@ -113,8 +122,10 @@ export async function prepareGrade(
   supabase: Supa,
   callId: string,
   key: string,
-  started: number
+  started: number,
+  opts: GradeOptions = {}
 ): Promise<GradePrep> {
+  const dry = !!opts.dryRun;
   const { data: call, error } = await supabase
     .from("calls")
     .select(
@@ -128,7 +139,7 @@ export async function prepareGrade(
   }
 
   const status = call.status as CallStatus;
-  if ((status === "transcribing" || status === "grading") && !isStuck(status, call.updated_at)) {
+  if (!dry && (status === "transcribing" || status === "grading") && !isStuck(status, call.updated_at)) {
     return { ok: true, already: true };
   }
   if (!call.transcript) {
@@ -256,10 +267,9 @@ export async function prepareGrade(
     lang,
   };
 
-  const { error: claimErr } = await supabase
-    .from("calls")
-    .update({ status: "grading", updated_at: new Date().toISOString() })
-    .eq("id", callId);
+  const { error: claimErr } = dry
+    ? { error: null }
+    : await supabase.from("calls").update({ status: "grading", updated_at: new Date().toISOString() }).eq("id", callId);
   if (claimErr) {
     return { ok: false, status: 500, error: `Could not start. ${claimErr.message}` };
   }
@@ -290,7 +300,7 @@ export async function prepareGrade(
 
   // After the claim: a rep grading their own practice call can only read
   // the managers' lessons while that call is marked as grading.
-  const guidance = await managerGuidance(supabase, isPractice);
+  const guidance = await managerGuidance(supabase, isPractice, opts.rules);
 
   const repName =
     (call as unknown as { profiles: { full_name: string | null } | null }).profiles?.full_name ||
@@ -327,7 +337,7 @@ export async function prepareGrade(
     run: async () => {
       // Corrections made since the last real call was graded: fold them into the standing rules
       // first -- once, by whichever grade gets there first -- then grade by them.
-      if (!isPractice && call.org_id) {
+      if (!dry && !isPractice && call.org_id) {
         const r = await rewriteRules(supabase, key, call.org_id as string, null);
         if (r.rules && !r.skipped) blocks = build(await managerGuidance(supabase, false));
         if (r.error && !/grading_rules\.sql/.test(r.error)) log("grade", callId, started, `rules rewrite skipped: ${r.error.slice(0, 120)}`);
@@ -337,6 +347,7 @@ export async function prepareGrade(
         previous,
         history: (call.grade_history as GradeVersion[] | null) || [],
         cost: (call.cost as CallCost | null) || {},
+        dry,
       });
     },
   };
@@ -473,7 +484,7 @@ const CORRECTIONS_IN_PROMPT = 12;
 */
 type Fix = { item_kind: string; item_label: string | null; original: string; correction: string };
 
-async function managerGuidance(supabase: Supa, practice = false): Promise<string> {
+async function managerGuidance(supabase: Supa, practice = false, rulesOverride?: { rule: string }[] | null): Promise<string> {
   const [{ data: gRow }, { data: f }, { data: rRow }] = await Promise.all([
     supabase.from("grading_guidance").select("lessons").maybeSingle(),
     supabase
@@ -484,7 +495,7 @@ async function managerGuidance(supabase: Supa, practice = false): Promise<string
     // Needs supabase/grading_rules.sql; until then this comes back empty.
     supabase.from("grading_guidance").select("rules").maybeSingle(),
   ]);
-  const rules = ((rRow as { rules?: { rule: string }[] | null } | null)?.rules ?? []).filter((r) => r?.rule);
+  const rules = (rulesOverride ?? (rRow as { rules?: { rule: string }[] | null } | null)?.rules ?? []).filter((r) => r?.rule);
   let lessonsRaw = (gRow?.lessons as string | null) ?? null;
   let fixes = (f as Fix[] | null) ?? null;
 
@@ -1514,8 +1525,8 @@ async function grade(
   blocks: { type: string; text: string }[],
   key: string,
   started: number,
-  prior: { naming: Naming; previous: GradeVersion | null; history: GradeVersion[]; cost: CallCost }
-) {
+  prior: { naming: Naming; previous: GradeVersion | null; history: GradeVersion[]; cost: CallCost; dry?: boolean }
+): Promise<DryGrade | void> {
   try {
     let res = await askClaude(blocks, key, true);
     log("grade", callId, started, `anthropic ${res.status}`);
@@ -1721,6 +1732,8 @@ async function grade(
 
     const u = data.usage || {};
     const usd = gradeCostUsd(MODEL, u);
+    // A test grade for the answer key goes back to the caller and never touches the call.
+    if (prior.dry) return { grade: result, usd };
     const cost: CallCost = {
       ...prior.cost,
       grade_model: MODEL,
@@ -1769,6 +1782,7 @@ async function grade(
       `saved; in ${u.input_tokens} cache-read ${u.cache_read_input_tokens} cache-write ${u.cache_creation_input_tokens} out ${u.output_tokens}`
     );
   } catch (e) {
+    if (prior.dry) throw e;
     const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
     await failCall(
       supabase,

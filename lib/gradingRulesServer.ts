@@ -1,3 +1,4 @@
+import { BENCH_MIN, keyIsUsable, type BenchKey } from "@/lib/benchmark";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { askJsonCost } from "@/lib/repReview";
 import { logSpend } from "@/lib/spendServer";
@@ -92,7 +93,18 @@ ${fixes.map((x) => `- ${x.created_at.slice(0, 10)} [${x.item_kind}${x.item_label
       .filter((r) => r && typeof r.rule === "string" && r.rule.trim())
       .slice(0, 40)
       .map((r) => ({ rule: plainWords(r.rule.trim()), why: plainWords(String(r.why ?? "")), count: Math.max(0, Number(r.count) || 0), ...(r.manual ? { manual: true } : {}) }));
-    const { error: e } = await supabase.from("grading_guidance").upsert({ org_id: orgId, rules, rules_updated_at: startedAt, rules_from: s.count }, { onConflict: "org_id" });
+    // With an answer key of BENCH_MIN calls or more, new rules wait as "pending" until they've been
+    // tested against it (lib/benchmarkServer.ts); the current rules keep grading meanwhile.
+    const { data: keys } = await supabase.from("grading_benchmark").select("key");
+    const keyed = ((keys || []) as { key: BenchKey }[]).filter((k) => keyIsUsable(k.key)).length;
+    const { error: e } = await supabase
+      .from("grading_guidance")
+      .upsert(
+        keyed >= BENCH_MIN
+          ? { org_id: orgId, rules_pending: rules, rules_pending_at: startedAt, rules_updated_at: startedAt, rules_from: s.count }
+          : { org_id: orgId, rules, rules_updated_at: startedAt, rules_from: s.count },
+        { onConflict: "org_id" }
+      );
     if (e) throw new Error(e.message);
     await logSpend(supabase, { org_id: orgId, kind: "rules", usd, user_id: userId, ref_id: null });
     return { rules };
