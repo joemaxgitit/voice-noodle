@@ -297,7 +297,9 @@ function DayView({ v, shown, ctx }: { v: DayReview; shown: Shown; ctx: Ctx }) {
         </button>
       </div>
       <style>{`
-        .dr-moment { display: inline-block; font-size: 13px; font-weight: 600; margin-right: 8px; white-space: nowrap; }
+        .dr-moment, .dr-print .rx-table a { color: var(--live); font-weight: 600; text-decoration: none; }
+        .dr-moment { display: inline-block; font-size: 13px; margin-right: 8px; white-space: nowrap; }
+        .dr-moment:hover, .dr-print .rx-table a:hover { text-decoration: underline; }
         .dr-need .lbl { display: block; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-top: 10px; }
         .dr-need.first { border-color: var(--live); }
         @media print {
