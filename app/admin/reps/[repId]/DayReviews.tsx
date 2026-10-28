@@ -32,48 +32,8 @@ export default function DayReviews({ ctx }: { ctx: Ctx }) {
     return () => clearInterval(t);
   }, [working, reload]);
 
-  // Re-grade the day's calls on the current grading rules first, then review the day once they're all in.
-  const gradeEst = useEstimate(supabase, "grade");
-  const [dayCalls, setDayCalls] = useState<string[]>([]);
-  const [regrading, setRegrading] = useState("");
-  useEffect(() => {
-    if (!day) return;
-    void supabase
-      .from("calls")
-      .select("id")
-      .eq("rep_id", repId)
-      .eq("call_date", day)
-      .neq("source", "roleplay")
-      .in("status", ["graded", "read", "failed"])
-      .then(({ data }) => setDayCalls(((data || []) as { id: string }[]).map((c) => c.id)));
-  }, [supabase, repId, day, regrading]);
-
-  async function regradeThenReview() {
-    const cost = (gradeEst ?? 0.08) * dayCalls.length + (est ?? 0.12);
-    if (!(await okToSpend(supabase, cost, `Re-grading ${dayCalls.length} calls and reviewing the day`))) return;
-    setError("");
-    const token = (await supabase.auth.getSession()).data.session?.access_token;
-    setRegrading(`Re-grading ${dayCalls.length} calls…`);
-    // Voicemails and short calls get their quick read again; everything else the full grade.
-    await Promise.all(
-      dayCalls.map((id) =>
-        fetch("/api/calls/grade", { method: "POST", headers: { Authorization: `Bearer ${token ?? ""}`, "Content-Type": "application/json" }, body: JSON.stringify({ callId: id }) }).catch(() => null)
-      )
-    );
-    const started = Date.now();
-    for (;;) {
-      await new Promise((r) => setTimeout(r, 6000));
-      const { data } = await supabase.from("calls").select("status").in("id", dayCalls);
-      const busy = ((data || []) as { status: string }[]).filter((c) => ["grading", "transcribing", "uploaded"].includes(c.status)).length;
-      if (!busy || Date.now() - started > 8 * 60_000) break;
-      setRegrading(`Re-grading… ${dayCalls.length - busy} of ${dayCalls.length} done`);
-    }
-    setRegrading("");
-    await run(true);
-  }
-
-  async function run(skipAsk = false) {
-    if (!skipAsk && !(await okToSpend(supabase, est ?? 0, "This day review"))) return;
+  async function run() {
+    if (!(await okToSpend(supabase, est ?? 0, "This day review"))) return;
     setStarting(true);
     setError("");
     const token = (await supabase.auth.getSession()).data.session?.access_token;
@@ -105,14 +65,9 @@ export default function DayReviews({ ctx }: { ctx: Ctx }) {
             <span className="label">Anything to look at especially? (optional)</span>
             <input value={focus} onChange={(e) => setFocus(e.target.value)} placeholder="e.g. why nothing closed after lunch" />
           </label>
-          <button className="primary" disabled={starting || !!working || !day || !!regrading} onClick={() => void run()}>
+          <button className="primary" disabled={starting || !!working || !day} onClick={() => void run()}>
             {working ? "Reading the day…" : starting ? "Starting…" : `Review ${day === localDay() ? "today" : nice(day)}${est !== null ? ` · about ${usd(est)}` : ""}`}
           </button>
-          {dayCalls.length > 0 && (
-            <button disabled={starting || !!working || !!regrading} onClick={() => void regradeThenReview()} title="Re-grade every call that day on the current grading rules, then review the day">
-              {regrading || `Re-grade the ${dayCalls.length} calls first, then review · about ${usd((gradeEst ?? 0.08) * dayCalls.length + (est ?? 0.12))}`}
-            </button>
-          )}
         </div>
         {error && <div className="error">{error}</div>}
       </section>
