@@ -1,3 +1,4 @@
+import { WORDING_NOTE, isApprovedScoreTalk } from "@/lib/approvedWording";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { gradeCostUsd, OUTCOME_LABEL, type Outcome, callAt } from "@/lib/calls";
 import { thinkingFor } from "@/lib/callsServer";
@@ -117,7 +118,7 @@ export function callLine(c: HistCall, personas: Map<string, string>): string {
   if (missed.length) lines.push(`  script sections missed: ${missed.join(", ")}`);
   const comp = (c.compliance ?? []).filter((x) => x.status === "no").map((x) => `${x.item}${x.evidence ? ` ("${cut(x.evidence, 100)}")` : ""}`);
   if (comp.length) lines.push(`  COMPLIANCE MISSES: ${comp.join("; ")}`);
-  const flags = (c.flags ?? []).filter((f) => f.severity === "high" || f.severity === "medium").map((f) => `[${f.severity}] ${cut(f.issue, 140)}`);
+  const flags = (c.flags ?? []).filter((f) => (f.severity === "high" || f.severity === "medium") && !isApprovedScoreTalk(`${f.issue} ${f.quote ?? ""}`)).map((f) => `[${f.severity}] ${cut(f.issue, 140)}`);
   if (flags.length) lines.push(`  flags: ${flags.join("; ")}`);
   if (c.tonality) lines.push(`  tonality: ${cut(c.tonality, 220)}`);
   if (c.objections?.items?.length)
@@ -440,6 +441,8 @@ export async function askJsonCost<T>(
   maxTokens = 16000,
   model = REVIEW_MODEL
 ): Promise<{ data: T; usd: number }> {
+  // Every report reads the approved wording first (lib/approvedWording.ts), so none repeats an old "700s" flag.
+  content = [{ type: "text", text: WORDING_NOTE }, ...content];
   const send = (strict: boolean) =>
     fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {
       method: "POST",

@@ -5,6 +5,7 @@
   Pure functions over grades already stored on each call, so the Insights
   page and the lesson drafter (api/calls/lessons) see exactly the same numbers.
 */
+import { isApprovedScoreTalk } from "@/lib/approvedWording";
 import { ROADMAP, stageLabel, stageTerm, type Grade } from "@/lib/calls";
 
 /** Treat "made 6+ payments" as a proven sale, the same as graduated, for every comparison. */
@@ -125,7 +126,7 @@ export function compare(calls: InsightCall[]): Metric[] {
       "Close and compliance",
       "High flags per call",
       "count",
-      (c) => (c.grade.flags ?? []).filter((f) => f.severity === "high").length,
+      (c) => (c.grade.flags ?? []).filter((f) => f.severity === "high" && !isApprovedScoreTalk(`${f.issue} ${f.quote}`)).length,
       calls,
       "fewer is better"
     )
@@ -195,7 +196,7 @@ export function digest(c: InsightCall): string {
     .map((k) => `${k.skill} ${k.score}`)
     .join(", ");
   const tens = g.three_tens ? `product ${g.three_tens.product ?? "?"}, rep ${g.three_tens.rep ?? "?"}, company ${g.three_tens.company ?? "?"}` : "";
-  const high = (g.flags ?? []).filter((f) => f.severity === "high").map((f) => f.issue).join("; ");
+  const high = (g.flags ?? []).filter((f) => f.severity === "high" && !isApprovedScoreTalk(`${f.issue} ${f.quote}`)).map((f) => f.issue).join("; ");
   return [
     `${c.retention.toUpperCase()}: ${g.summary}`,
     `close: ${g.close_quality ?? "?"}${g.close_quality_reason ? ` -- ${g.close_quality_reason}` : ""}`,

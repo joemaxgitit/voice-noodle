@@ -6,7 +6,7 @@ import { clockify, hardshipScoreOf, lineScoreOf, type CoachNow, type Ended, type
  * scores, new rules): every graded call on file is then re-graded by itself,
  * oldest first, the next time a manager opens the Calls page.
  */
-export const GRADER_VERSION = 13;
+export const GRADER_VERSION = 14;
 /**
  * The oldest grade that's still current, per kind of call (a change that only
  * affects renew calls raises just the renew number). Version 6: the close read
@@ -31,8 +31,10 @@ export const GRADER_VERSION = 13;
  * is "partly"; a stage whose script section was never reached stays "not
  * reached"; diagnose a stall before re-anchoring, in the client's own words;
  * the Coach Now point isn't repeated across sections. Hardship unchanged.
+ * Version 14: promising a 700+ credit score is approved wording (only a
+ * guarantee of a score is an issue) -- lib/approvedWording.ts. Every kind of call.
  */
-export const CURRENT_FROM = { renew: 13, other: 13 };
+export const CURRENT_FROM = { renew: 14, other: 14 };
 
 /**
  * A grading change no longer re-grades everything on file -- only the newest
@@ -59,6 +61,7 @@ import {
 import { failCall, log, thinkingFor, type Supa } from "@/lib/callsServer";
 import { practiceNote, type PersonaSecret } from "@/lib/roleplay";
 import { rewriteRules } from "@/lib/gradingRulesServer";
+import { APPROVED_WORDING, isApprovedScoreTalk } from "@/lib/approvedWording";
 import { FOCUS_CHECKS, focusResult, type CoachFocus, type FocusCheckGrade } from "@/lib/coachFocus";
 
 /*
@@ -581,7 +584,7 @@ async function managerGuidance(supabase: Supa, practice = false, rulesOverride?:
   const parts: string[] = [];
   if (rules.length) {
     parts.push(
-      "STANDING GRADING RULES -- written from every correction the sales manager has made to earlier grades. Follow these as rules on every call; where one conflicts with the general instructions above, the rule wins -- except the approved wording and the rule never to flag what the script says, which no rule can change:\n" +
+      "STANDING GRADING RULES -- written from every correction the sales manager has made to earlier grades. Follow these as rules on every call; where one conflicts with the general instructions above, the rule wins -- except the rule never to flag what the script says and the approved wording about results, which always stand:\n" +
         rules.map((r, i) => `${i + 1}. ${r.rule}`).join("\n")
     );
   }
@@ -707,7 +710,7 @@ coaching: one specific, practical sentence for the rep. "" if nothing to improve
 compliance: every required disclosure or confirmation question that appears in the script itself -- for example the call-recording notice, each compliance question the client must answer yes to, and statements about cancellation rights. One entry each, worded as the item. status "yes" if clearly done (for questions: asked and answered yes), "no" if the call reached that point and it was not done or the answer was not a clear yes, "unclear", or "not_reached".
 
 flags: anything a compliance reviewer should listen to:
-- every promise or claim about results (credit scores, timelines, savings, legal awards, debt being "gone") that the rep made OFF the script. Never flag anything the script itself says, or says in essence, however strong it sounds: every line of the script has been through the company's legal review. in_script is always false;
+- every claim about results that goes beyond the approved wording below (an explicit GUARANTEE of a credit score, a timeline shorter than 18-24 months for elimination or credit recovery, savings or legal awards the program doesn't offer) that the rep made OFF the script. Promising a 700+ credit score is approved -- never a flag. Never flag anything the script itself says, or says in essence, however strong it sounds: every line of the script has been through the company's legal review. in_script is always false;
 - anything said that contradicts the client acknowledgements (for example calling the program a loan or debt settlement, or saying the debt is no longer owed);
 - misstatements, pressure, rushing past a client question or hesitation, or a client who sounds confused about what they agreed to;
 - the rep reading sensitive numbers back aloud.
@@ -744,8 +747,7 @@ How Straight Line is scored here -- this matters:
 Approved wording and guarantees (from the sales manager):
 - Saying a debt is "eliminated" is accurate and fine. When a debt is successfully disputed, the collection agency loses its right to collect, and the original creditor sold the debt so it can't collect either -- for all intents and purposes it is eliminated.
 - GUARANTEEING debt elimination is fine too: whatever happens along the way, the company has a process to clear it (including escalating to legal to settle instead). Never flag, mark down or coach against guaranteeing that the debts will be eliminated, or the program's results generally.
-- The ONE result that must not be guaranteed is a credit score in the 700s (or any specific score): the company doesn't control whether the client keeps up with their other credit obligations outside the program. Saying the score usually improves is fine; promising a specific score or range is a flag.
-- Timelines: the ONLY short timeline a rep may give is that most accounts take about 4-6 months to go to collections after non-payment (true). Debt elimination and credit recovery (including any talk of the 700s) take AT LEAST 18-24 months, and the rep must say so when they bring them up. Flag any shorter timeline for elimination or credit recovery (for example "your debts will be gone in 4-6 months"), and flag talking about elimination or a better score without the 18-24 month timeframe when the client is clearly expecting it sooner. Don't confuse the two: "4-6 months to collections" is correct.
+${APPROVED_WORDING}
 - What still matters, separately: the client understands the program is not a loan and not debt settlement, that Lionside/Bolton does not pay their creditors for them, and that their accounts go to collections.
 
 Straight Line is about building real certainty and closing qualified buyers. A client who says they do not understand, cannot afford it, or want to stop is telling you their product certainty is low or that they may not qualify. In that moment the rep earns credit for slowing down, re-explaining in plain words, and confirming understanding and fit -- or for letting them go and setting a callback. Pushing forward, piling on new claims, or looping past real confusion or real inability to pay is NOT good control or good looping: score it down on "Control", "Product certainty" and "Looping", and it also belongs in flags. Never reward pressure on a client who has not understood what they are agreeing to.
@@ -1782,7 +1784,8 @@ async function grade(
       };
     }
     // Script lines have been through legal review: anything the grader still marked as in the script is not a flag.
-    result.flags = result.flags.filter((f) => !f.in_script);
+    // Nor is promising a 700+ credit score (approved wording; only a guarantee is an issue).
+    result.flags = result.flags.filter((f) => !f.in_script && !isApprovedScoreTalk(`${f.issue} ${f.quote}`));
     // The loan ask: who named the amount.
     if (result.loan && !obj(result.loan)) delete result.loan;
     if (result.loan) {

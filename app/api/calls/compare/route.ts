@@ -1,3 +1,4 @@
+import { WORDING_NOTE } from "@/lib/approvedWording";
 import { NextResponse } from "next/server";
 import { requireAdmin, thinkingFor } from "@/lib/callsServer";
 import { gradeCostUsd } from "@/lib/calls";
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
   const fx = await correctionsFor(supabase, [A, B].map((c) => ({ id: c.id, graded_at: (c.grade as { graded_at?: string } | null)?.graded_at ?? null })));
   const dA = digest(A) + (fx.get(A.id) ? `\n${fx.get(A.id)}` : "");
   const dB = digest(B) + (fx.get(B.id) ? `\n${fx.get(B.id)}` : "");
-  const prompt = `A sales manager at a debt-relief company is comparing two graded calls by the same sales rep. Call A is the model -- usually the rep's own best call. Call B is the one being coached. Both were graded against the company script and Jordan Belfort's Straight Line method.
+  const prompt = WORDING_NOTE + `A sales manager at a debt-relief company is comparing two graded calls by the same sales rep. Call A is the model -- usually the rep's own best call. Call B is the one being coached. Both were graded against the company script and Jordan Belfort's Straight Line method.
 
 <call_a>
 ${dA}
@@ -73,7 +74,7 @@ async function journeys(supabase: Supa, key: string, orgId: string, userId: stri
     j.calls
       .map((c) => `CALL ${c.n} -- ${c.call_date || c.created_at.slice(0, 10)}, rep ${c.profiles?.full_name || c.rep_name || "?"}\n${digest(c)}${fx.get(c.id) ? `\n${fx.get(c.id)}` : ""}`)
       .join("\n\n") + (j.read?.story ? `\n\nJOURNEY READ: ${j.read.story} What decided it: ${j.read.decided_it ?? ""}` : "");
-  const prompt = `A sales manager at a debt-relief company is comparing two clients' whole journeys -- every call with each client, in order. Journey A is the model (usually a sale that stuck); journey B is the one being coached. Every call was graded against the company script and Jordan Belfort's Straight Line method. More than half of this team's sales take more than one call, so how a lead is carried from call to call matters as much as any single call.
+  const prompt = WORDING_NOTE + `A sales manager at a debt-relief company is comparing two clients' whole journeys -- every call with each client, in order. Journey A is the model (usually a sale that stuck); journey B is the one being coached. Every call was graded against the company script and Jordan Belfort's Straight Line method. More than half of this team's sales take more than one call, so how a lead is carried from call to call matters as much as any single call.
 
 <journey_a>
 ${text(A)}

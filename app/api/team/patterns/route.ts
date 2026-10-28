@@ -1,3 +1,4 @@
+import { WORDING_NOTE } from "@/lib/approvedWording";
 import { NextResponse, after } from "next/server";
 import { requireAdmin, thinkingFor } from "@/lib/callsServer";
 import { gradeCostUsd } from "@/lib/calls";
@@ -74,7 +75,7 @@ async function findPatterns(supabase: Db, orgId: string, userId: string, key: st
           content: [
             {
               type: "text",
-              text: `Below is each sales rep's own "style that works" -- markers found in that rep's proven sales (clients who graduated or made 6+ payments) and not their cancels. Find the TEAM-PROVEN patterns: the same underlying behaviour showing up in the markers of at least ${TEAM_MIN_REPS} different reps, even if each rep does it in their own way. For each: pattern (a short name), how_it_sounds (the common core, concrete enough for any rep to try in their own words), reps (the rep ids it showed up for -- at least ${TEAM_MIN_REPS}), evidence (one line). Don't count a behaviour that's really just one rep's personality. Strongest first, at most 8. If none reach ${TEAM_MIN_REPS} reps, return an empty list.`,
+              text: WORDING_NOTE + `Below is each sales rep's own "style that works" -- markers found in that rep's proven sales (clients who graduated or made 6+ payments) and not their cancels. Find the TEAM-PROVEN patterns: the same underlying behaviour showing up in the markers of at least ${TEAM_MIN_REPS} different reps, even if each rep does it in their own way. For each: pattern (a short name), how_it_sounds (the common core, concrete enough for any rep to try in their own words), reps (the rep ids it showed up for -- at least ${TEAM_MIN_REPS}), evidence (one line). Don't count a behaviour that's really just one rep's personality. Strongest first, at most 8. If none reach ${TEAM_MIN_REPS} reps, return an empty list.`,
             },
             { type: "text", text },
           ],

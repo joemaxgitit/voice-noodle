@@ -1,3 +1,4 @@
+import { WORDING_NOTE } from "@/lib/approvedWording";
 import { NextResponse } from "next/server";
 import { compare, digest, formatValue, favouring, MIN_FOR_FINDINGS, type InsightCall, asProven } from "@/lib/insights";
 import { requireAdmin, thinkingFor } from "@/lib/callsServer";
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
 
   const small = grads.length < MIN_FOR_FINDINGS || cancels.length < MIN_FOR_FINDINGS;
 
-  const prompt = `A sales manager at a debt-relief company wants to learn what separates the enrollment calls of PROVEN sales -- clients who GRADUATED (finished the program -- out of debt, usually with a 700+ credit score) or made MORE THAN 6 PAYMENTS (stuck with it; just as valuable) -- from the enrollment calls of clients who CANCELLED. Every call below was already graded against the company's script and Jordan Belfort's Straight Line method, including an emotional roadmap of the call.
+  const prompt = WORDING_NOTE + `A sales manager at a debt-relief company wants to learn what separates the enrollment calls of PROVEN sales -- clients who GRADUATED (finished the program -- out of debt, usually with a 700+ credit score) or made MORE THAN 6 PAYMENTS (stuck with it; just as valuable) -- from the enrollment calls of clients who CANCELLED. Every call below was already graded against the company's script and Jordan Belfort's Straight Line method, including an emotional roadmap of the call.
 
 There are ${grads.length} proven (graduated or 6+ payments) and ${cancels.length} cancelled calls.${
     small ? ` That is a small sample: only state a lesson when the difference is clear, and say "early pattern" in its support.` : ""

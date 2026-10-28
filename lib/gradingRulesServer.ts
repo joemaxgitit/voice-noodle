@@ -1,6 +1,7 @@
 import { BENCH_MIN, keyIsUsable, type BenchKey } from "@/lib/benchmark";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { askJsonCost } from "@/lib/repReview";
+import { APPROVED_WORDING } from "@/lib/approvedWording";
 import { logSpend } from "@/lib/spendServer";
 import { plainWords } from "@/lib/plain";
 import type { GradingRule } from "@/lib/gradingRules";
@@ -51,7 +52,9 @@ export async function rewriteRules(supabase: SupabaseClient, key: string, orgId:
   const fixes = (f || []) as Fix[];
   const current = (s.rules ?? []) as GradingRule[];
 
-  const prompt = `A sales manager at a debt-relief company reviews calls that an AI grader scored against the company script and Jordan Belfort's Straight Line method. Whenever the grader got an item wrong, the manager pressed "Not right?" and wrote what it should have said. Below is EVERY correction, oldest first, and the current standing rules.
+  const prompt = `${APPROVED_WORDING}
+
+A sales manager at a debt-relief company reviews calls that an AI grader scored against the company script and Jordan Belfort's Straight Line method. Whenever the grader got an item wrong, the manager pressed "Not right?" and wrote what it should have said. Below is EVERY correction, oldest first, and the current standing rules.
 
 Turn them into standing grading rules the grader will follow on every future call, so the manager never has to correct the same thing twice:
 - Group corrections that teach the same lesson into ONE rule. Write the general principle, not the one call ("When the client gives facts but no feelings, mark hardship partial, not hit" -- not "on the Luis call...").
@@ -60,7 +63,8 @@ Turn them into standing grading rules the grader will follow on every future cal
 - Keep every current rule marked manual exactly as written (manual: true), unless a newer correction clearly says otherwise -- then rewrite it and drop the manual mark.
 - Leave out a correction that only fixed a fact about one call (a wrong time, a name, a typo) and teaches nothing general.
 - Never write a rule that rewards pressure, overstated promises, or closing a confused client; compliance problems stay problems.
-- Never write a rule about which claims or wording are allowed, or about flagging what the script says: approved wording comes from the company's legal review, not from corrections. Leave such corrections out.
+- Never write a rule that flags what the script itself says.
+- Every rule must agree with the approved wording above; corrections that say a claim is fine to make become rules.
 - Plain English, no jargon or shorthand. At most 40 rules, most important first.
 
 <current_rules>

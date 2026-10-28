@@ -1,3 +1,4 @@
+import { WORDING_NOTE } from "@/lib/approvedWording";
 import { NextResponse, after } from "next/server";
 import { kick } from "@/lib/chain";
 import { requireAdmin, thinkingFor } from "@/lib/callsServer";
@@ -188,7 +189,7 @@ async function findStyle(request: Request, supabase: Db, orgId: string, userId: 
       max_tokens: 6000,
       ...thinkingFor(MODEL),
       output_config: { effort: "high", format: { type: "json_schema", schema: SCHEMA } },
-      messages: [{ role: "user", content: [{ type: "text", text: INSTRUCTIONS }, { type: "text", text }] }],
+      messages: [{ role: "user", content: [{ type: "text", text: WORDING_NOTE + INSTRUCTIONS }, { type: "text", text }] }],
     }),
     signal: AbortSignal.timeout(280_000),
   });

@@ -55,6 +55,7 @@ import type { RoleplayInfo } from "@/lib/roleplay";
 import JourneyBox from "./JourneyBox";
 import QuickCard from "./QuickCard";
 import { fmtTime } from "@/lib/dayReview";
+import { isApprovedScoreTalk } from "@/lib/approvedWording";
 import AnswerKeyBox from "./AnswerKeyBox";
 import CoachThis from "./CoachThis";
 import "../calls.css";
@@ -928,7 +929,8 @@ export default function CallDetail() {
         {body}
       </>
     );
-  const flags = [...(g?.flags ?? [])].sort(
+  // Promising a 700+ credit score is approved wording: old grades' flags about it aren't shown.
+  const flags = [...(g?.flags ?? [])].filter((f) => !isApprovedScoreTalk(`${f.issue} ${f.quote}`)).sort(
     (a, b) => ["high", "medium", "low"].indexOf(a.severity) - ["high", "medium", "low"].indexOf(b.severity)
   );
 
