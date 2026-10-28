@@ -12,6 +12,7 @@ import Overview from "./Overview";
 import Activity from "./Activity";
 import NotesFiles from "./NotesFiles";
 import Reviews from "./Reviews";
+import DayReviews from "./DayReviews";
 import StyleTab from "./StyleTab";
 import Cards from "./Cards";
 import OneOnOne from "./OneOnOne";
@@ -19,7 +20,7 @@ import "../../calls/calls.css";
 import "../../training/training.css";
 import "../reps.css";
 
-type Tab = "overview" | "one" | "kpi" | "activity" | "notes" | "cards" | "style" | "review";
+type Tab = "overview" | "one" | "kpi" | "activity" | "notes" | "cards" | "style" | "day" | "review";
 const TABS: { id: Tab; label: string; extra?: boolean }[] = [
   { id: "overview", label: "Overview" },
   { id: "one", label: "One-on-one", extra: true },
@@ -28,6 +29,7 @@ const TABS: { id: Tab; label: string; extra?: boolean }[] = [
   { id: "notes", label: "Notes & files", extra: true },
   { id: "cards", label: "Training cards" },
   { id: "style", label: "Style that works" },
+  { id: "day", label: "Day reviews" },
   { id: "review", label: "Coaching review" },
 ];
 
@@ -171,6 +173,7 @@ export default function RepProfile() {
           {cur === "notes" && <NotesFiles ctx={ctx} />}
           {cur === "cards" && <Cards ctx={ctx} seed={seed} clearSeed={clearSeed} />}
           {cur === "style" && <StyleTab ctx={ctx} />}
+          {cur === "day" && <DayReviews ctx={ctx} />}
           {cur === "review" && <Reviews ctx={ctx} />}
         </>
       )}

@@ -54,6 +54,7 @@ import { cleanRecording as cleanRecordingFor } from "@/lib/cleanRecording";
 import type { RoleplayInfo } from "@/lib/roleplay";
 import JourneyBox from "./JourneyBox";
 import QuickCard from "./QuickCard";
+import { fmtTime } from "@/lib/dayReview";
 import AnswerKeyBox from "./AnswerKeyBox";
 import CoachThis from "./CoachThis";
 import "../calls.css";
@@ -98,6 +99,7 @@ type Call = {
   updated_at: string;
   profiles: { full_name: string | null } | null;
   rep_id: string | null;
+  call_time?: string | null;
   rep_name: string | null;
   scripts: { title: string; logo_url: string | null } | null;
 };
@@ -405,6 +407,12 @@ export default function CallDetail() {
   // Always the latest grade (earlier ones are kept in grade_history, not shown).
   const version = -1;
   const audio = useRef<HTMLAudioElement>(null);
+  // Opened from a day review's clip (?t=seconds): jump to that moment and play once the recording is ready.
+  const jumpTo = useRef<number | null>(null);
+  useEffect(() => {
+    const t = Number(new URLSearchParams(window.location.search).get("t"));
+    if (isFinite(t) && t > 0) jumpTo.current = t;
+  }, []);
   const kicked = useRef(false);
   const kickedTranslate = useRef(false);
   const [showOriginal, setShowOriginal] = useState(false);
@@ -474,7 +482,7 @@ export default function CallDetail() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, source, roleplay, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, retention, cancel_date, cancel_reason, cancel_note, graduated_date, final_credit_score, audio_redact_state, audio_redacted_at, audio_redact_note, grade_history, cost, translation, voice_v:voice->v, script_id, updated_at, rep_id, rep_name, profiles:rep_id(full_name), scripts(title, logo_url)"
+        "id, source, roleplay, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, retention, cancel_date, cancel_reason, cancel_note, graduated_date, final_credit_score, call_time, audio_redact_state, audio_redacted_at, audio_redact_note, grade_history, cost, translation, voice_v:voice->v, script_id, updated_at, rep_id, rep_name, profiles:rep_id(full_name), scripts(title, logo_url)"
       )
       .eq("id", callId)
       .single();
@@ -957,7 +965,8 @@ export default function CallDetail() {
         <div>
           <div className="eyebrow">
             {call.call_date || ""}
-            {call.duration_secs ? ` · ${clock(call.duration_secs)}` : ""}
+            {call.call_time ? ` · ${fmtTime(call.call_time)}` : ""}
+            {call.duration_secs ? ` · ${clock(call.duration_secs)} long` : ""}
             {call.scripts?.title ? ` · ${call.scripts.title}` : ""}
           </div>
           <h1>
@@ -1072,6 +1081,13 @@ export default function CallDetail() {
           <audio
             ref={audio}
             src={audioUrl}
+            onLoadedMetadata={(e) => {
+              if (jumpTo.current === null) return;
+              const el = e.currentTarget;
+              el.currentTime = Math.max(0, jumpTo.current - 1);
+              jumpTo.current = null;
+              void el.play().catch(() => {});
+            }}
             controls
             preload="metadata"
             onTimeUpdate={(e) => setNow(e.currentTarget.currentTime)}
