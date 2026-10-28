@@ -1,5 +1,6 @@
 "use client";
 
+import { printAs } from "@/lib/printAs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
@@ -471,7 +472,7 @@ function ScriptView() {
         <Link className="btn" href="/proedgesolutions" style={{ textDecoration: "none" }}>
           &larr; {c.sections}
         </Link>
-        <button onClick={() => window.print()}>{c.print}</button>
+        <button onClick={() => printAs(title || "Script")}>{c.print}</button>
       </div>
 
       {/* Print only: the paper leaves the building, so it carries the brand. */}

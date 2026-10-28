@@ -1,5 +1,6 @@
 "use client";
 
+import { printAs } from "@/lib/printAs";
 import { reviewView } from "@/lib/repHistory";
 import { useEffect, useState } from "react";
 import type { RepReview, ReviewBody } from "@/lib/repHistory";
@@ -255,7 +256,7 @@ function ReviewView({ r, v, author, onCard }: { r: RepReview; v: NonNullable<Ret
       </div>
       {v.data_gaps && <p className="hint">What would sharpen this: {v.data_gaps}</p>}
       <div className="rx-noprint">
-        <button onClick={() => window.print()}>Print</button>
+        <button onClick={() => printAs(`Coaching review - ${document.querySelector("h1")?.textContent?.trim() || "Rep"} - ${r.created_at.slice(0, 10)}`)}>Print</button>
       </div>
     </div>
   );

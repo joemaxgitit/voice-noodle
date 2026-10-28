@@ -1,5 +1,6 @@
 "use client";
 
+import { printAs } from "@/lib/printAs";
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { okToSpend, usd, useEstimate } from "@/lib/spend";
@@ -290,7 +291,7 @@ function DayView({ v, shown, ctx }: { v: DayReview; shown: Shown; ctx: Ctx }) {
           onClick={() => {
             // Paper gets this one review, opened up -- nothing else on the page.
             document.querySelectorAll<HTMLDetailsElement>(".dr-print details").forEach((d) => (d.open = true));
-            window.print();
+            printAs(`Day review - ${ctx.repName} - ${v.day}`);
           }}
         >
           Print this day review

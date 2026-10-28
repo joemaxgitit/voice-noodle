@@ -1,5 +1,6 @@
 "use client";
 
+import { printAs } from "@/lib/printAs";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import Link from "next/link";
@@ -472,7 +473,9 @@ export default function CallDetail() {
     const done = () => setPrintMode(null);
     window.addEventListener("afterprint", done);
     // One frame so the class is on the page before the dialog snapshots it.
-    const id = requestAnimationFrame(() => window.print());
+    const who = call?.profiles?.full_name?.trim() || call?.rep_name?.trim() || "Call";
+    const name = [printMode === "transcript" ? "Call transcript" : "Call review", who, call?.client_label, call?.call_date, call?.call_time ? fmtTime(call.call_time) : ""].filter(Boolean).join(" - ");
+    const id = requestAnimationFrame(() => printAs(name));
     return () => {
       cancelAnimationFrame(id);
       window.removeEventListener("afterprint", done);

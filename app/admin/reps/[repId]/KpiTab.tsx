@@ -1,5 +1,6 @@
 "use client";
 
+import { printAs } from "@/lib/printAs";
 import { useEffect, useMemo, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -283,7 +284,7 @@ export default function KpiTab({
               Show {hiddenCount} hidden
             </button>
           )}
-          <button onClick={() => window.print()}>Print for the one-on-one</button>
+          <button onClick={() => printAs(`KPI one-on-one - ${repName}${month ? ` - ${month}` : ""}`)}>Print for the one-on-one</button>
         </div>
       </div>
 
