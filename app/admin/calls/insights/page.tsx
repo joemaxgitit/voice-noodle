@@ -9,9 +9,12 @@ import { okToSpend } from "@/lib/spend";
 import { asProven, compare, favouring, formatValue, MIN_FOR_FINDINGS, type InsightCall, type Metric } from "@/lib/insights";
 import Archetypes from "./Archetypes";
 import GradingRules from "./GradingRules";
+import AnswerKey from "./AnswerKey";
+import { useMode } from "@/lib/superMode";
 import { plainCounts } from "@/lib/plain";
 import "../calls.css";
 import "../../reps/reps.css";
+import "../../training/training.css";
 
 type Correction = {
   id: string;
@@ -43,8 +46,29 @@ function Gap({ m }: { m: Metric }) {
  * the lessons a manager approved from that, and every correction managers
  * have made to a grade. Lessons and corrections both feed every future grade.
  */
+type InsightTab = "working" | "followups" | "practice" | "tuning";
+const INSIGHT_TABS: { id: InsightTab; label: string }[] = [
+  { id: "working", label: "What's working" },
+  { id: "followups", label: "Follow-ups & renews" },
+  { id: "practice", label: "Practice clients" },
+  { id: "tuning", label: "Tuning the grader" },
+];
+
 export default function Insights() {
   const supabase = createClient();
+  // Which tab is open: kept in the address (?tab=) so links and the back button land on it.
+  const { superAdmin } = useMode();
+  const [tab, setTab] = useState<InsightTab>("working");
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab") as InsightTab | null;
+    if (t && INSIGHT_TABS.some((x) => x.id === t)) setTab(t);
+  }, []);
+  const openTab = (t: InsightTab) => {
+    setTab(t);
+    const u = new URL(window.location.href);
+    u.searchParams.set("tab", t);
+    window.history.replaceState(null, "", u.toString());
+  };
   const [calls, setCalls] = useState<InsightCall[]>([]);
   const [fixes, setFixes] = useState<Correction[]>([]);
   // The newest 5 corrections; "Show 10 more" for the rest.
@@ -255,7 +279,167 @@ export default function Insights() {
       {error && <div className="error">{error}</div>}
       {note && <div className="note">{note}</div>}
 
-      <Archetypes />
+      <nav className="tr-tabs" role="tablist" aria-label="Insights sections" style={{ marginTop: 14 }}>
+        {INSIGHT_TABS.map((t) => (
+          <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? "active" : ""} onClick={() => openTab(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "working" && (
+        <>
+      <h2>Proven sales vs cancels</h2>
+      {nG === 0 || nC === 0 ? (
+        <p className="muted">
+          Upload enrollment calls of proven sales and clients who cancelled, grade them, then set Retention on
+          each call to <strong>Graduated</strong>, <strong>Made 6+ payments</strong> or <strong>Cancelled</strong>. The comparison appears here once there is
+          at least one of each.
+        </p>
+      ) : (
+        <>
+          {(nG < MIN_FOR_FINDINGS || nC < MIN_FOR_FINDINGS) && (
+            <div className="note" style={{ marginTop: 0 }}>
+              Early days: {nG} proven and {nC} cancelled. Treat these differences as hints until there are at least{" "}
+              {MIN_FOR_FINDINGS} of each.
+            </div>
+          )}
+
+          <p className="muted" style={{ marginBottom: 6 }}>
+            Biggest differences. Green means graduates&rsquo; calls were stronger here.
+          </p>
+          <div className="compare">
+            <div className="compare-row compare-head">
+              <span />
+              <span>Proven</span>
+              <span>Cancelled</span>
+              <span>Difference</span>
+            </div>
+            {top.map((m) => (
+              <div key={m.group + m.label} className="compare-row">
+                <span>
+                  {m.label}
+                  <span className="calls-meta">{m.group}</span>
+                </span>
+                <span>{formatValue(m, m.graduated)}</span>
+                <span>{formatValue(m, m.cancelled)}</span>
+                <Gap m={m} />
+              </div>
+            ))}
+          </div>
+
+          <details className="fold" style={{ marginTop: 14 }}>
+            <summary>
+              <span className="fold-title">Everything compared</span>
+              <span className="fold-preview">{metrics.length} measures</span>
+            </summary>
+            <div className="fold-body">
+              {groups.map(([group, ms]) => (
+                <div key={group} className="compare" style={{ marginTop: 10 }}>
+                  <div className="compare-row compare-head">
+                    <span>{group}</span>
+                    <span>Proven</span>
+                    <span>Cancelled</span>
+                    <span>Difference</span>
+                  </div>
+                  {ms.map((m) => (
+                    <div key={m.label} className="compare-row">
+                      <span>
+                        {m.label}
+                        {m.hint && <span className="stage-term">{m.hint}</span>}
+                      </span>
+                      <span>
+                        {formatValue(m, m.graduated)}
+                        <span className="calls-meta">n={m.nGraduated}</span>
+                      </span>
+                      <span>
+                        {formatValue(m, m.cancelled)}
+                        <span className="calls-meta">n={m.nCancelled}</span>
+                      </span>
+                      <Gap m={m} />
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </details>
+        </>
+      )}
+
+      <h2>Spotlights vs results</h2>
+      {(() => {
+        const won = (x: (typeof spot)[number]) => (x.manual || x.outcome) === "enrolled";
+        const rate = (xs: typeof spot) => (xs.length ? `${Math.round((xs.filter(won).length / xs.length) * 100)}%` : "--");
+        const bands = [
+          { label: "Under 5 min", f: (m: number) => m < 5 },
+          { label: "5–8 min", f: (m: number) => m >= 5 && m < 8 },
+          { label: "8–12 min (target)", f: (m: number) => m >= 8 && m <= 12 },
+          { label: "Over 12 min", f: (m: number) => m > 12 },
+        ];
+        const withHs = spot.filter((x) => typeof x.hs === "number" && x.hs > 0);
+        const td = spot.filter((x) => x.pickup && x.pickup !== "n/a");
+        if (!withHs.length)
+          return <p className="muted">Real calls graded from now on show how long the rep stayed in hardship and how they picked the client up after the loan turndown. Once there are some, this shows which actually goes with enrollments on your calls.</p>;
+        return (
+          <>
+            <p className="muted" style={{ marginTop: 0 }}>
+              From {spot.length} graded real call{spot.length === 1 ? "" : "s"}. This only measures -- it never changes a grade -- so your own calls show whether the 8–12 minute target and a strong pickup hold up.
+            </p>
+            <div className="rx-grid2">
+              <section className="card">
+                <b>Time in hardship before moving on</b>
+                <table className="rx-table" style={{ marginTop: 6 }}>
+                  <tbody>
+                    {bands.map((b) => {
+                      const xs = withHs.filter((x) => b.f((x.hs as number) / 60));
+                      return (
+                        <tr key={b.label}>
+                          <td>{b.label}</td>
+                          <td className="num">{xs.length} calls</td>
+                          <td className="num">
+                            <b>{rate(xs)}</b> enrolled
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </section>
+              <section className="card">
+                <b>After the loan turndown</b>
+                <table className="rx-table" style={{ marginTop: 6 }}>
+                  <tbody>
+                    {(["strong", "ok", "flat"] as const).map((k) => {
+                      const xs = td.filter((x) => x.pickup === k);
+                      return (
+                        <tr key={k}>
+                          <td>Pickup {k}</td>
+                          <td className="num">{xs.length} calls</td>
+                          <td className="num">
+                            <b>{rate(xs)}</b> enrolled
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {(["yes", "no"] as const).map((k) => {
+                      const xs = td.filter((x) => x.even === k);
+                      return (
+                        <tr key={`e${k}`}>
+                          <td>Options laid out evenly: {k}</td>
+                          <td className="num">{xs.length} calls</td>
+                          <td className="num">
+                            <b>{rate(xs)}</b> enrolled
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </section>
+            </div>
+          </>
+        );
+      })()}
 
       <h2>Team patterns</h2>
       <p className="muted" style={{ marginTop: 0 }}>
@@ -280,6 +464,11 @@ export default function Insights() {
         {teamBusy ? "Looking across reps…" : `${team ? "Refresh" : "Find"} team patterns · about $0.05`}
       </button>
 
+        </>
+      )}
+
+      {tab === "followups" && (
+        <>
       <h2>The follow-up game</h2>
       {(() => {
         const byClient = new Map<string, FCall[]>();
@@ -395,158 +584,18 @@ export default function Insights() {
         );
       })()}
 
-      <h2>Spotlights vs results</h2>
-      {(() => {
-        const won = (x: (typeof spot)[number]) => (x.manual || x.outcome) === "enrolled";
-        const rate = (xs: typeof spot) => (xs.length ? `${Math.round((xs.filter(won).length / xs.length) * 100)}%` : "--");
-        const bands = [
-          { label: "Under 5 min", f: (m: number) => m < 5 },
-          { label: "5–8 min", f: (m: number) => m >= 5 && m < 8 },
-          { label: "8–12 min (target)", f: (m: number) => m >= 8 && m <= 12 },
-          { label: "Over 12 min", f: (m: number) => m > 12 },
-        ];
-        const withHs = spot.filter((x) => typeof x.hs === "number" && x.hs > 0);
-        const td = spot.filter((x) => x.pickup && x.pickup !== "n/a");
-        if (!withHs.length)
-          return <p className="muted">Real calls graded from now on show how long the rep stayed in hardship and how they picked the client up after the loan turndown. Once there are some, this shows which actually goes with enrollments on your calls.</p>;
-        return (
-          <>
-            <p className="muted" style={{ marginTop: 0 }}>
-              From {spot.length} graded real call{spot.length === 1 ? "" : "s"}. This only measures -- it never changes a grade -- so your own calls show whether the 8–12 minute target and a strong pickup hold up.
-            </p>
-            <div className="rx-grid2">
-              <section className="card">
-                <b>Time in hardship before moving on</b>
-                <table className="rx-table" style={{ marginTop: 6 }}>
-                  <tbody>
-                    {bands.map((b) => {
-                      const xs = withHs.filter((x) => b.f((x.hs as number) / 60));
-                      return (
-                        <tr key={b.label}>
-                          <td>{b.label}</td>
-                          <td className="num">{xs.length} calls</td>
-                          <td className="num">
-                            <b>{rate(xs)}</b> enrolled
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </section>
-              <section className="card">
-                <b>After the loan turndown</b>
-                <table className="rx-table" style={{ marginTop: 6 }}>
-                  <tbody>
-                    {(["strong", "ok", "flat"] as const).map((k) => {
-                      const xs = td.filter((x) => x.pickup === k);
-                      return (
-                        <tr key={k}>
-                          <td>Pickup {k}</td>
-                          <td className="num">{xs.length} calls</td>
-                          <td className="num">
-                            <b>{rate(xs)}</b> enrolled
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {(["yes", "no"] as const).map((k) => {
-                      const xs = td.filter((x) => x.even === k);
-                      return (
-                        <tr key={`e${k}`}>
-                          <td>Options laid out evenly: {k}</td>
-                          <td className="num">{xs.length} calls</td>
-                          <td className="num">
-                            <b>{rate(xs)}</b> enrolled
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </section>
-            </div>
-          </>
-        );
-      })()}
-
-      <h2>Proven sales vs cancels</h2>
-      {nG === 0 || nC === 0 ? (
-        <p className="muted">
-          Upload enrollment calls of proven sales and clients who cancelled, grade them, then set Retention on
-          each call to <strong>Graduated</strong>, <strong>Made 6+ payments</strong> or <strong>Cancelled</strong>. The comparison appears here once there is
-          at least one of each.
-        </p>
-      ) : (
-        <>
-          {(nG < MIN_FOR_FINDINGS || nC < MIN_FOR_FINDINGS) && (
-            <div className="note" style={{ marginTop: 0 }}>
-              Early days: {nG} proven and {nC} cancelled. Treat these differences as hints until there are at least{" "}
-              {MIN_FOR_FINDINGS} of each.
-            </div>
-          )}
-
-          <p className="muted" style={{ marginBottom: 6 }}>
-            Biggest differences. Green means graduates&rsquo; calls were stronger here.
-          </p>
-          <div className="compare">
-            <div className="compare-row compare-head">
-              <span />
-              <span>Proven</span>
-              <span>Cancelled</span>
-              <span>Difference</span>
-            </div>
-            {top.map((m) => (
-              <div key={m.group + m.label} className="compare-row">
-                <span>
-                  {m.label}
-                  <span className="calls-meta">{m.group}</span>
-                </span>
-                <span>{formatValue(m, m.graduated)}</span>
-                <span>{formatValue(m, m.cancelled)}</span>
-                <Gap m={m} />
-              </div>
-            ))}
-          </div>
-
-          <details className="fold" style={{ marginTop: 14 }}>
-            <summary>
-              <span className="fold-title">Everything compared</span>
-              <span className="fold-preview">{metrics.length} measures</span>
-            </summary>
-            <div className="fold-body">
-              {groups.map(([group, ms]) => (
-                <div key={group} className="compare" style={{ marginTop: 10 }}>
-                  <div className="compare-row compare-head">
-                    <span>{group}</span>
-                    <span>Proven</span>
-                    <span>Cancelled</span>
-                    <span>Difference</span>
-                  </div>
-                  {ms.map((m) => (
-                    <div key={m.label} className="compare-row">
-                      <span>
-                        {m.label}
-                        {m.hint && <span className="stage-term">{m.hint}</span>}
-                      </span>
-                      <span>
-                        {formatValue(m, m.graduated)}
-                        <span className="calls-meta">n={m.nGraduated}</span>
-                      </span>
-                      <span>
-                        {formatValue(m, m.cancelled)}
-                        <span className="calls-meta">n={m.nCancelled}</span>
-                      </span>
-                      <Gap m={m} />
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </details>
         </>
       )}
 
+      {tab === "practice" && (
+        <>
+      <Archetypes />
+
+        </>
+      )}
+
+      {tab === "tuning" && (
+        <>
       <h2>Lessons for the grader</h2>
       <p className="muted" style={{ marginTop: 0 }}>
         Claude can draft lessons from the calls above. Nothing is used until you edit and save it, because early patterns
@@ -612,6 +661,9 @@ export default function Insights() {
           <button onClick={() => setFixN((n) => n + 10)}>Show 10 more</button>
           <span className="muted" style={{ fontSize: 13 }}>{fixes.length - fixN} older</span>
         </div>
+      )}
+          {superAdmin && <AnswerKey />}
+        </>
       )}
     </main>
   );
