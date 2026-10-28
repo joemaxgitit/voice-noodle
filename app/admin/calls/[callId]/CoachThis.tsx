@@ -17,14 +17,14 @@ export default function CoachThis({
   callId,
   repId,
   orgId,
-  cn,
+  need,
   check,
 }: {
   supabase: ReturnType<typeof createClient>;
   callId: string;
   repId: string | null;
   orgId: string | null;
-  cn: CoachNow;
+  need: CoachNow["priority"];
   /** This call's check against an earlier focus, if one was being tracked. */
   check?: FocusCheckGrade;
 }) {
@@ -57,8 +57,9 @@ export default function CoachThis({
   }, [load]);
 
   if (!repId) return null;
-  const p = cn.priority;
-  const fromHere = active?.call_id === callId;
+  const p = need;
+  // Being tracked from this call AND this need (a call can offer two).
+  const fromHere = active?.call_id === callId && active.title === p.title;
 
   async function start() {
     if (!orgId) return setMsg("Couldn't tell which organization this is. Reload and try again.");

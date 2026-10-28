@@ -290,9 +290,19 @@ function Said({ text }: { text: string }) {
  * moment" walks through them in order. Managers only: this page is never
  * shown to reps.
  */
-function CoachNowCard({ cn, seek, fix, track }: { cn: CoachNow; seek: (t: number | null) => void; fix: ReactNode; track?: ReactNode }) {
-  const p = cn.priority;
-  const moments = [p.time, ...cn.also.map((a) => a.time)].filter((t): t is number => typeof t === "number");
+function CoachNowCard({
+  cn,
+  seek,
+  fix,
+  track,
+}: {
+  cn: CoachNow;
+  seek: (t: number | null) => void;
+  fix: (which: 1 | 2) => ReactNode;
+  track?: (which: 1 | 2) => ReactNode;
+}) {
+  const needs = [cn.priority, cn.second].filter((x): x is CoachNow["priority"] => !!x?.title);
+  const moments = [...needs.map((n) => n.time), ...cn.also.map((a) => a.time)].filter((t): t is number => typeof t === "number");
   const [at, setAt] = useState(0);
   const time = (t: number | null) =>
     t === null ? null : (
@@ -300,10 +310,11 @@ function CoachNowCard({ cn, seek, fix, track }: { cn: CoachNow; seek: (t: number
         {clock(t)}
       </button>
     );
+  const two = needs.length > 1;
   return (
     <section className="coach-now">
       <div className="cn-head">
-        <span className="cn-kicker">Coach this first{p.skill ? ` · ${p.skill}` : ""}</span>
+        <span className="cn-kicker">{two ? "Coach first \u2014 pick one" : `Coach this first${needs[0].skill ? ` \u00b7 ${needs[0].skill}` : ""}`}</span>
         {moments.length > 0 && (
           <button
             className="no-print"
@@ -316,36 +327,54 @@ function CoachNowCard({ cn, seek, fix, track }: { cn: CoachNow; seek: (t: number
           </button>
         )}
       </div>
-      <div className="cn-title">{p.title}</div>
-      {p.quote && (
-        <div className="grade-quote">
-          {time(p.time)}&ldquo;{p.quote}&rdquo;
-        </div>
-      )}
-      <div className="cn-grid">
-        <div>
-          <span className="cn-label">What happened</span>
-          {p.observed}
-        </div>
-        <div>
-          <span className="cn-label">Why it matters</span>
-          {p.why_it_matters}
-        </div>
-        <div>
-          <span className="cn-label">Next call</span>
-          <b>{p.next_call}</b>
-        </div>
-        <div>
-          <span className="cn-label">Practice</span>
-          {p.drill}
-        </div>
+      <div className={two ? "cn-two" : ""}>
+        {needs.map((p, i) => (
+          <div key={i} className={two ? `cn-need${i === 0 ? " first" : ""}` : ""}>
+            {two && (
+              <small className="muted">
+                #{i + 1}
+                {p.skill ? ` \u00b7 ${p.skill}` : ""}
+              </small>
+            )}
+            <div className="cn-title">{p.title}</div>
+            {p.quote && (
+              <div className="grade-quote">
+                {time(p.time)}&ldquo;{p.quote}&rdquo;
+              </div>
+            )}
+            <div className={two ? "" : "cn-grid"}>
+              <div>
+                <span className="cn-label">What happened</span>
+                {p.observed}
+              </div>
+              <div>
+                <span className="cn-label">Why it matters</span>
+                {p.why_it_matters}
+              </div>
+              <div>
+                <span className="cn-label">Next call</span>
+                <b>{p.next_call}</b>
+              </div>
+              <div>
+                <span className="cn-label">Practice</span>
+                {p.drill}
+              </div>
+            </div>
+            {p.check && (
+              <>
+                <span className="cn-label">How you&rsquo;ll know it worked</span>
+                {p.check}
+              </>
+            )}
+            <div className="cn-why">
+              {i === 0 ? "Why this first" : "Why second"}: {p.reasons || "\u2014"}
+              {" \u00b7 "}evidence {p.confidence}
+            </div>
+            {fix(i === 0 ? 1 : 2)}
+            {track?.(i === 0 ? 1 : 2)}
+          </div>
+        ))}
       </div>
-      {p.check && (
-        <>
-          <span className="cn-label">How you&rsquo;ll know it worked</span>
-          {p.check}
-        </>
-      )}
       {cn.also.length > 0 && (
         <>
           <span className="cn-label">Also worth a word</span>
@@ -353,7 +382,7 @@ function CoachNowCard({ cn, seek, fix, track }: { cn: CoachNow; seek: (t: number
             {cn.also.map((a, i) => (
               <li key={i}>
                 {time(a.time)} <b>{a.title}</b>
-                {a.note ? ` — ${a.note}` : ""}
+                {a.note ? ` \u2014 ${a.note}` : ""}
               </li>
             ))}
           </ul>
@@ -383,11 +412,6 @@ function CoachNowCard({ cn, seek, fix, track }: { cn: CoachNow; seek: (t: number
           </ul>
         </>
       )}
-      <div className="cn-why">
-        Why this first: {p.reasons || "—"} · evidence {p.confidence}
-      </div>
-      {fix}
-      {track}
     </section>
   );
 }
@@ -1119,16 +1143,26 @@ export default function CallDetail() {
         <CoachNowCard
           cn={g.coach_now}
           seek={seek}
-          track={call.source !== "roleplay" ? <CoachThis supabase={supabase} callId={call.id} repId={call.rep_id} orgId={myOrg} cn={g.coach_now} check={g.focus_check} /> : undefined}
-          fix={
-            <Fix
-              ctx={fixCtx}
-              k={fx("coach_now")}
-              kind="Coach Now"
-              label={g.coach_now.priority.skill || "Coach Now"}
-              original={`${g.coach_now.priority.title}. ${g.coach_now.priority.observed} Next call: ${g.coach_now.priority.next_call}`}
-            />
+          track={
+            call.source !== "roleplay"
+              ? (which) => {
+                  const need = which === 1 ? g.coach_now!.priority : g.coach_now!.second!;
+                  return <CoachThis supabase={supabase} callId={call.id} repId={call.rep_id} orgId={myOrg} need={need} check={which === 1 ? g.focus_check : undefined} />;
+                }
+              : undefined
           }
+          fix={(which) => {
+            const need = which === 1 ? g.coach_now!.priority : g.coach_now!.second!;
+            return (
+              <Fix
+                ctx={fixCtx}
+                k={fx(which === 1 ? "coach_now" : "coach_now2")}
+                kind="Coach Now"
+                label={need.skill || "Coach Now"}
+                original={`${need.title}. ${need.observed} Next call: ${need.next_call}`}
+              />
+            );
+          }}
         />
       )}
       {g && (

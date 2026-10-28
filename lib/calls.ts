@@ -147,6 +147,8 @@ export type CoachNow = {
     confidence: "high" | "medium" | "low";
     reasons: string;
   };
+  /** The second most urgent need, same shape (grades from v15 on; null when the call only clearly shows one). */
+  second?: CoachNow["priority"] | null;
   also: { title: string; time: number | null; note: string }[];
   strengths: { text: string; time: number | null }[];
   /** Possibilities the call can't confirm -- shown as such, never as fact. */

@@ -37,7 +37,8 @@ export const GRADER_VERSION = 15;
  * Loops after the pitch); only the same objection a second time is valid, then
  * book the callback. Every kind of call.
  * Also in 15: the recording notice is only needed on the first contact, never
- * on a follow-up / re-contact.
+ * on a follow-up / re-contact; and Coach Now gives the top TWO coaching needs
+ * (the second only when the call clearly shows one).
  */
 export const CURRENT_FROM = { renew: 15, other: 15 };
 
@@ -790,7 +791,8 @@ A voicemail (the client never picked up, the rep left a message): nothing on the
 
 coach_now: what the manager coaches first, read in ten seconds. Everything else in the grade stays as detail underneath it.
 - priority: the ONE behavior change that would most improve this rep's next call. Choose it by, in order: impact (how much it cost this call), recurrence (whether it also shows in this rep's recent calls, listed with the call if known), coachability (a specific thing the rep can do differently, not a trait), and how clearly the recording shows it. Never pick a stage the call didn't reach, something that belonged to an earlier call, or an off-script compliance claim (those are flags). skill: the area in two or three words (for example "Hardship discovery", "Deferred decision", "Rapport to the line"). title: the change, one line, as an instruction ("Dig past the first 'no hardship'"). time: seconds of the clearest moment. quote: what was said there, 25 words or fewer. observed: what happened, facts only. why_it_matters: what it cost on this call. next_call: exactly what to do or say differently next time, one or two sentences, concrete enough to practice ("After the client says there's no hardship, ask what made them reach out now and what they'd want to change -- then follow their answer one layer deeper"). drill: one practice exercise (a script section to drill, or a practice call with a certain kind of client). check: what a manager should hear on the next calls to know it improved. confidence: "high", "medium" or "low" that the recording shows this. reasons: one line on why this comes first (impact, recurrence, coachability, evidence).
-- also: up to 2 more opportunities, most important first: title, time (seconds, or -1), note (one sentence: what to do differently).
+- second: the SECOND most urgent behavior change, with exactly the same fields as priority -- the manager coaches whichever of the two fits the rep, so it must be just as clearly supported by this call and about a different behavior. If the call only clearly shows one need (a short call, a voicemail), set second.title "" and leave its fields "" / -1 rather than padding it with something weak. reasons for the second: one line on why it ranks second.
+- also: at most 1 more opportunity, worth a word: title, time (seconds, or -1), note (one sentence: what to do differently).
 - Say each coaching point once. The coach_now priority is the coaching for that behavior: in sections, skills, coaching_priorities and turning points, keep each one's own evidence and score but don't re-coach the same point in other words -- give that field's coaching "" or something different it adds. The hardship spotlight always gives its full read as it is.
 - strengths: up to 3 things the rep did well, each with a time (-1 if none) -- specific, not generic praise.
 - hypotheses: up to 3 things that might be true but the call can't confirm, worded as possibilities. Empty if none.
@@ -907,9 +909,27 @@ const GRADE_SCHEMA = {
     coach_now: {
       type: "object",
       additionalProperties: false,
-      required: ["priority", "also", "strengths", "hypotheses"],
+      required: ["priority", "second", "also", "strengths", "hypotheses"],
       properties: {
         priority: {
+          type: "object",
+          additionalProperties: false,
+          required: ["skill", "title", "time", "quote", "observed", "why_it_matters", "next_call", "drill", "check", "confidence", "reasons"],
+          properties: {
+            skill: { type: "string" },
+            title: { type: "string" },
+            time: { type: "number" },
+            quote: { type: "string" },
+            observed: { type: "string" },
+            why_it_matters: { type: "string" },
+            next_call: { type: "string" },
+            drill: { type: "string" },
+            check: { type: "string" },
+            confidence: { type: "string" },
+            reasons: { type: "string" },
+          },
+        },
+        second: {
           type: "object",
           additionalProperties: false,
           required: ["skill", "title", "time", "quote", "observed", "why_it_matters", "next_call", "drill", "check", "confidence", "reasons"],
@@ -1815,9 +1835,27 @@ async function grade(
     if (result.coach_now) {
       const tm = (v: unknown) => (typeof v === "number" && v >= 0 ? v : null);
       const st = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+      const need = (p: CoachNow["priority"] | null | undefined): CoachNow["priority"] | null => {
+        if (!p || !obj(p) || !st(p.title)) return null;
+        const c = low(String(p.confidence ?? ""));
+        return {
+          skill: st(p.skill),
+          title: st(p.title),
+          time: tm(p.time),
+          quote: st(p.quote),
+          observed: st(p.observed),
+          why_it_matters: st(p.why_it_matters),
+          next_call: st(p.next_call),
+          drill: st(p.drill),
+          check: st(p.check),
+          confidence: (c === "high" || c === "medium" ? c : "low") as CoachNow["priority"]["confidence"],
+          reasons: st(p.reasons),
+        };
+      };
       const p = result.coach_now.priority;
       const conf = low(String(p.confidence ?? ""));
       result.coach_now = {
+        second: need(result.coach_now.second),
         priority: {
           skill: st(p.skill),
           title: st(p.title),
@@ -1831,7 +1869,7 @@ async function grade(
           confidence: (conf === "high" || conf === "medium" ? conf : "low") as CoachNow["priority"]["confidence"],
           reasons: st(p.reasons),
         },
-        also: (Array.isArray(result.coach_now.also) ? result.coach_now.also : []).filter(obj).slice(0, 2).map((a) => ({ title: st(a.title), time: tm(a.time), note: st(a.note) })),
+        also: (Array.isArray(result.coach_now.also) ? result.coach_now.also : []).filter(obj).slice(0, result.coach_now.second?.title ? 1 : 2).map((a) => ({ title: st(a.title), time: tm(a.time), note: st(a.note) })),
         strengths: (Array.isArray(result.coach_now.strengths) ? result.coach_now.strengths : []).filter(obj).slice(0, 3).map((a) => ({ text: st(a.text), time: tm(a.time) })),
         hypotheses: (Array.isArray(result.coach_now.hypotheses) ? result.coach_now.hypotheses : []).filter((h) => typeof h === "string" && h.trim()).slice(0, 3),
       };

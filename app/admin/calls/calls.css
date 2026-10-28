@@ -604,3 +604,8 @@ li .fix-link { text-align: left; margin-top: 2px; }
   text-align: right;
   margin-top: 4px;
 }
+
+.coach-now .cn-two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 6px; }
+.coach-now .cn-need { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--ink); }
+.coach-now .cn-need.first { border-color: var(--live); }
+@media (max-width: 760px) { .coach-now .cn-two { grid-template-columns: 1fr; } }
