@@ -113,9 +113,8 @@ function Moment({ v, n, at }: { v: DayReview; n: number; at?: string }) {
   const t = secsOf(at);
   return (
     <Link href={`/admin/calls/${c.id}${t !== null ? `?t=${t}` : ""}`} className="dr-moment">
-      &#9654; #{n}
-      {c.time ? ` ${fmtTime(c.time)}` : ""}
-      {at ? ` \u00b7 ${at}` : ""}
+      &#9654; {c.time ? `${fmtTime(c.time)} call` : `Call #${n}`}
+      {at ? `, ${at} in` : ""}
     </Link>
   );
 }
@@ -219,9 +218,7 @@ function DayView({ v, shown, ctx }: { v: DayReview; shown: Shown; ctx: Ctx }) {
               return (
                 <tr key={c.n}>
                   <td style={{ whiteSpace: "nowrap" }}>
-                    <Link href={`/admin/calls/${c.id}`}>
-                      #{c.n} {c.time ? fmtTime(c.time) : ""}
-                    </Link>
+                    <Link href={`/admin/calls/${c.id}`}>{c.time ? fmtTime(c.time) : `Call #${c.n}`}</Link>
                   </td>
                   <td style={{ whiteSpace: "nowrap" }} className="muted">
                     {kind}
@@ -232,7 +229,9 @@ function DayView({ v, shown, ctx }: { v: DayReview; shown: Shown; ctx: Ctx }) {
             })}
           </tbody>
         </table>
-        <p className="hint" style={{ marginBottom: 0 }}>Voicemail scores rate the message left, not a sales call -- they aren&rsquo;t on the same scale as SLP.</p>
+        <p className="hint" style={{ marginBottom: 0 }}>
+          Times are when each call started. A clip&rsquo;s &ldquo;12:30 in&rdquo; is how far into that call. Voicemail scores rate the message left, not a sales call -- they aren&rsquo;t on the same scale as SLP.
+        </p>
       </section>
 
       <details className="fold">

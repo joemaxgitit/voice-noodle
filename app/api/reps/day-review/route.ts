@@ -120,7 +120,7 @@ export async function POST(request: Request) {
   ]);
   if (best && fixes.get(best.call.id)) bestText += `\n${fixes.get(best.call.id)}`;
   const lines = calls.map((c, i) => {
-    const head = `#${i + 1} ${c.call_time ? fmtTime(c.call_time) : ""} · ${clock(c.duration_secs)}`;
+    const head = `#${i + 1} · ${c.call_time ? `the ${fmtTime(c.call_time)} call` : "time unknown"} · ${clock(c.duration_secs)} long`;
     const qk = c.quick;
     if (qk?.kind === "voicemail") return `${head} · VOICEMAIL (score ${qk.score}/100; mood ${qk.mood}/10 ${qk.mood_word}): ${qk.said} -- ${qk.read}${qk.flag ? ` FLAG: ${qk.flag}` : ""}`;
     if (qk?.kind === "short") return `${head} · SHORT CALL, ${SHORT_LABEL[qk.what]} (mood ${qk.mood}/10 ${qk.mood_word}): opening ${qk.opening}; ended ${qk.ended_at != null ? `at ${clock(qk.ended_at)}` : ""} by ${qk.ended_by} -- ${qk.read}`;
@@ -145,10 +145,12 @@ Write the day review. The manager opens it to decide what to coach tomorrow, in 
 - story: 2-4 sentences on how the day went from first call to last -- did it start well and fade, never get going, fall apart after a bad call?
 - mood: the rep's energy and certainty through the day, from the voicemails, short calls and voice notes, with times. Say plainly if it dropped and when.
 - opening: what the short calls and hang-ups say about the opening (how far it gets, when clients drop). "" if there were none.
-- slipping: 0-3 OTHER places deals slipped today, beyond the two needs (don't repeat them), most important first. title; evidence (which calls, by #number and time); vs_best (what the rep did on their best call at that same point); fix (the one change for tomorrow).
-- per_call: one plain line per call worth a comment, by its #number (skip voicemails with nothing notable).
+- slipping: 0-3 OTHER places deals slipped today, beyond the two needs (don't repeat them), most important first. title; evidence (which calls, named by start time); vs_best (what the rep did on their best call at that same point); fix (the one change for tomorrow).
+- per_call: one plain line per call worth a comment, by its #number (skip voicemails with nothing notable). n is the #number; the line itself doesn't need to name the call.
 - coach_now: 1-3 things to work on before the next shift, each with a quick drill (a script section to practice, a mock client, or listening back to a moment of their best call).
 - questions_to_ask: 2-4 questions for the manager to ask the rep about today.
+How to refer to calls and moments, everywhere you write: name a call ONLY by the time it started, with AM/PM -- "the 3:58 PM call" -- never by its #number (the #number is only for the n fields). A moment inside a call is written as how far into the call it was -- "43 minutes in" or "43:34 into the call" -- never as a bare time like "43:34", which reads like a time of day.
+Say it once, one way: the headline, story and mood must agree with each other and with the needs. The story is about how the CALLS went (results); the mood is about the REP's energy and certainty. If those point different ways, say so plainly in one sentence ("she stayed warm and steady all day, but it didn't turn into enrollments") -- never call the day bad in one place and good in another without that link.
 Rules: plain English, no jargon, no shorthand like "n=", no client names. Never mention sales numbers, KPIs, closing ratio, rank or rotation. Be specific and kind -- a bad day happens; name the fix.`;
 
   const { data: row, error: ie } = await supabase
