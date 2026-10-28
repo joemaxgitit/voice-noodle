@@ -178,7 +178,9 @@ export async function uploadCall(supabase: SupabaseClient, file: File, meta: Upl
 
 /** Convoso file names: ..._<client number>_<caller id>_MMDDYYYY_HHMMSS.mp3 */
 export function convosoName(name: string): { phone: string | null; date: string | null; time: string | null } {
-  const m = name.match(/(?:_(\d{10,11}))?(?:_(\d{10,11}))?_(\d{2})(\d{2})(\d{4})_(\d{2})(\d{2})(\d{2})\.\w+$/);
+  // A copy saved twice gets " (1)" or " - Copy" before the extension: read past it.
+  const clean = name.replace(/\s*(\(\d+\)|-\s*copy(\s*\(\d+\))?)(?=\.\w+$)/i, "");
+  const m = clean.match(/(?:_(\d{10,11}))?(?:_(\d{10,11}))?_(\d{2})(\d{2})(\d{4})_(\d{2})(\d{2})(\d{2})\.\w+$/);
   if (!m) return { phone: null, date: null, time: null };
   const [, p1, , mm, dd, yyyy, hh, mi] = m;
   const okDate = +mm >= 1 && +mm <= 12 && +dd >= 1 && +dd <= 31;

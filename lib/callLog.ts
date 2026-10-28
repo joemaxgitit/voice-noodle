@@ -156,16 +156,23 @@ export function matchRecordings(files: { name: string; secs: number | null }[], 
   });
   // Recordings with nothing in the name (Vindico's "recording-<id>.mp3"): match on length, longest first.
   // A long call's length is close to unique in a day; short ones are often ambiguous and stay unmatched.
-  const order = parsed.map((p, k) => k).filter((k) => out[k] < 0 && !parsed[k].phone && parsed[k].secs).sort((a, b) => (parsed[b].secs ?? 0) - (parsed[a].secs ?? 0));
+  const order = parsed.map((p, k) => k).filter((k) => out[k] < 0 && parsed[k].secs).sort((a, b) => (parsed[b].secs ?? 0) - (parsed[a].secs ?? 0));
   for (const k of order) {
     const secs = parsed[k].secs!;
+    // The log's length includes ringing and connecting, so a recording runs a few seconds SHORTER than its row
+    // (Convoso: usually 5-15 seconds). Calls of 2 minutes or more are close to unique in a day: allow up to 25
+    // seconds short. Shorter calls only match almost exactly. If the file name has a time, stay near it.
+    const t = parsed[k].date && parsed[k].time ? minutesOf(parsed[k].date!, parsed[k].time!) - best * 60 : null;
     const cands = log
-      .map((r, i) => ({ i, d: r.secs === null ? Infinity : Math.abs(r.secs - secs) }))
-      .filter((x) => !taken.has(x.i) && x.d <= 3 && log[x.i].agent && (!seat || log[x.i].agent === seat))
+      .map((r, i) => ({ i, d: r.secs === null ? Infinity : r.secs - secs }))
+      .filter((x) => !taken.has(x.i) && log[x.i].agent && (!seat || log[x.i].agent === seat))
+      .filter((x) => (secs >= 120 ? x.d >= -3 && x.d <= 25 : Math.abs(x.d) <= 3))
+      .filter((x) => t === null || Math.abs(minutesOf(log[x.i].date, log[x.i].time) - t) <= 90)
+      .map((x) => ({ ...x, d: Math.abs(x.d) }))
       .sort((a, b) => a.d - b.d);
     if (!cands.length) continue;
-    // Two rows equally close: can't tell which -- leave it for the manager.
-    if (cands.length > 1 && cands[1].d === cands[0].d) continue;
+    // Two rows about as close: can't tell which -- leave it for the manager.
+    if (cands.length > 1 && cands[1].d - cands[0].d < 5) continue;
     taken.add(cands[0].i);
     out[k] = cands[0].i;
   }
