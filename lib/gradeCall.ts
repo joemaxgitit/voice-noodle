@@ -36,6 +36,8 @@ export const GRADER_VERSION = 15;
  * Version 15: "I need to think about it" is never just honored -- loop it (The
  * Loops after the pitch); only the same objection a second time is valid, then
  * book the callback. Every kind of call.
+ * Also in 15: the recording notice is only needed on the first contact, never
+ * on a follow-up / re-contact.
  */
 export const CURRENT_FROM = { renew: 15, other: 15 };
 
@@ -64,7 +66,7 @@ import {
 import { failCall, log, thinkingFor, type Supa } from "@/lib/callsServer";
 import { practiceNote, type PersonaSecret } from "@/lib/roleplay";
 import { rewriteRules } from "@/lib/gradingRulesServer";
-import { APPROVED_WORDING, STALL_RULE, isApprovedScoreTalk } from "@/lib/approvedWording";
+import { APPROVED_WORDING, RECORDING_RULE, STALL_RULE, isApprovedScoreTalk } from "@/lib/approvedWording";
 import { FOCUS_CHECKS, focusResult, type CoachFocus, type FocusCheckGrade } from "@/lib/coachFocus";
 
 /*
@@ -710,6 +712,7 @@ Add an entry for one of The Loops (an OBJECTION LOOP) only if the rep ran it, or
 evidence: a short quote from the transcript (20 words or fewer) showing what happened, or "" if missed/not reached. time: the seconds value of that line, or -1 if there is none.
 coaching: one specific, practical sentence for the rep. "" if nothing to improve.
 
+${RECORDING_RULE} On such a call, list the recording notice with status "not_reached" and evidence "Not needed -- given on the first contact".
 compliance: every required disclosure or confirmation question that appears in the script itself -- for example the call-recording notice, each compliance question the client must answer yes to, and statements about cancellation rights. One entry each, worded as the item. status "yes" if clearly done (for questions: asked and answered yes), "no" if the call reached that point and it was not done or the answer was not a clear yes, "unclear", or "not_reached".
 
 flags: anything a compliance reviewer should listen to:
@@ -1790,6 +1793,11 @@ async function grade(
     // Script lines have been through legal review: anything the grader still marked as in the script is not a flag.
     // Nor is promising a 700+ credit score (approved wording; only a guarantee is an issue).
     result.flags = result.flags.filter((f) => !f.in_script && !isApprovedScoreTalk(`${f.issue} ${f.quote}`));
+    // A follow-up (re-contact) doesn't need the recording notice again: never a miss or a flag there.
+    if (result.spotlights?.followup?.kind === "followup") {
+      for (const c of result.compliance) if (/record/i.test(c.item) && c.status === "no") { c.status = "not_reached"; c.evidence = "Not needed -- given on the first contact"; }
+      result.flags = result.flags.filter((f) => !/record(ing|ed)?\b.*(notice|disclos)|recording notice/i.test(`${f.issue} ${f.quote}`));
+    }
     // The loan ask: who named the amount.
     if (result.loan && !obj(result.loan)) delete result.loan;
     if (result.loan) {

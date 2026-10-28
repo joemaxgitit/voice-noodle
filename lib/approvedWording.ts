@@ -18,12 +18,17 @@ export const STALL_RULE = `"I need to think about it" (and any stall or put-off)
 - Only when the SAME objection comes back a second time, after the rep has looped it, is it a real, valid objection -- THEN the rep books a specific callback (a set day and time, with everyone who needs to be there). Booking a callback on the first "let me think about it" without looping is a miss, even if the time is specific.
 - Looping once and then booking when the same stall returns is exactly right -- never mark that down as giving up, and never coach the rep to keep pushing past a second, repeated objection.`;
 
+/** The call-recording notice: given once, on the first contact. */
+export const RECORDING_RULE = `The call-recording notice is given on the FIRST contact with a client. A re-contact or follow-up call with a client who was already spoken to (call 2 or later in the client journey, or a call that clearly picks up an earlier conversation) does NOT need it again: never mark it missing, flag it or coach it on those calls.`;
+
 /** The same, wrapped for a prompt that also reads earlier grades: those grades may still say otherwise. */
 export const WORDING_NOTE = `<approved_wording>
 ${APPROVED_WORDING}
 
 ${STALL_RULE}
-Some grades, flags and coaching notes below were written before this was made clear: they may call a 700+ credit score promise a problem, or praise or coach simply honoring "I need to think about it" and booking a callback without looping. Where they disagree with the above, the above wins: never repeat them, never coach on them, never list them as a slip or a pattern.
+
+${RECORDING_RULE}
+Some grades, flags and coaching notes below were written before this was made clear: they may call a 700+ credit score promise a problem, praise or coach simply honoring "I need to think about it" and booking a callback without looping, or call a missing recording notice on a follow-up call a problem. Where they disagree with the above, the above wins: never repeat them, never coach on them, never list them as a slip or a pattern.
 </approved_wording>
 
 `;
