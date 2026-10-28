@@ -12,10 +12,18 @@ export const APPROVED_WORDING = `Approved wording about results (from the sales 
 - Timelines: the program's results -- debt elimination, the credit score reaching 700+, every result -- happen within about 18-24 months, whatever the plan length (an 18-, 22- or 32-month plan alike); the minimum program is 18 months for exactly that reason. Reps don't have to give a timeframe at all. The best wording is "by the end of the program" or "a little before the program ends"; saying 18-24 months is also fine, for any result including credit. The ONLY timing issue is promising any result SOONER than 18 months (for example "your debts will be gone in 6 months" or "you'll be in the 700s within a year") -- flag that. Leaving the timeframe out is never an issue. Separately, "most accounts go to collections in about 4-6 months after non-payment" is true and fine -- that's not a result.
 - What starts within 24 hours of enrollment is true and fine to say: the coaching, the legal protection, the discounts and the credit builder account all kick in within 24 hours, and so does disputing the debts that are already in collections (debts not yet in collections are disputed once they get there). These are services starting, not results -- never flag them as a too-soon timeline.`;
 
+/** How this team handles "I need to think about it" (and any stall) -- the sales manager's rule. */
+export const STALL_RULE = `"I need to think about it" (and any stall or put-off) -- the sales manager's rule:
+- Never just honor it. The rep runs the loop first: before The Pitch, organic looping (acknowledge, find out what they want to think over, loop back to the pain, the benefit and certainty, ask again); after The Pitch, the right one of The Loops (Loop 1, 2, 3), then ask again.
+- Only when the SAME objection comes back a second time, after the rep has looped it, is it a real, valid objection -- THEN the rep books a specific callback (a set day and time, with everyone who needs to be there). Booking a callback on the first "let me think about it" without looping is a miss, even if the time is specific.
+- Looping once and then booking when the same stall returns is exactly right -- never mark that down as giving up, and never coach the rep to keep pushing past a second, repeated objection.`;
+
 /** The same, wrapped for a prompt that also reads earlier grades: those grades may still say otherwise. */
 export const WORDING_NOTE = `<approved_wording>
 ${APPROVED_WORDING}
-Some grades, flags and coaching notes below were written before this was made clear and may call a 700+ credit score promise a problem. Ignore those: never repeat them, never coach on them, never list them as a slip or a pattern.
+
+${STALL_RULE}
+Some grades, flags and coaching notes below were written before this was made clear: they may call a 700+ credit score promise a problem, or praise or coach simply honoring "I need to think about it" and booking a callback without looping. Where they disagree with the above, the above wins: never repeat them, never coach on them, never list them as a slip or a pattern.
 </approved_wording>
 
 `;
