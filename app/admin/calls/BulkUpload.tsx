@@ -7,7 +7,7 @@ import { clock } from "@/lib/calls";
 import { fmtTime, matchRecordings, readCallLog, repForAgent, type LogRow } from "@/lib/callLog";
 import { SHORT_SECS } from "@/lib/quick";
 import { estimateFor, okToSpend, transcribeEstimate, usd } from "@/lib/spend";
-import { audioSeconds, convosoName, uploadCall } from "@/lib/uploadCall";
+import { audioSeconds, convosoName, fileHash, uploadCall } from "@/lib/uploadCall";
 import { stayAwake } from "@/lib/idle";
 
 type Person = { id: string; full_name: string | null; kpi_name?: string | null };
@@ -24,6 +24,11 @@ type Item = {
   state: "waiting" | "working" | "done" | "dupe" | "error";
   note: string;
   callId?: string;
+  /** The recording's fingerprint, to spot the same call dropped in twice under different names. */
+  hash?: string | null;
+  /** Set when this looks like a second copy of another recording in the batch: it's left out unless kept. */
+  copyOf?: string | null;
+  keep?: boolean;
 };
 
 /**
@@ -88,6 +93,15 @@ export default function BulkUpload({
         const rep = row && row.dialer !== "vindico" ? repForAgent(row.agent, reps) : null;
         return { ...it, row, secs: row?.secs ?? it.fileSecs, date: row?.date ?? fromName.date, time: row?.time ?? fromName.time, repId: rep?.id ?? it.repId };
       })
+      .map((it, _k, all) => {
+        // The same call dropped in twice (one copy named with the number, one without): same bytes, or the same
+        // length to the second as a recording that did match. Left out unless kept.
+        if (it.row || it.keep) return { ...it, copyOf: null };
+        const twin = all.find(
+          (o) => o !== it && o.row && ((it.hash && o.hash && it.hash === o.hash) || (it.fileSecs !== null && o.fileSecs !== null && it.fileSecs >= 20 && Math.abs(it.fileSecs - o.fileSecs) <= 1))
+        );
+        return { ...it, copyOf: twin ? (twin.row?.time ? fmtTime(twin.row.time) : twin.file.name) : null };
+      })
       .sort((a, b) => `${a.date ?? ""}${a.time ?? ""}`.localeCompare(`${b.date ?? ""}${b.time ?? ""}`));
   };
 
@@ -115,7 +129,7 @@ export default function BulkUpload({
     for (const f of Array.from(fs)) {
       if (have.has(f.name)) continue;
       const fs_ = await audioSeconds(f);
-      added.push({ file: f, row: null, secs: fs_, fileSecs: fs_, date: null, time: null, repId: "", state: "waiting", note: "" });
+      added.push({ file: f, row: null, secs: fs_, fileSecs: fs_, date: null, time: null, repId: "", state: "waiting", note: "", hash: await fileHash(f) });
     }
     setItems((list) => rematch([...list.filter((i) => i.state !== "done"), ...added], log));
   }
@@ -131,7 +145,7 @@ export default function BulkUpload({
   // and only calls someone actually talked on (an agent, 20+ seconds).
   const agents = new Set(isVinLog ? (seat ? [seat] : []) : items.map((i) => i.row?.agent).filter(Boolean));
   const missing = (log ?? []).filter((r) => !matchedRows.has(r) && r.agent && (r.secs ?? 0) >= 20 && (isVinLog ? !!seat && r.agent === seat : !agents.size || agents.has(r.agent)));
-  const todo = items.filter((i) => i.state === "waiting" || i.state === "error");
+  const todo = items.filter((i) => (i.state === "waiting" || i.state === "error") && !i.copyOf);
   const repOf = (i: Item) => i.repId || fallbackRep;
   const isVindico = (name: string) => /^recording-[0-9a-f]{8}-[0-9a-f]{4}-/i.test(name);
   // Vindico recordings are renew leads -- always the Renew script (its campaign names say "Sales" either way).
@@ -278,7 +292,14 @@ export default function BulkUpload({
                   <td>{i.time ? fmtTime(i.time) : <span className="muted">--</span>}</td>
                   <td>{clock(i.secs) || "--"}</td>
                   <td>
-                    {i.row ? (
+                    {i.copyOf ? (
+                      <span className="muted">
+                        Same call as the {i.copyOf} recording -- left out{" "}
+                        <button className="link-btn" disabled={running} onClick={() => setItems((l) => rematch(l.map((x) => (x.file === i.file ? { ...x, keep: true } : x)), log))}>
+                          Keep it
+                        </button>
+                      </span>
+                    ) : i.row ? (
                       i.row.clientId ?? <span className="muted">…{i.row.phone.slice(-4)}</span>
                     ) : (
                       <span className="muted" title={i.file.name}>
