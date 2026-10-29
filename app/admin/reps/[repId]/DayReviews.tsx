@@ -164,6 +164,26 @@ function DayView({ v, shown, ctx }: { v: DayReview; shown: Shown; ctx: Ctx }) {
         </div>
       )}
 
+      {v.coach_now.length > 0 && (
+        <section className="card" style={{ marginTop: 16 }}>
+          <h3 className="rx-sec-title">Before the next shift</h3>
+          {v.coach_now.map((f, i) => (
+            <div key={i} className="rx-trend focus">
+              <b>
+                {i + 1}. {f.skill}
+              </b>
+              <p>
+                <b style={{ display: "inline" }}>Drill: </b>
+                {f.drill}
+              </p>
+              <button className="tr-sm rx-noprint" onClick={() => ctx.seedCard(`${f.skill}. Drill: ${f.drill}`, null)}>
+                Make a training card from this
+              </button>
+            </div>
+          ))}
+        </section>
+      )}
+
       {(v.needs?.length ?? 0) > 0 && (
         <>
           <h3 className="rx-sec-title" style={{ marginTop: 16 }}>
@@ -238,7 +258,7 @@ function DayView({ v, shown, ctx }: { v: DayReview; shown: Shown; ctx: Ctx }) {
       <details className="fold">
         <summary>
           <span className="fold-title">More from the day</span>
-          <span className="fold-preview">how the day went, mood, the opening, drills and questions</span>
+          <span className="fold-preview">how the day went, mood, the opening and questions</span>
         </summary>
         <div className="fold-body">
           {v.story && (
@@ -258,23 +278,7 @@ function DayView({ v, shown, ctx }: { v: DayReview; shown: Shown; ctx: Ctx }) {
             </section>
           </div>
           <div className="rx-grid2">
-            <section className="card">
-              <h3 className="rx-sec-title">Before the next shift</h3>
-              {v.coach_now.map((f, i) => (
-                <div key={i} className="rx-trend focus">
-                  <b>
-                    {i + 1}. {f.skill}
-                  </b>
-                  <p>
-                    <b style={{ display: "inline" }}>Drill: </b>
-                    {f.drill}
-                  </p>
-                  <button className="tr-sm rx-noprint" onClick={() => ctx.seedCard(`${f.skill}. Drill: ${f.drill}`, null)}>
-                    Make a training card from this
-                  </button>
-                </div>
-              ))}
-            </section>
+
             <section className="card">
               <h3 className="rx-sec-title">Questions to ask</h3>
               <ul className="plain-list">
