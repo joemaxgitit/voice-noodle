@@ -11,26 +11,10 @@ export const maxDuration = 300;
 const UPSTREAM_TIMEOUT_MS = 280_000;
 
 /*
-  Words ElevenLabs should expect to hear. Without these it writes "Bolton" as
-  "Bolden" and "Chirp" as "chirped". Adds ~20% to the transcription cost.
+  No keyterms (a word list ElevenLabs listens for): it adds ~23% to the
+  transcription bill, and the grader reads through a misspelled "Bolden" or
+  "chirped" fine. Redaction is unaffected.
 */
-const KEYTERMS = [
-  "Lionside",
-  "Lionside Financial",
-  "Bolton",
-  "Bolton Services Group",
-  "Slate",
-  "Chirp",
-  "SuperMoney",
-  "UA Law",
-  "Financial Wellness",
-  "Credit Counseling",
-  "Debt Settlement",
-  "Debt Consolidation",
-  "tradeline",
-  "charge off",
-  "routing number",
-];
 
 /*
   Redacted by ElevenLabs before the transcript ever reaches us. Names and
@@ -78,7 +62,7 @@ export async function POST(request: Request) {
 
   const { data: call, error } = await supabase
     .from("calls")
-    .select("id, status, updated_at, audio_path, duration_secs, rep_id, rep_name, profiles:rep_id(full_name)")
+    .select("id, status, updated_at, audio_path, duration_secs")
     .eq("id", callId)
     .single();
 
@@ -123,16 +107,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Could not start. ${claimErr.message}` }, { status: 500 });
   }
 
-  const repName =
-    (call as unknown as { profiles: { full_name: string | null } | null }).profiles?.full_name ||
-    (call.rep_name as string | null)?.trim() ||
-    null;
-
   const audioSecs = Number(call.duration_secs) || null;
 
   // Then straight on to grading (and translating a Spanish call) -- no page needs to be open.
   after(async () => {
-    await transcribe(supabase, callId, signed.signedUrl, key, repName || null, audioSecs, started);
+    await transcribe(supabase, callId, signed.signedUrl, key, audioSecs, started);
     await afterTranscribe(request, supabase, callId);
   });
 
@@ -144,7 +123,6 @@ export async function POST(request: Request) {
  *  does not say how list fields are encoded in multipart; see sendToScribe. */
 function scribeForm(
   sourceUrl: string,
-  repName: string | null,
   listStyle: "repeat" | "json" | "none"
 ): FormData {
   const form = new FormData();
@@ -156,17 +134,10 @@ function scribeForm(
   form.append("tag_audio_events", "false");
   form.append("timestamps_granularity", "word");
 
-  const terms = [...KEYTERMS];
-  for (const part of (repName || "").split(/\s+/)) {
-    if (part.length > 1 && /^[\p{L}'-]+$/u.test(part)) terms.push(part);
-  }
-
   if (listStyle === "repeat") {
-    for (const t of terms) form.append("keyterms", t);
     for (const t of REDACT_TYPES) form.append("entity_detection", t);
     for (const t of REDACT_TYPES) form.append("entity_redaction", t);
   } else if (listStyle === "json") {
-    form.append("keyterms", JSON.stringify(terms));
     form.append("entity_detection", JSON.stringify(REDACT_TYPES));
     form.append("entity_redaction", JSON.stringify(REDACT_TYPES));
   }
@@ -178,13 +149,12 @@ function scribeForm(
 async function sendToScribe(
   sourceUrl: string,
   key: string,
-  repName: string | null,
   deadline: number
 ): Promise<{ words: ScribeWord[]; language: string | null; note: string | null }> {
   /*
     Try the most likely encoding of the list fields first. If ElevenLabs
     rejects the request as malformed (422), try the other encoding, and as a
-    last resort send it without keyterms or redaction -- our own digit-run
+    last resort send it without redaction -- our own digit-run
     redaction still runs on the result, so nothing unredacted is stored.
   */
   const styles: ("repeat" | "json" | "none")[] = ["repeat", "json", "none"];
@@ -197,7 +167,7 @@ async function sendToScribe(
     const res = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
       method: "POST",
       headers: { "xi-api-key": key },
-      body: scribeForm(sourceUrl, repName, style),
+      body: scribeForm(sourceUrl, style),
       signal: AbortSignal.timeout(remaining),
     });
 
@@ -211,7 +181,7 @@ async function sendToScribe(
         language: data.language_code || null,
         note:
           style === "none"
-            ? "Transcribed without ElevenLabs redaction and keyterms (the request format was rejected). Digit-run redaction still applied."
+            ? "Transcribed without ElevenLabs redaction (the request format was rejected). Digit-run redaction still applied."
             : null,
       };
     }
@@ -247,7 +217,6 @@ async function transcribe(
   callId: string,
   sourceUrl: string,
   key: string,
-  repName: string | null,
   audioSecs: number | null,
   started: number
 ) {
@@ -255,7 +224,6 @@ async function transcribe(
     const { words, language, note } = await sendToScribe(
       sourceUrl,
       key,
-      repName,
       started + UPSTREAM_TIMEOUT_MS
     );
     log("transcribe", callId, started, `scribe returned ${words.length} words`);
