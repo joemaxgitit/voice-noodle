@@ -390,6 +390,18 @@ export default function Calls() {
     }
   }, [calls, supabase, loadCalls]);
 
+  // Failed because ElevenLabs was out of credits: try again once they're back. A rejected try costs nothing;
+  // 15 minutes between tries, three at a time.
+  useEffect(() => {
+    const due = calls.filter(
+      (c) => c.status === "failed" && c.audio_path && /out of credits/i.test(c.error || "") && Date.now() - new Date(c.updated_at).getTime() > 15 * 60_000 && !kicked.current.has(c.id),
+    );
+    for (const c of due.slice(0, 3)) {
+      kicked.current.add(c.id);
+      void startJob(supabase, "transcribe", c.id).then(() => void loadCalls());
+    }
+  }, [calls, supabase, loadCalls]);
+
   // Transcript ready -> start grading.
   useEffect(() => {
     for (const c of calls) {
