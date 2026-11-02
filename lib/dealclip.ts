@@ -15,9 +15,14 @@ export type ClipRow = { name: string; status: string; deals: number; ratio: numb
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const isWork = (d: Date) => d.getDay() !== 0 && d.getDay() !== 6;
+/** Company days off: never counted as work days. Add each one as YYYY-MM-DD. */
+export const DAYS_OFF = new Set<string>([
+  "2026-11-26", // Thanksgiving
+  "2026-11-27", // the day after
+]);
+const isWork = (d: Date) => d.getDay() !== 0 && d.getDay() !== 6 && !DAYS_OFF.has(isoOf(d));
 
-/** Mon-Fri work days in the month of `through`: how many are done (through that day) and how many in all. */
+/** Mon-Fri work days, less company days off, in the month of `through`: how many are done (through that day) and how many in all. */
 export function workDays(through: string): { gone: number; total: number } {
   const [y, m, day] = through.split("-").map(Number);
   let gone = 0;
