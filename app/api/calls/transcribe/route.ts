@@ -190,7 +190,9 @@ async function sendToScribe(
   const styles: ("repeat" | "json" | "none")[] = ["repeat", "json", "none"];
   let lastError = "";
 
-  for (const style of styles) {
+  let busyTries = 0;
+  for (let i = 0; i < styles.length; i++) {
+    const style = styles[i];
     const remaining = deadline - Date.now();
     if (remaining < 15_000) break;
 
@@ -218,6 +220,14 @@ async function sendToScribe(
 
     const raw = await res.text().catch(() => "");
     lastError = describeScribeError(res.status, raw);
+    // Too many at once (the plan's limit on calls running in parallel): wait for a slot and try the same
+    // request again, a few times, while there's still time left for a long call to finish after.
+    if (res.status === 429 && /concurrent/i.test(raw) && busyTries < 4 && deadline - Date.now() > 200_000) {
+      busyTries++;
+      await new Promise((r) => setTimeout(r, 15_000 + Math.random() * 10_000));
+      i--;
+      continue;
+    }
     if (res.status !== 422) break; // only a format complaint is worth a retry
     console.log(`[transcribe] 422 with ${style} lists: ${raw.slice(0, 300)}`);
   }

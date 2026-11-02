@@ -390,13 +390,19 @@ export default function Calls() {
     }
   }, [calls, supabase, loadCalls]);
 
-  // Failed because ElevenLabs was out of credits: try again once they're back. A rejected try costs nothing;
-  // 15 minutes between tries, three at a time.
+  // Failed because ElevenLabs was out of credits or had too many calls at once: try again. A rejected try
+  // costs nothing. At most three transcribing at a time (the plan allows 20 in parallel, shared with uploads);
+  // out-of-credits ones wait 15 minutes between tries.
   useEffect(() => {
+    const running = calls.filter((c) => c.status === "transcribing" && !isStuck(c.status, c.updated_at)).length;
     const due = calls.filter(
-      (c) => c.status === "failed" && c.audio_path && /out of credits/i.test(c.error || "") && Date.now() - new Date(c.updated_at).getTime() > 15 * 60_000 && !kicked.current.has(c.id),
+      (c) =>
+        c.status === "failed" &&
+        c.audio_path &&
+        !kicked.current.has(c.id) &&
+        ((/out of credits/i.test(c.error || "") && Date.now() - new Date(c.updated_at).getTime() > 15 * 60_000) || /too many concurrent/i.test(c.error || "")),
     );
-    for (const c of due.slice(0, 3)) {
+    for (const c of due.slice(0, Math.max(0, 3 - running))) {
       kicked.current.add(c.id);
       void startJob(supabase, "transcribe", c.id).then(() => void loadCalls());
     }
