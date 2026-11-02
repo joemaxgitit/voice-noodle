@@ -86,8 +86,15 @@ export default function DealClip() {
     setError("");
     try {
       const r = readClip(readSheet(f.name, new Uint8Array(await f.arrayBuffer())));
-      const t = throughDay(exportDateFromFile(f.name), exportHour(f.name));
-      const w = workDays(t);
+      const exported = exportDateFromFile(f.name);
+      let t = throughDay(exported, exportHour(f.name));
+      let w = workDays(t);
+      // Exported early in a new month (e.g. Monday the 2nd before noon): the work day before is last month,
+      // but the file is this month's, so it's the start of this month with no work days gone yet.
+      if (exported && t.slice(0, 7) !== exported.slice(0, 7)) {
+        t = `${exported.slice(0, 7)}-01`;
+        w = { gone: 0, total: workDays(t).total };
+      }
       setFile(f.name);
       setFileObj(f);
       setPending(true);
