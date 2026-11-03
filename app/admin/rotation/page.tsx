@@ -5,7 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { excelDate, readSheet, readSheetWithFills, type Cell } from "@/lib/xlsx";
 import { exportDateFromFile, matchRep } from "@/lib/kpi";
-import { fmtDay, fmtHours, isoOf, nextWorkDay, readDay, readTracker, RULES, score, type ColumnPick, type DayRow, type TrackerEntry } from "@/lib/rotation";
+import { fmtDay, fmtHours, isoOf, nextWorkDay, partHoursOf, partNeeded, partNote, readDay, readTracker, RULES, score, SHIFT_HOURS, type ColumnPick, type DayRow, type TrackerEntry } from "@/lib/rotation";
 import "../calls/calls.css";
 import "../reps/reps.css";
 
@@ -35,7 +35,7 @@ const lineOf = (d: Daily) => {
   if (d.status === "absent") return "Absent";
   if (d.points === null && d.calls === null && d.talk_hours === null) return d.source === "import" ? `From the old tracker${d.override_note ? `: ${d.override_note}` : ""}` : "No numbers";
   const bits = [d.points !== null ? `${d.points} pt` : "", d.talk_hours !== null ? fmtHours(d.talk_hours) : "", d.calls !== null ? `${d.calls} calls` : "", d.deals !== null ? dealsText(d.deals) : ""].filter(Boolean);
-  return bits.join(" · ") + (d.source === "import" && d.override_note ? ` (${d.override_note})` : "");
+  return bits.join(" · ") + (d.override_note && (d.source === "import" || partHoursOf(d.override_note) !== null) ? ` (${d.override_note})` : "");
 };
 const dealsText = (n: number | null) => `${n ?? 0} deal${n === 1 ? "" : "s"}`;
 
@@ -168,6 +168,7 @@ export default function Rotation() {
     try {
       const g = readSheet(f.name, new Uint8Array(await f.arrayBuffer()));
       setGrid(g);
+      setPart({});
       setFileName(f.name);
       parse(g);
       const exported = exportDateFromFile(f.name);
@@ -184,6 +185,25 @@ export default function Rotation() {
     setCols(next);
   }
 
+  // Part days set on this upload: hours worked, by name in the report. Points needed shrink to match.
+  const [part, setPart] = useState<Record<string, number>>({});
+  const view = useMemo(
+    () => rows.map((r) => (part[r.salesman] && r.scored.hint !== VINDICO && r.scored.hint !== ABSENT ? { ...r, scored: score(r.numbers, partNeeded(part[r.salesman])) } : r)),
+    [rows, part],
+  );
+  function askPart(r: DayRow) {
+    const was = part[r.salesman];
+    const v = prompt(`How many hours did ${r.salesman} work today? (A full shift is ${SHIFT_HOURS}. Leave blank for a full day.)`, was ? String(was) : "");
+    if (v === null) return;
+    const h = Number(v.replace(/[^\d.]/g, ""));
+    setPart((p) => {
+      const next = { ...p };
+      if (!v.trim() || !(h > 0) || h >= SHIFT_HOURS) delete next[r.salesman];
+      else next[r.salesman] = Math.round(h * 4) / 4;
+      return next;
+    });
+  }
+
   async function save() {
     if (!rows.length) return;
     const missing = !cols || cols.talk < 0 || cols.calls < 0 || cols.deals < 0;
@@ -193,7 +213,7 @@ export default function Rotation() {
     setBusy(true);
     setError("");
     const forDay = nextWorkDay(day);
-    const kept = rows.filter((r) => r.rep_id !== SKIP);
+    const kept = view.filter((r) => r.rep_id !== SKIP);
     const payload = kept.map((r) => ({
       org_id: orgId,
       rep_id: r.rep_id && r.rep_id !== SKIP ? r.rep_id : null,
@@ -206,7 +226,7 @@ export default function Rotation() {
       points: r.scored.points,
       made: r.scored.made,
       status: r.scored.hint === ABSENT ? "absent" : "worked",
-      override_note: r.scored.hint === VINDICO ? VINDICO : null,
+      override_note: r.scored.hint === VINDICO ? VINDICO : part[r.salesman] && r.scored.hint !== ABSENT ? partNote(part[r.salesman]) : null,
       source: "upload",
       updated_by: me,
       updated_at: new Date().toISOString(),
@@ -225,6 +245,7 @@ export default function Rotation() {
     setBusy(false);
     setGrid(null);
     setRows([]);
+    setPart({});
     setStatus(`Saved ${fmtDay(day, true)}: ${kept.filter((r) => r.scored.made).length} of ${kept.length} made rotation for ${fmtDay(forDay, true)}.`);
     await load();
   }
@@ -415,7 +436,7 @@ export default function Rotation() {
                 Day worked
                 <input type="date" value={day} onChange={(e) => setDay(e.target.value)} style={{ width: "auto" }} />
               </label>
-              <button onClick={() => (setGrid(null), setRows([]))}>Cancel</button>
+              <button onClick={() => (setGrid(null), setRows([]), setPart({}))}>Cancel</button>
               <button className="primary" disabled={busy} onClick={() => void save()}>
                 {busy ? "Saving…" : "Save the day"}
               </button>
@@ -454,7 +475,7 @@ export default function Rotation() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => (
+                {view.map((r, i) => (
                   <tr key={i} style={r.rep_id === SKIP ? { opacity: 0.5 } : undefined}>
                     <td>{r.salesman}</td>
                     <td>{repSelect(r.rep_id, (v) => setRows((rs) => rs.map((x, j) => (j === i ? { ...x, rep_id: v || null } : x))))}</td>
@@ -475,6 +496,15 @@ export default function Rotation() {
                       ) : (
                         <>
                           <span className="pill poor">Missed</span> <small className="muted">{r.scored.hint}</small>
+                        </>
+                      )}
+                      {r.scored.hint !== VINDICO && r.scored.hint !== ABSENT && (
+                        <>
+                          {" "}
+                          {part[r.salesman] && <small className="muted">{partNote(part[r.salesman])} · needs {partNeeded(part[r.salesman])} </small>}
+                          <button className="link-btn" onClick={() => askPart(r)} style={{ fontSize: 12 }}>
+                            {part[r.salesman] ? "change" : "part day?"}
+                          </button>
                         </>
                       )}
                     </td>
@@ -523,7 +553,7 @@ export default function Rotation() {
                   <b>{nameOf(d)}</b>
                   <small>
                     {lineOf(d)}
-                    {d.override_made !== null ? ` · override: ${d.override_note || "no reason"}` : ` · ${score(d).hint}`}
+                    {d.override_made !== null ? ` · override: ${d.override_note || "no reason"}` : ` · ${score(d, partHoursOf(d.override_note) !== null ? partNeeded(partHoursOf(d.override_note)!) : undefined).hint}`}
                   </small>
                 </button>
               ))}

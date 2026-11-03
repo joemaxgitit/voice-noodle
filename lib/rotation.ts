@@ -24,6 +24,16 @@ export const RULES = {
   needed: 1,
 };
 
+/** A full shift, in hours. A part day needs points in proportion: worked 4 of 8 hours, needs half of 1. */
+export const SHIFT_HOURS = 8;
+export const partNeeded = (hours: number) => Math.round(RULES.needed * Math.min(1, hours / SHIFT_HOURS) * 100) / 100;
+/** The note a part day is saved with, and read back from. */
+export const partNote = (hours: number) => `Part day: worked ${hours}h of ${SHIFT_HOURS}`;
+export const partHoursOf = (note: string | null | undefined): number | null => {
+  const m = (note || "").match(/^Part day: worked ([\d.]+)h/);
+  return m ? Number(m[1]) : null;
+};
+
 export type DayNumbers = { talk_hours: number | null; calls: number | null; deals: number | null };
 export type Scored = DayNumbers & { points: number; made: boolean; parts: { label: string; pts: number }[]; hint: string };
 
@@ -36,12 +46,12 @@ export function fmtHours(h: number | null | undefined): string {
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
 }
 
-export function score(n: DayNumbers): Scored {
+export function score(n: DayNumbers, needed: number = RULES.needed): Scored {
   const talk = tier(n.talk_hours, RULES.talk);
   const calls = tier(n.calls, RULES.calls);
   const deals = (n.deals ?? 0) * RULES.perDeal;
   const points = Math.round((talk + calls + deals) * 100) / 100;
-  const made = points >= RULES.needed;
+  const made = points >= needed;
   const parts = [
     { label: `${fmtHours(n.talk_hours)} talk`, pts: talk },
     { label: `${n.calls ?? 0} calls`, pts: calls },
@@ -50,7 +60,7 @@ export function score(n: DayNumbers): Scored {
   // What the cheapest next half point would have been.
   let hint = "";
   if (!made) {
-    const short = RULES.needed - points;
+    const short = needed - points;
     const ideas: string[] = [];
     const nextTalk = [...RULES.talk].reverse().find((l) => (n.talk_hours ?? 0) < l.at && l.pts - talk >= short);
     if (nextTalk) ideas.push(`${fmtHours(nextTalk.at - (n.talk_hours ?? 0))} more talk`);
