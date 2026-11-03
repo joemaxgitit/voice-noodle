@@ -128,11 +128,11 @@ export default function DealClip() {
   const left = Math.max(0, total - gone);
   const pct = (r: number | null) => (r === null ? "--" : `${Math.round(r * 100)}%`);
 
-  const COLS = ["Deals", "Closing Ratio", "Deal Clip", "Days Remaining", ...(showTwo ? ["If Two a Day"] : [])];
+  const COLS = ["Deals", "Closing Ratio", "Deal Clip", ...(showTwo ? ["If Two a Day"] : [])];
   // Reps on the Vindico auto dialer: their closing ratio isn't comparable, so it shows "V" instead.
   const onVin = (name: string) => vindico.some((p) => matchRep(name, [p]));
   const ratioOf = (r: (typeof ranked)[number]) => (onVin(r.name) ? "V" : pct(r.ratio));
-  const cells = (r: (typeof ranked)[number]) => [String(r.deals), ratioOf(r), round1(r.clip), String(left), ...(showTwo ? [round1(r.two)] : [])];
+  const cells = (r: (typeof ranked)[number]) => [String(r.deals), ratioOf(r), round1(r.clip), ...(showTwo ? [round1(r.two)] : [])];
 
   /** Copies the clip as a table (for chats that take one) with a plain-text version underneath for the rest. */
   async function copy() {
