@@ -119,8 +119,15 @@ a.rx-ev:hover { background: var(--ink-3); }
 .rot-name { display: grid; gap: 2px; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 8px 2px; color: inherit; font: inherit; cursor: pointer; }
 .rot-name:hover { background: var(--ink-3); }
 .rot-name small { color: var(--muted); font-size: 12px; }
-.rot-grid td, .rot-grid th { padding: 4px 3px; font-size: 12px; }
-.rot-cell { width: 26px; height: 26px; padding: 0; border-radius: 6px; font-size: 13px; font-weight: 700; border: 1px solid transparent; }
+.rot-grid { width: 100%; table-layout: fixed; }
+.rot-grid td, .rot-grid th { padding: 4px 1px; font-size: 12px; overflow: hidden; }
+.rot-grid th:first-child, .rot-grid td:first-child { width: 128px; overflow: hidden; text-overflow: ellipsis; }
+.rot-grid th:nth-child(2), .rot-grid td:nth-child(2) { width: 44px; }
+.rot-grid th { font-size: 10px; letter-spacing: 0; white-space: nowrap; }
+@media (max-width: 640px) { .rot-grid th:first-child, .rot-grid td:first-child { width: 84px; } }
+.rot-cell.wide { width: 100%; max-width: 40px; font-size: 11px; display: inline-grid; place-items: center; }
+.rot-cell.part { background: rgba(214, 170, 90, 0.16); color: var(--live); }
+.rot-cell { width: 100%; max-width: 26px; height: 26px; padding: 0; border-radius: 6px; font-size: 13px; font-weight: 700; border: 1px solid transparent; }
 .rot-cell.in { background: rgba(111, 191, 139, 0.18); color: var(--ok); }
 .rot-cell.out { background: rgba(224, 104, 95, 0.14); color: var(--bad); }
 .rot-cell.ov { border-color: var(--live); }

@@ -362,7 +362,28 @@ export default function Rotation() {
       byName.set(key, m);
     }
     const reps = [...byName.keys()].sort();
-    return { allDays, reps, byName };
+    // So it fits without scrolling sideways: up to 4 weeks shows each day, 8-16 weeks one column a week,
+    // a year one column a month.
+    const by: "day" | "week" | "month" = weeks <= 4 ? "day" : weeks <= 16 ? "week" : "month";
+    const keyOf = (d: string) => {
+      if (by === "day") return d;
+      if (by === "month") return d.slice(0, 7);
+      const x = new Date(`${d}T12:00:00`);
+      x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); // that week's Monday
+      return isoOf(x);
+    };
+    const cols: { key: string; label: string; days: string[] }[] = [];
+    for (const d of allDays) {
+      const k = keyOf(d);
+      let c = cols.find((y) => y.key === k);
+      if (!c) {
+        const at = new Date(`${by === "month" ? `${k}-15` : k}T12:00:00`);
+        c = { key: k, label: by === "month" ? at.toLocaleDateString(undefined, { month: "short" }) : at.toLocaleDateString(undefined, { month: "numeric", day: "numeric" }), days: [] };
+        cols.push(c);
+      }
+      c.days.push(d);
+    }
+    return { allDays, reps, byName, by, cols };
   }, [shown, weeks, people]);
 
   const repSelect = (value: string | null, onChange: (v: string) => void) => (
@@ -576,15 +597,15 @@ export default function Rotation() {
               ))}
             </div>
           </div>
-          <div className="rx-scroll">
+          <div>
             <table className="rx-table rot-grid">
               <thead>
                 <tr>
                   <th>Rep</th>
                   <th className="num">Made</th>
-                  {grid2.allDays.map((d) => (
-                    <th key={d} className="num" title={fmtDay(d, true)}>
-                      {new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { month: "numeric", day: "numeric" })}
+                  {grid2.cols.map((c) => (
+                    <th key={c.key} className="num" title={grid2.by === "day" ? fmtDay(c.key, true) : grid2.by === "week" ? `Week of ${fmtDay(c.key, true)}` : c.label}>
+                      {c.label}
                     </th>
                   ))}
                 </tr>
@@ -601,7 +622,30 @@ export default function Rotation() {
                       <td className="num" style={{ whiteSpace: "nowrap" }}>
                         {made}/{worked.length}
                       </td>
-                      {grid2.allDays.map((d) => {
+                      {grid2.by !== "day" &&
+                        grid2.cols.map((c) => {
+                          const recs = c.days.map((d) => m.get(d)).filter((x): x is Daily => !!x);
+                          const w = recs.filter((x) => x.status !== "absent");
+                          const n = w.filter(madeOf).length;
+                          if (!recs.length) return <td key={c.key} className="num muted">·</td>;
+                          if (!w.length)
+                            return (
+                              <td key={c.key} className="num">
+                                <span className="rot-cell ab" title={`${c.label}: absent`}>A</span>
+                              </td>
+                            );
+                          return (
+                            <td key={c.key} className="num">
+                              <span
+                                className={`rot-cell wide ${n === w.length ? "in" : n === 0 ? "out" : "part"}`}
+                                title={`${grid2.by === "week" ? `Week of ${fmtDay(c.key, true)}` : c.label}: made ${n} of ${w.length} days worked${recs.length > w.length ? `, absent ${recs.length - w.length}` : ""}. Pick 4 weeks to change a day.`}
+                              >
+                                {n}/{w.length}
+                              </span>
+                            </td>
+                          );
+                        })}
+                      {grid2.by === "day" && grid2.allDays.map((d) => {
                         const x = m.get(d);
                         if (!x) return <td key={d} className="num muted">·</td>;
                         if (x.status === "absent")
@@ -632,7 +676,7 @@ export default function Rotation() {
             </table>
           </div>
           <p className="hint" style={{ marginBottom: 0 }}>
-            ✓ made rotation, ✗ missed, A absent, · no numbers that day. A ring marks a manager override or a note from the old tracker.{canEdit ? " Tap any day to change it." : ""}
+            {grid2.by === "day" ? "✓ made rotation, ✗ missed, A absent, · no numbers that day." : `Each column is a ${grid2.by}: days made rotation of days worked. A all absent, · no numbers. Pick 2 or 4 weeks to see or change single days.`} A ring marks a manager override or a note from the old tracker.{canEdit ? " Tap any day to change it." : ""}
             {formerNames.length > 0 && (
               <>
                 {" "}
