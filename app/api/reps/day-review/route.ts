@@ -6,7 +6,7 @@ import { bestPool, pickBest } from "@/lib/bestCall";
 import { correctionsFor, digest, type DigestRow } from "@/lib/callDigest";
 import { clock } from "@/lib/calls";
 import { SHORT_LABEL, type Quick } from "@/lib/quick";
-import { fmtTime, type DayReview } from "@/lib/dayReview";
+import { daysBetween, fmtTime, niceDay, type DayReview } from "@/lib/dayReview";
 import { ROADMAP } from "@/lib/calls";
 
 export const runtime = "nodejs";
@@ -68,14 +68,17 @@ export async function POST(request: Request) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set on the server." }, { status: 500 });
 
-  const body = (await request.json().catch(() => ({}))) as { repId?: string; day?: string; focus?: string };
+  const body = (await request.json().catch(() => ({}))) as { repId?: string; day?: string; to?: string; focus?: string };
   const repId = String(body.repId || "");
   const day = String(body.day || "");
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(String(body.to || "")) && String(body.to) > day ? String(body.to) : day;
+  const multi = to !== day;
   if (!repId || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return NextResponse.json({ error: "Pick a rep and a day." }, { status: 400 });
+  if (daysBetween(day, to) > 31) return NextResponse.json({ error: "Pick a month or less." }, { status: 400 });
   const focus = (body.focus || "").trim().slice(0, 600) || null;
 
   const base = "id, client_label, call_date, created_at, duration_secs, slp_score, score, grade, retention, outcome, status, script_id, handoff";
-  const get = (cols: string) => supabase.from("calls").select(cols).eq("rep_id", repId).eq("call_date", day).neq("source", "roleplay");
+  const get = (cols: string) => supabase.from("calls").select(cols).eq("rep_id", repId).gte("call_date", day).lte("call_date", to).neq("source", "roleplay");
   let q = await get(`${base}, kind, quick, call_time`);
   if (q.error) q = await get(base);
   if (q.error) return NextResponse.json({ error: q.error.message }, { status: 500 });
@@ -83,12 +86,19 @@ export async function POST(request: Request) {
   const busy = all.filter((c) => !["graded", "read", "failed"].includes(c.status)).length;
   const calls = all
     .filter((c) => (c.status === "graded" && c.grade) || (c.status === "read" && c.quick))
-    .sort((a, b) => (a.call_time ?? a.created_at.slice(11, 16)).localeCompare(b.call_time ?? b.created_at.slice(11, 16)) || a.created_at.localeCompare(b.created_at));
-  if (!calls.length) return NextResponse.json({ error: busy ? `${busy} call${busy === 1 ? " is" : "s are"} still being transcribed or graded for that day -- try again in a few minutes.` : "No graded calls for that rep on that day." }, { status: 400 });
+    .sort(
+      (a, b) =>
+        String(a.call_date ?? "").localeCompare(String(b.call_date ?? "")) ||
+        (a.call_time ?? a.created_at.slice(11, 16)).localeCompare(b.call_time ?? b.created_at.slice(11, 16)) ||
+        a.created_at.localeCompare(b.created_at),
+    );
+  if (!calls.length) return NextResponse.json({ error: busy ? `${busy} call${busy === 1 ? " is" : "s are"} still being transcribed or graded for ${multi ? "those days" : "that day"} -- try again in a few minutes.` : `No graded calls for that rep on ${multi ? "those days" : "that day"}.` }, { status: 400 });
+  // Fulls carry a lot of detail; past this many the read gets too long to do well in one go.
+  if (calls.length > 120) return NextResponse.json({ error: `That's ${calls.length} calls -- too many to read together. Pick fewer days.` }, { status: 400 });
 
   const { data: rep } = await supabase.from("profiles").select("full_name").eq("id", repId).maybeSingle();
   const pool = await bestPool(supabase, repId);
-  const best = pickBest(pool.rows.filter((c) => c.call_date !== day), pool.renewScripts).find((p) => p.kind === "regular") ?? null;
+  const best = pickBest(pool.rows.filter((c) => !c.call_date || c.call_date < day || c.call_date > to), pool.renewScripts).find((p) => p.kind === "regular") ?? null;
   let bestText = "(no enrolled call on file yet to compare with)";
   if (best) {
     const { data: b } = await supabase.from("calls").select("id, client_label, call_date, duration_secs, slp_score, score, grade, retention, outcome").eq("id", best.call.id).maybeSingle();
@@ -98,7 +108,7 @@ export async function POST(request: Request) {
   const list: DayReview["calls"] = calls.map((c, i) => {
     const qk = c.quick;
     const what = qk ? (qk.kind === "voicemail" ? `voicemail ${qk.score}` : SHORT_LABEL[qk.what]) : `${c.outcome ?? "call"} · SLP ${c.slp_score ?? "--"}`;
-    return { n: i + 1, id: c.id, time: c.call_time ?? null, what, kind: qk ? qk.kind : "full", outcome: qk ? null : c.outcome, slp: qk ? null : c.slp_score };
+    return { n: i + 1, id: c.id, date: c.call_date ?? null, time: c.call_time ?? null, what, kind: qk ? qk.kind : "full", outcome: qk ? null : c.outcome, slp: qk ? null : c.slp_score };
   });
   // The day in numbers, from the calls themselves (no AI).
   const fulls = calls.filter((c) => !c.quick);
@@ -120,7 +130,8 @@ export async function POST(request: Request) {
   ]);
   if (best && fixes.get(best.call.id)) bestText += `\n${fixes.get(best.call.id)}`;
   const lines = calls.map((c, i) => {
-    const head = `#${i + 1} · ${c.call_time ? `the ${fmtTime(c.call_time)} call` : "time unknown"} · ${clock(c.duration_secs)} long`;
+    const when = c.call_time ? `the ${multi && c.call_date ? `${niceDay(c.call_date)} ` : ""}${fmtTime(c.call_time)} call` : multi && c.call_date ? `a ${niceDay(c.call_date)} call, time unknown` : "time unknown";
+    const head = `#${i + 1} · ${when} · ${clock(c.duration_secs)} long`;
     const qk = c.quick;
     if (qk?.kind === "voicemail") return `${head} · VOICEMAIL (score ${qk.score}/100; mood ${qk.mood}/10 ${qk.mood_word}): ${qk.said} -- ${qk.read}${qk.flag ? ` FLAG: ${qk.flag}` : ""}`;
     if (qk?.kind === "short") return `${head} · SHORT CALL, ${SHORT_LABEL[qk.what]} (mood ${qk.mood}/10 ${qk.mood_word}): opening ${qk.opening}; ended ${qk.ended_at != null ? `at ${clock(qk.ended_at)}` : ""} by ${qk.ended_by} -- ${qk.read}`;
@@ -130,7 +141,7 @@ export async function POST(request: Request) {
   const prompt = `A sales manager at a debt-relief company wants to understand one day for one sales rep -- usually a bad day, where the rep isn't closing. Below is every call the rep made that day that has been read, in order: full calls graded against the script and Jordan Belfort's Straight Line method, plus voicemails and short calls (under a minute and a half) that only got a quick read of what happened and the rep's mood. Then the rep's own best call, for comparison -- what they do on their best day.
 
 REP: ${rep?.full_name ?? "the rep"}
-DAY: ${day}${busy ? ` (${busy} more call${busy === 1 ? " is" : "s are"} still processing and not included)` : ""}
+${multi ? `DAYS: ${niceDay(day)} to ${niceDay(to)} (${new Set(calls.map((c) => c.call_date)).size} days with calls)` : `DAY: ${day}`}${busy ? ` (${busy} more call${busy === 1 ? " is" : "s are"} still processing and not included)` : ""}
 ${focus ? `THE MANAGER ASKED YOU TO LOOK ESPECIALLY AT: ${focus}\n` : ""}
 THE DAY'S CALLS, IN ORDER:
 ${lines.join("\n\n")}
@@ -138,7 +149,9 @@ ${lines.join("\n\n")}
 THE REP'S BEST CALL (their own model):
 ${bestText}
 
-Write the day review. The manager opens it to decide what to coach tomorrow, in ten seconds:
+${multi ? `THIS REVIEW COVERS SEVERAL DAYS. Wherever the instructions below say "today", "the day" or "tomorrow", read "these days" and "the next shift". Look for what repeats across the days -- a need that shows up on several days ranks above one bad call. The story is how the stretch went from the first day to the last (getting better, worse, or the same); the mood is how the rep's energy moved across the days. Name a call by its day and start time -- "Tuesday's 3:58 PM call".
+
+` : ""}Write the day review. The manager opens it to decide what to coach tomorrow, in ten seconds:
 - headline: one plain sentence on what went wrong (or right) today.
 - needs: the TWO most urgent coaching needs of the day, most urgent first -- the manager picks whichever fits the rep. Rank by how much it cost deals today, how many calls it showed up on, and how clearly the calls show it. Both must be clearly supported by today's calls: if only one is, return one. Never a need about a call that didn't reach that moment. Each: title (the behavior to change, as an instruction, a few words), why (one line: why it ranks here -- e.g. "showed up on 3 calls and cost the 46-minute deal"), moments (1-3 moments that show it, CLEAREST FIRST: n = the call's #number, at = the time inside that call as m:ss, taken from the times shown for that call above, note = what happened there in a few words; each call at most once), coach (what to coach: the replacement behavior, one or two sentences), drill (one practice exercise), check (what to listen for on the next calls to know it improved), ask (one question for the manager to ask the rep about it, in plain words). A voicemail need is about the message itself -- never coach putting the client's debts or pain on a voicemail.
 - strength: one thing the rep did well today worth protecting: text, n (the call's #number, or 0), at (m:ss inside that call, or "").
@@ -149,13 +162,13 @@ Write the day review. The manager opens it to decide what to coach tomorrow, in 
 - per_call: one plain line per call worth a comment, by its #number (skip voicemails with nothing notable). n is the #number; the line itself doesn't need to name the call.
 - coach_now: 1-3 things to work on before the next shift, each with a quick drill (a script section to practice, a mock client, or listening back to a moment of their best call).
 - questions_to_ask: 2-4 questions for the manager to ask the rep about today.
-How to refer to calls and moments, everywhere you write: name a call ONLY by the time it started, with AM/PM -- "the 3:58 PM call" -- never by its #number (the #number is only for the n fields). A moment inside a call is written as how far into the call it was -- "43 minutes in" or "43:34 into the call" -- never as a bare time like "43:34", which reads like a time of day.
+How to refer to calls and moments, everywhere you write: name a call ONLY by the time it started, with AM/PM -- "the 3:58 PM call"${multi ? ' (with its day: "Tuesday\'s 3:58 PM call")' : ""} -- never by its #number (the #number is only for the n fields). A moment inside a call is written as how far into the call it was -- "43 minutes in" or "43:34 into the call" -- never as a bare time like "43:34", which reads like a time of day.
 Say it once, one way: the headline, story and mood must agree with each other and with the needs. The story is about how the CALLS went (results); the mood is about the REP's energy and certainty. If those point different ways, say so plainly in one sentence ("she stayed warm and steady all day, but it didn't turn into enrollments") -- never call the day bad in one place and good in another without that link.
 Rules: plain English, no jargon, no shorthand like "n=", no client names. Never mention sales numbers, KPIs, closing ratio, rank or rotation. Be specific and kind -- a bad day happens; name the fix.`;
 
   const { data: row, error: ie } = await supabase
     .from("rep_reviews")
-    .insert({ org_id: orgId, rep_id: repId, created_by: userId, status: "working", period_from: day, period_to: day, focus, model: REVIEW_MODEL, inputs: { day_review: 1, calls: calls.filter((c) => !c.quick).length, quick: calls.filter((c) => c.quick).length } })
+    .insert({ org_id: orgId, rep_id: repId, created_by: userId, status: "working", period_from: day, period_to: to, focus, model: REVIEW_MODEL, inputs: { day_review: 1, calls: calls.filter((c) => !c.quick).length, quick: calls.filter((c) => c.quick).length } })
     .select("id")
     .single();
   if (ie || !row) return NextResponse.json({ error: ie?.message || "Couldn't start the review." }, { status: 500 });
@@ -179,6 +192,7 @@ Rules: plain English, no jargon, no shorthand like "n=", no client names. Never 
         score,
         graded_through,
         day,
+        ...(multi ? { to } : {}),
         calls: list,
       };
       await supabase.from("rep_reviews").update({ status: "done", review, finished_at: new Date().toISOString() }).eq("id", row.id);

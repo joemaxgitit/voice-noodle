@@ -4,7 +4,8 @@ import { printAs } from "@/lib/printAs";
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { okToSpend, usd, useEstimate } from "@/lib/spend";
-import { fmtTime, secsOf, type DayNeed, type DayReview } from "@/lib/dayReview";
+import { daysBetween, fmtTime, niceDay, niceRange, secsOf, type DayNeed, type DayReview } from "@/lib/dayReview";
+import RangeCalendar from "./RangeCalendar";
 import { OUTCOME_LABEL, type Outcome } from "@/lib/calls";
 import { FOCUS_CHECKS } from "@/lib/coachFocus";
 import type { Ctx } from "./page";
@@ -19,6 +20,28 @@ const nice = (day: string) => new Date(`${day}T12:00:00`).toLocaleDateString(und
 export default function DayReviews({ ctx }: { ctx: Ctx }) {
   const { supabase, repId, repName, history: h, reload } = ctx;
   const [day, setDay] = useState(localDay);
+  const [to, setTo] = useState(localDay);
+  const multi = to !== day;
+  // Calls per day for the calendar dots (last ~6 months).
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const since = new Date();
+    since.setDate(since.getDate() - 190);
+    void supabase
+      .from("calls")
+      .select("call_date")
+      .eq("rep_id", repId)
+      .neq("source", "roleplay")
+      .gte("call_date", since.toISOString().slice(0, 10))
+      .limit(5000)
+      .then(({ data }) => {
+        const m: Record<string, number> = {};
+        for (const r of (data || []) as { call_date: string | null }[]) if (r.call_date) m[r.call_date] = (m[r.call_date] ?? 0) + 1;
+        setCounts(m);
+      });
+  }, [supabase, repId]);
+  // Days in the pick that have calls -- a longer range reads more calls and costs more.
+  const callDays = Object.keys(counts).filter((d) => d >= day && d <= to).length;
   const [focus, setFocus] = useState("");
   const [error, setError] = useState("");
   const [starting, setStarting] = useState(false);
@@ -34,11 +57,11 @@ export default function DayReviews({ ctx }: { ctx: Ctx }) {
   }, [working, reload]);
 
   async function run() {
-    if (!(await okToSpend(supabase, est ?? 0, "This day review"))) return;
+    if (!(await okToSpend(supabase, (est ?? 0) * Math.max(1, callDays), multi ? "This review" : "This day review"))) return;
     setStarting(true);
     setError("");
     const token = (await supabase.auth.getSession()).data.session?.access_token;
-    const res = await fetch("/api/reps/day-review", { method: "POST", headers: { Authorization: `Bearer ${token ?? ""}`, "Content-Type": "application/json" }, body: JSON.stringify({ repId, day, focus }) }).catch((e) => e as Error);
+    const res = await fetch("/api/reps/day-review", { method: "POST", headers: { Authorization: `Bearer ${token ?? ""}`, "Content-Type": "application/json" }, body: JSON.stringify({ repId, day, to, focus }) }).catch((e) => e as Error);
     setStarting(false);
     if (res instanceof Error) return setError(res.message);
     if (!res.ok) return setError((await res.json().catch(() => ({})))?.error || `Request failed (${res.status}).`);
@@ -52,22 +75,32 @@ export default function DayReviews({ ctx }: { ctx: Ctx }) {
   return (
     <div style={{ marginBottom: 22 }}>
       <section className="card rx-noprint">
-        <h3 className="rx-sec-title">Review one day</h3>
+        <h3 className="rx-sec-title">Review a day or a stretch of days</h3>
         <p className="hint" style={{ marginTop: 0 }}>
-          For a bad day: every call {repName.split(" ")[0]} made on that date -- full calls, voicemails and short calls, in order -- read together against their own best call. Where the deals
+          For a bad day (or a bad week): every call {repName.split(" ")[0]} made on those dates -- full calls, voicemails and short calls, in order -- read together against their own best call. Where the deals
           slipped, how the opening held up, and their mood through the day. Upload the day&rsquo;s calls first (Call review &rarr; A whole day).
         </p>
         <div className="row" style={{ gap: 10, alignItems: "end", flexWrap: "wrap" }}>
-          <label className="field" style={{ margin: 0 }}>
-            <span className="label">Day</span>
-            <input type="date" value={day} max={localDay()} onChange={(e) => setDay(e.target.value)} style={{ width: "auto" }} />
-          </label>
+          <RangeCalendar
+            from={day}
+            to={to}
+            max={localDay()}
+            counts={counts}
+            onChange={(f, t) => {
+              setDay(f);
+              setTo(t);
+            }}
+          />
           <label className="field" style={{ margin: 0, flex: "1 1 240px" }}>
             <span className="label">Anything to look at especially? (optional)</span>
             <input value={focus} onChange={(e) => setFocus(e.target.value)} placeholder="e.g. why nothing closed after lunch" />
           </label>
           <button className="primary" disabled={starting || !!working || !day} onClick={() => void run()}>
-            {working ? "Reading the day…" : starting ? "Starting…" : `Review ${day === localDay() ? "today" : nice(day)}${est !== null ? ` · about ${usd(est)}` : ""}`}
+            {working
+              ? "Reading the calls…"
+              : starting
+                ? "Starting…"
+                : `Review ${multi ? `${niceRange(day, to)} (${daysBetween(day, to)} days)` : day === localDay() ? "today" : nice(day)}${est !== null ? ` · about ${usd(est * Math.max(1, callDays))}` : ""}`}
           </button>
         </div>
         {error && <div className="error">{error}</div>}
@@ -76,7 +109,7 @@ export default function DayReviews({ ctx }: { ctx: Ctx }) {
       {working && (
         <div className="card rx-working" style={{ marginTop: 14 }}>
           <span className="rx-spin" aria-hidden="true" />
-          <span>Reading {working.period_from ? nice(working.period_from) : "the day"}&rsquo;s calls against the best one. Takes a minute.</span>
+          <span>Reading {working.period_from ? niceRange(working.period_from, working.period_to) : "the day"}&rsquo;s calls against the best one. Takes a minute{working.period_to && working.period_to !== working.period_from ? " or two" : ""}.</span>
         </div>
       )}
 
@@ -93,7 +126,7 @@ export default function DayReviews({ ctx }: { ctx: Ctx }) {
             <tbody>
               {h.dayReviews.map((r) => (
                 <tr key={r.id} className="link" onClick={() => setOpenId(r.id)} style={r.id === shown?.id ? { background: "var(--ink-2)" } : undefined}>
-                  <td style={{ whiteSpace: "nowrap" }}>{r.period_from ? nice(r.period_from) : ""}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>{r.period_from ? niceRange(r.period_from, r.period_to) : ""}</td>
                   <td>{r.status === "done" ? (r.review as unknown as DayReview | null)?.headline : r.status === "working" ? "Reading…" : `Failed: ${r.error ?? ""}`}</td>
                 </tr>
               ))}
@@ -114,7 +147,8 @@ function Moment({ v, n, at }: { v: DayReview; n: number; at?: string }) {
   const t = secsOf(at);
   return (
     <Link href={`/admin/calls/${c.id}${t !== null ? `?t=${t}` : ""}`} className="dr-moment">
-      &#9654; {c.time ? `${fmtTime(c.time)} call` : `Call #${n}`}
+      &#9654; {v.to && c.date ? `${niceDay(c.date)} ` : ""}
+      {c.time ? `${fmtTime(c.time)} call` : `Call #${n}`}
       {at ? `, ${at} in` : ""}
     </Link>
   );
@@ -142,7 +176,7 @@ function DayView({ v, shown, ctx }: { v: DayReview; shown: Shown; ctx: Ctx }) {
   return (
     <div className="rx-review dr-print" style={{ marginTop: 14 }}>
       <div className="rx-verdict">
-        <span className="badge mixed">{nice(v.day)}</span>
+        <span className="badge mixed">{niceRange(v.day, v.to)}</span>
         <div>
           <div className="headline">{v.headline}</div>
           {shown.focus ? <p className="hint">Focus: {shown.focus}</p> : null}
@@ -239,7 +273,10 @@ function DayView({ v, shown, ctx }: { v: DayReview; shown: Shown; ctx: Ctx }) {
               return (
                 <tr key={c.n}>
                   <td style={{ whiteSpace: "nowrap" }}>
-                    <Link href={`/admin/calls/${c.id}`}>{c.time ? fmtTime(c.time) : `Call #${c.n}`}</Link>
+                    <Link href={`/admin/calls/${c.id}`}>
+                      {v.to && c.date ? `${niceDay(c.date)} · ` : ""}
+                      {c.time ? fmtTime(c.time) : `Call #${c.n}`}
+                    </Link>
                   </td>
                   <td style={{ whiteSpace: "nowrap" }} className="muted">
                     {kind}
@@ -295,7 +332,7 @@ function DayView({ v, shown, ctx }: { v: DayReview; shown: Shown; ctx: Ctx }) {
           onClick={() => {
             // Paper gets this one review, opened up -- nothing else on the page.
             document.querySelectorAll<HTMLDetailsElement>(".dr-print details").forEach((d) => (d.open = true));
-            printAs(`Day review - ${ctx.repName} - ${v.day}`);
+            printAs(`Day review - ${ctx.repName} - ${v.day}${v.to ? ` to ${v.to}` : ""}`);
           }}
         >
           Print this day review

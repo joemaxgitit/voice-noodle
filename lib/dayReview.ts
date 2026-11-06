@@ -2,6 +2,8 @@
 
 export type DayReview = {
   day: string;
+  /** The last day, when the review covers a range of days. */
+  to?: string;
   headline: string;
   story: string;
   mood: string;
@@ -10,7 +12,7 @@ export type DayReview = {
   per_call: { n: number; line: string }[];
   coach_now: { skill: string; drill: string }[];
   questions_to_ask: string[];
-  calls: { n: number; id: string; time: string | null; what: string; kind?: "full" | "voicemail" | "short"; outcome?: string | null; slp?: number | null }[];
+  calls: { n: number; id: string; date?: string | null; time: string | null; what: string; kind?: "full" | "voicemail" | "short"; outcome?: string | null; slp?: number | null }[];
   /** v2: the top 2 coaching needs of the day, each with its clearest moments (best first). */
   needs?: DayNeed[];
   /** v2: one strength to protect. */
@@ -45,3 +47,10 @@ export const fmtTime = (hhmm: string | null) => {
   const [h, m] = hhmm.split(":").map(Number);
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
 };
+
+/** "Fri, Nov 6" */
+export const niceDay = (day: string) => new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+/** "Fri, Nov 6" or "Mon, Nov 2 – Fri, Nov 6" */
+export const niceRange = (from: string, to?: string | null) => (to && to !== from ? `${niceDay(from)} – ${niceDay(to)}` : niceDay(from));
+/** Days from a to b, inclusive. */
+export const daysBetween = (a: string, b: string) => Math.round((new Date(`${b}T12:00:00`).getTime() - new Date(`${a}T12:00:00`).getTime()) / 86400000) + 1;
