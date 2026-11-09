@@ -206,7 +206,7 @@ export default function ManagerHome() {
           )}
         </section>
 
-        <section className="card">
+        <section className="card hm-week">
           <h3 className="rx-sec-title">{isThisWeek ? "This week" : "Next week"} · {fmtWeek(week)}</h3>
           {days.map((d) => {
             const dow = weekdayOf(d);
@@ -217,7 +217,7 @@ export default function ManagerHome() {
             const meet = on.meeting && dow === 4;
             if (!evs.length && !myc && !meet) return null;
             return (
-              <div key={d} style={{ padding: "8px 0", borderBottom: "1px solid var(--line)", ...(d === today() ? { background: "var(--live-dim)", margin: "0 -8px", padding: "8px" } : {}) }}>
+              <div key={d} style={{ padding: "8px 0", borderBottom: "1px solid var(--line)", ...(d === today() ? { background: "var(--ink-2)", borderLeft: "3px solid var(--live)", margin: "0 -8px", padding: "8px 8px 8px 5px" } : {}) }}>
                 <b style={{ fontSize: 13 }}>{fmtDate(d)}</b>
                 {meet && (
                   <div>

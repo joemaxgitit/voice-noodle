@@ -1582,3 +1582,9 @@ select {
   text-transform: uppercase;
   color: var(--live);
 }
+
+/* Home: this week's schedule -- readable links (not browser purple), copper on hover. */
+.hm-week a { color: var(--text, inherit); text-decoration: none; font-weight: 600; }
+.hm-week a:visited { color: var(--text, inherit); }
+.hm-week a:hover { color: var(--live); text-decoration: underline; }
+.hm-week small.muted { color: var(--muted); opacity: 1; }
