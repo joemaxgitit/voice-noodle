@@ -91,6 +91,10 @@ function dateLabel(iso: string | null): string {
  * Call monitoring: upload a recording downloaded from the dialer, and it is
  * transcribed (with banking numbers redacted) and graded against the script.
  */
+/** Columns the calls list reads. */
+const CALL_COLS =
+  "id, rep_id, rep_name, client_label, call_date, call_time, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, gver:grade->>grader_version, gfail:grade->>regrade_failed, cut:grade->ended->>early, cutwhy:grade->ended->>why, retention, redaction_count, audio_path, audio_redact_state, error, script_id, updated_at, created_at, cost, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)";
+
 export default function Calls() {
   const supabase = createClient();
   const router = useRouter();
@@ -199,12 +203,29 @@ export default function Calls() {
   // Voicemail scores and short-call reads (needs supabase/quick_reads.sql; nothing shows before it).
   const [quick, setQuick] = useState<Map<string, Quick>>(new Map());
   const [bulk, setBulk] = useState(false);
+  // "Best graded ever": the top Straight Line scores across every call, not just the newest 300.
+  const [best, setBest] = useState<CallRow[] | null>(null);
+  useEffect(() => {
+    if (filterOutcome !== "best" || best) return;
+    void supabase
+      .from("calls")
+      .select(CALL_COLS)
+      .neq("source", "roleplay")
+      .eq("status", "graded")
+      .not("slp_score", "is", null)
+      .order("slp_score", { ascending: false })
+      .order("score", { ascending: false, nullsFirst: false })
+      .limit(300)
+      .then(({ data, error }) => {
+        if (error) setError(error.message);
+        setBest((data || []) as unknown as CallRow[]);
+      });
+  }, [filterOutcome, best, supabase]);
+
   const loadCalls = useCallback(async () => {
     const { data, error } = await supabase
       .from("calls")
-      .select(
-        "id, rep_id, rep_name, client_label, call_date, call_time, duration_secs, status, score, slp_score, outcome, outcome_manual, close_quality:grade->>close_quality, gver:grade->>grader_version, gfail:grade->>regrade_failed, cut:grade->ended->>early, cutwhy:grade->ended->>why, retention, redaction_count, audio_path, audio_redact_state, error, script_id, updated_at, created_at, cost, translation_status:translation->>status, translation_usd:translation->usd, profiles:rep_id(full_name)"
-      )
+      .select(CALL_COLS)
       // Practice calls with a mock client have their own page.
       .neq("source", "roleplay")
       .order("created_at", { ascending: false })
@@ -516,7 +537,9 @@ export default function Calls() {
 
   const shown = useMemo(
     () =>
-      calls.filter(
+      filterOutcome === "best"
+        ? (best || []).filter((c) => !filterRep || repKeyOf(c) === filterRep)
+        : calls.filter(
         (c) =>
           (!filterRep || repKeyOf(c) === filterRep) &&
           (filterOutcome === "quick" ? c.status === "read" : filterOutcome === "" ? c.status !== "read" : true) &&
@@ -529,7 +552,7 @@ export default function Calls() {
                 ? c.retention === filterOutcome
                 : outcomeOf(c) === filterOutcome))
       ),
-    [calls, filterRep, filterOutcome]
+    [calls, best, filterRep, filterOutcome]
   );
 
   const repsWithCalls = useMemo(() => {
@@ -760,6 +783,7 @@ export default function Calls() {
           aria-label="Filter by outcome"
         >
           <option value="">All full calls</option>
+          <option value="best">Best graded ever (top Straight Line)</option>
           {(Object.keys(OUTCOME_LABEL) as Outcome[]).map((o) => (
             <option key={o} value={o}>
               {OUTCOME_LABEL[o]}
