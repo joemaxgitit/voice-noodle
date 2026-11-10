@@ -394,7 +394,7 @@ function CoachNowCard({
           <ul className="cn-list">
             {cn.strengths.map((a, i) => (
               <li key={i}>
-                {time(a.time)} {a.text}
+                {typeof a === "string" ? a : <>{time(a.time)} {textOf(a.text)}</>}
               </li>
             ))}
           </ul>
@@ -406,7 +406,7 @@ function CoachNowCard({
           <ul className="cn-list">
             {cn.hypotheses.map((h, i) => (
               <li key={i} className="muted">
-                {h}
+                {textOf(h)}
               </li>
             ))}
           </ul>
@@ -414,6 +414,22 @@ function CoachNowCard({
       )}
     </section>
   );
+}
+
+/** Grader text that's sometimes a plain line and sometimes { text, time } (or another shape) -- always a string to show. */
+function textOf(x: unknown): string {
+  if (x == null) return "";
+  if (typeof x === "string" || typeof x === "number") return String(x);
+  if (typeof x === "object") {
+    const o = x as Record<string, unknown>;
+    const t = o.text ?? o.title ?? o.note ?? o.line;
+    if (typeof t === "string") {
+      const secs = typeof o.time === "number" ? o.time : null;
+      return secs != null && !o.title ? `${Math.floor(secs / 60)}:${String(Math.round(secs % 60)).padStart(2, "0")} -- ${t}` : t;
+    }
+    return Object.values(o).filter((v) => typeof v === "string").join(" -- ");
+  }
+  return String(x);
 }
 
 export default function CallDetail() {
@@ -1600,7 +1616,7 @@ export default function CallDetail() {
               <ol className="plain-list">
                 {g.coaching_priorities.map((c, i) => (
                   <li key={i}>
-                    {c}
+                    {textOf(c)}
                     <Fix ctx={fixCtx} k={fx(`coach:${i}`)} kind="Coaching" label={`Coach on #${i + 1}`} original={c} />
                   </li>
                 ))}
@@ -1616,7 +1632,7 @@ export default function CallDetail() {
               <>
               <ul className="plain-list">
                 {g.strengths.map((c, i) => (
-                  <li key={i}>{c}</li>
+                  <li key={i}>{textOf(c)}</li>
                 ))}
               </ul>
               </>

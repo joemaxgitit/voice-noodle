@@ -1729,6 +1729,10 @@ async function grade(
     result.compliance ||= [];
     result.flags ||= [];
     result.strengths ||= [];
+    // These are plain lines; the model sometimes copies Coach Now's { text, time } shape into them.
+    const line = (x: unknown) => (typeof x === "string" ? x : x && typeof x === "object" ? String((x as { text?: unknown; title?: unknown }).text ?? (x as { title?: unknown }).title ?? "") : String(x ?? ""));
+    result.strengths = (result.strengths as unknown[]).map(line).filter(Boolean);
+    if (Array.isArray(result.coaching_priorities)) result.coaching_priorities = (result.coaching_priorities as unknown[]).map(line).filter(Boolean);
     result.coaching_priorities ||= [];
     result.speaker_roles ||= [];
 
