@@ -421,7 +421,7 @@ export default function Calls() {
         c.status === "failed" &&
         c.audio_path &&
         !kicked.current.has(c.id) &&
-        ((/out of credits/i.test(c.error || "") && Date.now() - new Date(c.updated_at).getTime() > 15 * 60_000) || /too many concurrent/i.test(c.error || "")),
+        ((/out of credits/i.test(c.error || "") && Date.now() - new Date(c.updated_at).getTime() > 15 * 60_000) || /too many concurrent/i.test(c.error || "") || (/^Transcription failed \(5\d\d\)/.test(c.error || "") && Date.now() - new Date(c.updated_at).getTime() > 5 * 60_000)),
     );
     for (const c of due.slice(0, Math.max(0, 3 - running))) {
       kicked.current.add(c.id);
