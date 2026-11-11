@@ -12,6 +12,7 @@ import { usePresence } from "@/lib/usePresence";
 import { tonesForPhrases, type ToneSpan } from "@/lib/tones";
 import { readLang, setLang as rememberLang, type Lang } from "@/lib/lang";
 import { copyFor } from "@/lib/copy";
+import WholeTake from "./WholeTake";
 
 type Recording = {
   narrator_id: string;
@@ -77,7 +78,6 @@ function ScriptView() {
   const [narratorId, setNarratorId] = useState<string | null>(null);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [byWord, setByWord] = useState(false);
   const [narrators, setNarrators] = useState<Narrator[]>([]);
   // A single-segment replay stops at the end instead of running on.
   const [single, setSingle] = useState(false);
@@ -268,7 +268,7 @@ function ScriptView() {
     aligned.
   */
   const units: Phrase[] =
-    byWord && activeTake?.words?.length
+    activeTake?.words?.length
       ? activeTake.words
       : activeTake?.timings?.length
         ? activeTake.timings
@@ -488,6 +488,7 @@ function ScriptView() {
 
       <h1>{title}</h1>
       <p className="muted no-print">{c.fullScriptBlurb}</p>
+      <WholeTake supabase={supabase} scriptId={params.scriptId} />
 
       {hasSpanish && (
         <div className="lang-switch no-print">
@@ -544,15 +545,6 @@ function ScriptView() {
           </div>
         )}
 
-        {/* Same control as the training card, on purpose. */}
-        <div className="unit-switch" role="group" aria-label={c.highlightBy}>
-          <button aria-pressed={!byWord} onClick={() => setByWord(false)}>
-            {c.phrase}
-          </button>
-          <button aria-pressed={byWord} onClick={() => setByWord(true)}>
-            {c.word}
-          </button>
-        </div>
         {src && (
           <audio ref={setAudioEl} src={src} preload="auto" className="read-audio" />
         )}

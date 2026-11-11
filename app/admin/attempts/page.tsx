@@ -1,5 +1,6 @@
 "use client";
 
+import WholeTakes from "./WholeTakes";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { paceNote, type Scores } from "@/lib/score";
@@ -156,6 +157,8 @@ export default function Attempts() {
       </p>
 
       {error && <div className="error">{error}</div>}
+
+      <WholeTakes supabase={supabase} />
 
       {rows.length === 0 && (
         <p className="muted" style={{ marginTop: 24 }}>
