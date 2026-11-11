@@ -75,6 +75,14 @@ export default function Train() {
 
   const segment = segments[index];
 
+  // Remember the line they're on, so leaving and coming back lands here.
+  useEffect(() => {
+    if (!segment) return;
+    try {
+      localStorage.setItem(`vn_place_${params.moduleId}`, segment.id);
+    } catch {}
+  }, [segment, params.moduleId]);
+
   // Named sections within this call, in script order.
   const sections = Array.from(
     new Set(segments.map((sg) => sg.section).filter(Boolean) as string[])
@@ -221,11 +229,22 @@ export default function Train() {
           );
         }
       }
-      setSegments(
-        ((segRes.data || []) as unknown as Segment[]).sort(
-          (a, b) => a.sort_order - b.sort_order
-        )
+      const sorted = ((segRes.data || []) as unknown as Segment[]).sort(
+        (a, b) => a.sort_order - b.sort_order
       );
+      setSegments(sorted);
+      // Pick up where they left off: the line they were last on (this device),
+      // else the first line they haven't finished yet.
+      let resume = -1;
+      try {
+        const saved = localStorage.getItem(`vn_place_${params.moduleId}`);
+        if (saved) resume = sorted.findIndex((sg) => sg.id === saved);
+      } catch {}
+      if (resume < 0) {
+        const finished = new Set((prog || []).map((r) => r.segment_id));
+        resume = sorted.findIndex((sg) => !finished.has(sg.id));
+      }
+      setIndex(resume > 0 ? resume : 0);
       setLoading(false);
     })();
 
