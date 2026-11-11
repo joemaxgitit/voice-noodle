@@ -57,7 +57,6 @@ export default function Train() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [loop, setLoop] = useState(false);
   const [speed, setSpeed] = useState(1);
-  const [byWord, setByWord] = useState(false);
   const [narrators, setNarrators] = useState<Narrator[]>([]);
   const [narratorId, setNarratorId] = useState<string | null>(null);
   /*
@@ -104,9 +103,8 @@ export default function Train() {
     inSync && chosen?.timings?.length ? chosen.timings : [];
   const words: Phrase[] = inSync && chosen?.words?.length ? chosen.words : [];
 
-  // Phrase is the default: thought groups are what carry tone. Word-level is
-  // available for reps who want to drill exact pronunciation.
-  const units: Phrase[] = byWord && words.length ? words : phrases;
+  // Always word by word; phrases only when a recording has no word timings yet.
+  const units: Phrase[] = words.length ? words : phrases;
 
   const { audio, setAudioEl, time } = useKaraoke(units);
 
@@ -483,21 +481,6 @@ export default function Train() {
             <button onClick={() => setSpeed(speed === 1 ? 0.75 : 1)}>
               {speed}&times; {c.speed}
             </button>
-            {/*
-              Two positions, the live one lit. Phrase is on the left because
-              it is the default and the one that teaches delivery; word is the
-              drill-down.
-            */}
-            {words.length > 0 && (
-              <div className="unit-switch" role="group" aria-label={c.highlightBy}>
-                <button aria-pressed={!byWord} onClick={() => setByWord(false)}>
-                  {c.phrase}
-                </button>
-                <button aria-pressed={byWord} onClick={() => setByWord(true)}>
-                  {c.word}
-                </button>
-              </div>
-            )}
           </div>
 
           {/*
