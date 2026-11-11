@@ -1,3 +1,4 @@
+import { paceNotes, paceOf } from "./pace";
 import { jsonrepair } from "jsonrepair";
 import { clockify, hardshipScoreOf, lineScoreOf, type CoachNow, type Ended, type LoanAsk, type Objection } from "@/lib/calls";
 
@@ -367,6 +368,7 @@ export async function prepareGrade(
         cost: (call.cost as CallCost | null) || {},
         dry,
         focusId: focus?.id ?? null,
+        transcript,
       });
     },
   };
@@ -818,6 +820,7 @@ What each tone sounds like, measured that way (from the Tone Key):
 - CALM: reassuring and steady -- slow, even, little movement. Flat is RIGHT here; never call CALM monotone.
 - PREACHER: Absolute Certainty with annoyance and the spirit of the pulpit -- louder and more animated.
 The Tone Key's own rule: never sit in one tone for long; the movement between tones is what clients respond to. Long flat stretches outside CALM, rushing (well above that rep's usual pace) through key moments, and statements that end rising (sounding unsure) all count against tonality.
+The <pace> block (measured from word timings) lists where each speaker sped up 20%+ above their own usual pace. A rep's sped-up stretch during the price or payment, the three options, an objection, the loan turndown or the close is rushing: count it against tonality, name it in tonality.summary with its time, and when it cost the moment (the client got confused, went quiet, or pushed back right after), it can be a Coach Now need with that time. A sped-up stretch in small talk or easy logistics is fine -- don't coach it.
 If there are no measurements for this call, judge tonality from wording only and say so in tonality.summary.
 
 tonality: summary: two sentences on how the rep used tone and variety across the call. flat_stretches: each long flat stretch from the summary that matters, with start and end in seconds and a note on what was being said (empty if none). tone_checks: up to 8 of the most telling moments where the script marks a tone -- time, tone (the marker, for example "I CARE"), expected (what it should sound like, a few words), heard (what the measurements show, a few words), match ("yes", "partial" or "no").
@@ -836,9 +839,10 @@ This call is in Spanish and is graded against the Spanish script above. Read the
       : "";
 
   const notes = voiceNotes(voice, t);
-  const voiceSummary = notes.header
-    ? `\n<voice_summary>\n${notes.header}\n</voice_summary>\n`
-    : "\nNo voice measurements were taken for this call.\n";
+  const pace = paceNotes(t);
+  const voiceSummary =
+    (notes.header ? `\n<voice_summary>\n${notes.header}\n</voice_summary>\n` : "\nNo voice measurements were taken for this call.\n") +
+    (pace ? `<pace>\n${pace}\n</pace>\n` : "");
 
   const perCall = `The rep on this call is ${repName}.
 ${practice}${spanish}${voiceSummary}
@@ -1639,7 +1643,7 @@ async function grade(
   blocks: { type: string; text: string }[],
   key: string,
   started: number,
-  prior: { naming: Naming; previous: GradeVersion | null; history: GradeVersion[]; cost: CallCost; dry?: boolean; focusId?: string | null }
+  prior: { naming: Naming; previous: GradeVersion | null; history: GradeVersion[]; cost: CallCost; dry?: boolean; focusId?: string | null; transcript?: Transcript | null }
 ): Promise<DryGrade | void> {
   try {
     let res = await askClaude(blocks, key, true);
@@ -1897,6 +1901,9 @@ async function grade(
     }
     // Any time still written as seconds in a sentence ("440s") becomes minutes and seconds ("7:20").
     result = clockify(result);
+    // Pace: measured from the word timings, not judged -- where the rep ran 20%+ above their own usual.
+    const repSpeaker = (result.speaker_roles || []).find((x) => x.role === "rep")?.speaker ?? null;
+    result.pace = paceOf(prior.transcript, repSpeaker, result.sections);
     result.grader_version = GRADER_VERSION;
     result.model = MODEL;
     result.graded_at = new Date().toISOString();

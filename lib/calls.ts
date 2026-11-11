@@ -373,6 +373,8 @@ export type Grade = {
   flags: Flag[];
   strengths: string[];
   coaching_priorities: string[];
+  /** Where the rep sped up 20%+ above their own usual pace (measured, not judged). Missing on older grades. */
+  pace?: import("./pace").PaceRead | null;
   // Straight Line. Optional: grades made before it was added lack them.
   emotional_arc?: ArcStage[];
   slp?: SlpSkill[];

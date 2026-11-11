@@ -7,6 +7,7 @@ import { LineChart } from "../charts";
 import type { Ctx } from "./page";
 import BestCalls from "./BestCalls";
 import CoachFocusPanel from "./CoachFocusPanel";
+import PaceTrend from "./PaceTrend";
 
 const DAY = 86400000;
 const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((s, x) => s + x, 0) / xs.length) : null);
@@ -148,6 +149,10 @@ export default function Overview({ ctx }: { ctx: Ctx }) {
           ) : (
             <p className="hint">No graded calls yet. Upload a call on Calls, or have them run a practice call.</p>
           )}
+        </section>
+        <section className="card">
+          <h3 className="rx-sec-title">Pace -- rushing over time</h3>
+          <PaceTrend ctx={ctx} />
         </section>
         <section className="card">
           <h3 className="rx-sec-title">Skills{skillsNow.size ? ", last 30 days" : ""} -- weakest first</h3>

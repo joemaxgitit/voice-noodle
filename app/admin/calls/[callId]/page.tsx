@@ -1,5 +1,6 @@
 "use client";
 
+import { paceOf } from "@/lib/pace";
 import { printAs } from "@/lib/printAs";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
@@ -728,6 +729,14 @@ export default function CallDetail() {
     () => resolveRoles(call?.transcript ?? null, call?.speaker_roles ?? null, call?.grade ?? null),
     [call]
   );
+  // Pace: saved on new grades; worked out here from the transcript for older ones (free, no re-grade).
+  const pace = useMemo(() => {
+    const g = call?.grade;
+    if (!g) return null;
+    if (g.pace !== undefined) return g.pace;
+    const rep = Object.entries(roles).find(([, r]) => r === "rep")?.[0] ?? null;
+    return paceOf(call?.transcript ?? null, rep, g.sections);
+  }, [call, roles]);
 
   function seek(t: number | null) {
     if (t === null || !audio.current) return;
@@ -1251,6 +1260,30 @@ export default function CallDetail() {
                           </button>
                         )}
                         <span className="muted">&ldquo;{g.loan.exchange}&rdquo;</span>
+                      </>
+                    )}
+                  </div>
+                )}
+                {pace && (
+                  <div className="grade-coach">
+                    Pace: usually {pace.usual} words a minute.{" "}
+                    {pace.stretches.length === 0 ? (
+                      <span className="muted">Never sped up much -- steady all call.</span>
+                    ) : (
+                      <>
+                        Sped up{" "}
+                        {pace.stretches.map((st, i) => (
+                          <span key={i} style={{ whiteSpace: "nowrap" }}>
+                            {i > 0 && ", "}
+                            <button className="time-link" onClick={() => seek(st.start)}>
+                              {clock(st.start)}&ndash;{clock(st.end)}
+                            </button>{" "}
+                            <span className={st.key ? "" : "muted"}>
+                              ({st.wpm} wpm, +{st.pct}%{st.section ? ` \u00b7 ${st.section}` : ""})
+                            </span>
+                            {st.key && <span className="pill poor" style={{ marginLeft: 4 }}>key moment</span>}
+                          </span>
+                        ))}
                       </>
                     )}
                   </div>
