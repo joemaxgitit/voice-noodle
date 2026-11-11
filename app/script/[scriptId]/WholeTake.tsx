@@ -2,8 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
+import { decodeMono } from "@/lib/shrinkAudio";
+import { measureVoice } from "@/lib/voice";
+import RunReviewView, { type TakeRow } from "./RunReviewView";
 
-type Take = { id: string; audio_path: string; seconds: number | null; created_at: string };
+type Take = TakeRow;
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
@@ -19,6 +22,7 @@ export default function WholeTake({ supabase, scriptId }: { supabase: ReturnType
   const [pending, setPending] = useState<{ blob: Blob; url: string; secs: number } | null>(null);
   const [takes, setTakes] = useState<Take[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
+  const [openId, setOpenId] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const rec = useRef<MediaRecorder | null>(null);
@@ -33,7 +37,7 @@ export default function WholeTake({ supabase, scriptId }: { supabase: ReturnType
     if (!me) return;
     const { data, error } = await supabase
       .from("script_takes")
-      .select("id, audio_path, seconds, created_at")
+      .select("id, audio_path, seconds, created_at, status, error, score, review")
       .eq("script_id", scriptId)
       .eq("user_id", me)
       .order("created_at", { ascending: false })
@@ -45,6 +49,22 @@ export default function WholeTake({ supabase, scriptId }: { supabase: ReturnType
     if (open) void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, scriptId]);
+
+  // The open review needs its recording.
+  useEffect(() => {
+    const t = takes.find((x) => x.id === openId);
+    if (t && !urls[t.id]) void hear(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId, takes]);
+
+  // While a take is being reviewed, check back every 10 seconds.
+  const working = takes.some((t) => t.status === "saved" || t.status === "transcribing" || t.status === "reviewing");
+  useEffect(() => {
+    if (!open || !working) return;
+    const id = setInterval(() => void load(), 10_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, working]);
 
   useEffect(
     () => () => {
@@ -102,10 +122,31 @@ export default function WholeTake({ supabase, scriptId }: { supabase: ReturnType
       const path = `${me}/whole-${scriptId}-${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage.from("practice-audio").upload(path, pending.blob, { contentType: pending.blob.type || "audio/webm" });
       if (upErr) throw upErr;
-      const { error: insErr } = await supabase.from("script_takes").insert({ script_id: scriptId, audio_path: path, seconds: Math.round(pending.secs) });
+      // Pitch and loudness for the tone review, measured here so nothing extra is sent anywhere.
+      let voice = null;
+      try {
+        setBusy("Measuring your voice\u2026");
+        const dec = await decodeMono(await pending.blob.arrayBuffer());
+        voice = await measureVoice(dec.pcm, dec.rate, (f) => setBusy(`Measuring your voice ${Math.round(f * 100)}%\u2026`));
+      } catch {
+        voice = null; // the review still runs, from the words and pace
+      }
+      setBusy("Saving\u2026");
+      const { data: row, error: insErr } = await supabase
+        .from("script_takes")
+        .insert({ script_id: scriptId, audio_path: path, seconds: Math.round(pending.secs), voice, status: "saved" })
+        .select("id")
+        .single();
       if (insErr) throw insErr;
       URL.revokeObjectURL(pending.url);
       setPending(null);
+      const { data: sess } = await supabase.auth.getSession();
+      void fetch("/api/script-takes/review", {
+        method: "POST",
+        headers: { authorization: `Bearer ${sess.session?.access_token ?? ""}`, "content-type": "application/json" },
+        body: JSON.stringify({ takeId: row.id }),
+      });
+      setOpenId(row.id);
       await load();
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
@@ -172,18 +213,27 @@ export default function WholeTake({ supabase, scriptId }: { supabase: ReturnType
         <div style={{ marginTop: 12 }}>
           <small className="muted">Your last {takes.length === 1 ? "take" : `${takes.length} takes`}</small>
           {takes.map((t) => (
-            <div key={t.id} style={{ marginTop: 6 }}>
-              <small>
-                {new Date(t.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                {t.seconds ? ` · ${clock(Number(t.seconds))}` : ""}{" "}
-              </small>
-              {urls[t.id] ? (
-                <audio controls src={urls[t.id]} style={{ width: "100%" }} />
-              ) : (
-                <button className="link-btn" onClick={() => hear(t)}>
-                  Listen
+            <div key={t.id} style={{ marginTop: 8, borderTop: "1px solid var(--line)", paddingTop: 6 }}>
+              <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <small>
+                  {new Date(t.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                  {t.seconds ? ` \u00b7 ${clock(Number(t.seconds))}` : ""}
+                </small>
+                {t.score != null && <span className={`pill ${t.score >= 85 ? "good" : t.score >= 70 ? "fair" : "poor"}`}>Delivery {t.score}</span>}
+                {t.review && <span className="pill">Script {t.review.coverage}%</span>}
+                {(t.status === "saved" || t.status === "transcribing" || t.status === "reviewing") && <small className="muted">reviewing&hellip;</small>}
+                <button
+                  className="link-btn"
+                  onClick={() => {
+                    const next = openId === t.id ? null : t.id;
+                    setOpenId(next);
+                    if (next) void hear(t);
+                  }}
+                >
+                  {openId === t.id ? "Close" : "Open review"}
                 </button>
-              )}
+              </div>
+              {openId === t.id && <RunReviewView take={t} url={urls[t.id] ?? null} />}
             </div>
           ))}
         </div>
