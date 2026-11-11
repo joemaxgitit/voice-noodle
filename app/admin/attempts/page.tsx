@@ -1,7 +1,7 @@
 "use client";
 
 import WholeTakes from "./WholeTakes";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { paceNote, type Scores } from "@/lib/score";
 
@@ -111,8 +111,37 @@ export default function Attempts() {
     [rows, who]
   );
 
+  // One take plays at a time; its button pauses and resumes, and Stop goes back to the start.
+  const player = useRef<HTMLAudioElement | null>(null);
+  const [paused, setPaused] = useState(false);
+
+  // Leaving the page stops whatever is playing.
+  useEffect(() => () => player.current?.pause(), []);
+
+  function stop() {
+    if (player.current) {
+      player.current.pause();
+      player.current.currentTime = 0;
+    }
+    player.current = null;
+    setPlaying(null);
+    setPaused(false);
+  }
+
   async function hear(r: Row) {
     setError("");
+    // Same take: pause or resume.
+    if (playing === r.id && player.current) {
+      if (player.current.paused) {
+        await player.current.play().catch(() => {});
+        setPaused(false);
+      } else {
+        player.current.pause();
+        setPaused(true);
+      }
+      return;
+    }
+    stop();
     setPlaying(r.id);
 
     try {
@@ -123,17 +152,19 @@ export default function Attempts() {
       if (error) throw error;
 
       const audio = new Audio(data.signedUrl);
-      audio.onended = () => setPlaying(null);
+      player.current = audio;
+      audio.onended = () => stop();
       audio.onerror = () => {
-        setPlaying(null);
+        stop();
         setError("That recording could not be played.");
       };
       await audio.play();
     } catch (e) {
-      setPlaying(null);
+      stop();
       setError(e instanceof Error ? e.message : "Could not play that take.");
     }
   }
+
 
   if (loading) {
     return (
@@ -234,9 +265,14 @@ export default function Attempts() {
           {shown.map((r) => (
             <li key={r.id}>
               <div className="attempt">
-                <button className="ts" onClick={() => hear(r)}>
-                  {playing === r.id ? "\u25b6" : "\u25b7"}
+                <button className="ts" onClick={() => hear(r)} title={playing === r.id && !paused ? "Pause" : "Play"}>
+                  {playing === r.id && !paused ? "\u275a\u275a" : "\u25b7"}
                 </button>
+                {playing === r.id && (
+                  <button className="ts" onClick={stop} title="Stop">
+                    &#9632;
+                  </button>
+                )}
 
                 <span className="attempt-when">
                   <span className="code">
