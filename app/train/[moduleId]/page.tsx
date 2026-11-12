@@ -554,6 +554,8 @@ export default function Train() {
       */}
       {practiceOn && (
         <PracticeRecorder
+          // A fresh recorder per line: "Passed", a take waiting to be kept and any error belong to the line they happened on.
+          key={segment.id}
           segmentId={segment.id}
           segmentCode={segment.segment_code}
           narratorId={chosen?.narrator_id ?? null}
