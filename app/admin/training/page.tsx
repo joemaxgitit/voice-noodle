@@ -43,6 +43,7 @@ export default function TrainingHub() {
 
   return (
     <HubShell
+      switchable
       eyebrow="Training"
       title="Training hub"
       intro="Plan the training calendar, keep the videos, documents and knowledge checks reps study from, and see who is keeping up. Reps see only what you publish."

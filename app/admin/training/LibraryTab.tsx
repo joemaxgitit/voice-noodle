@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AUDIENCE_LABEL,
   CATEGORIES,
   fmtBytes,
   fmtDate,
@@ -30,7 +29,7 @@ const safeName = (n: string) => n.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(-120);
  * to private storage.
  */
 export default function LibraryTab() {
-  const { supabase, orgId, me, reps, topics, materials, reloadLibrary } = useHub();
+  const { supabase, orgId, me, reps, topics, materials, reloadLibrary, dept } = useHub();
   const [progress, setProgress] = useState<Progress[]>([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -71,7 +70,7 @@ export default function LibraryTab() {
     const title = kind === "quiz" ? "New knowledge check" : kind === "module" ? "Script practice" : "Practice call";
     const { data, error } = await supabase
       .from("training_materials")
-      .insert({ org_id: orgId, title, kind, published: false, created_by: me })
+      .insert({ org_id: orgId, title, kind, published: false, created_by: me, dept })
       .select("*")
       .single();
     if (error || !data) return setError(error?.message || "Could not create it.");
@@ -110,6 +109,7 @@ export default function LibraryTab() {
           duration_secs: duration,
           published: false, // check it, then publish
           created_by: me,
+          dept,
         })
         .select("id")
         .single();
@@ -162,6 +162,7 @@ export default function LibraryTab() {
       url,
       published: false,
       created_by: me,
+      dept,
     });
     if (error) return setError(error.message);
     setLink({ title: "", url: "" });
@@ -186,6 +187,8 @@ export default function LibraryTab() {
         published: m.published,
         required: m.required,
         audience: m.audience,
+        // Admins can share a material with every department.
+        ...(m.dept ? { dept: m.dept } : {}),
         due_date: m.due_date || null,
         complete_pct: m.complete_pct,
         module_id: m.module_id ?? null,
@@ -204,7 +207,7 @@ export default function LibraryTab() {
     const title = topicForm.title.trim();
     if (!title) return;
     if (topics.some((t) => t.title.toLowerCase() === title.toLowerCase())) return setError("That topic already exists.");
-    const { error } = await supabase.from("training_topics").insert({ org_id: orgId, title, category: topicForm.category, created_by: me });
+    const { error } = await supabase.from("training_topics").insert({ org_id: orgId, title, category: topicForm.category, created_by: me, dept });
     if (error) return setError(error.message);
     setTopicForm({ ...topicForm, title: "" });
     reloadLibrary();
@@ -305,7 +308,7 @@ export default function LibraryTab() {
               <div className="meta">
                 {!m.published && <span className="pill">Not published</span>}
                 {m.required && <span className="pill fair">Required{m.due_date ? ` by ${fmtDate(m.due_date, { month: "short", day: "numeric" })}` : ""}</span>}
-                {m.audience !== "all" && <span className="pill">{AUDIENCE_LABEL[m.audience]}</span>}
+                {m.dept === "all" && <span className="pill">All departments</span>}
                 {m.published && <span>{doneCount(m)} of {reps.length} reps done</span>}
               </div>
             </div>
@@ -408,7 +411,7 @@ function MaterialEditor({
   onDelete: () => void;
   onReplace: () => void;
 }) {
-  const { topics, reps } = useHub();
+  const { topics, reps, isAdmin, dept: hubDept } = useHub();
   const set = <K extends keyof Material>(k: K, v: Material[K]) => setM({ ...m, [k]: v });
   const close = useCallback(() => setM(null), [setM]);
   const byRep = new Map(progress.map((p) => [p.user_id, p]));
@@ -519,17 +522,13 @@ function MaterialEditor({
       <label className="row" style={{ gap: 8, marginBottom: 10 }}>
         <input type="checkbox" checked={m.required} onChange={(e) => set("required", e.target.checked)} /> Required -- it goes on reps&rsquo; to-do list
       </label>
+      {isAdmin && (
+        <label className="row" style={{ gap: 8, marginBottom: 10 }}>
+          <input type="checkbox" checked={m.dept === "all"} onChange={(e) => set("dept", e.target.checked ? "all" : hubDept)} /> All departments -- Sales, Service and Openers all see it
+        </label>
+      )}
       {m.required && (
         <div className="tr-three">
-          <label className="field">
-            <span>For</span>
-            <select value={m.audience} onChange={(e) => set("audience", e.target.value as Material["audience"])}>
-              <option value="all">Everyone</option>
-              <option value="closers">Sales reps</option>
-              <option value="ams">Account managers</option>
-              <option value="openers">Openers</option>
-            </select>
-          </label>
           <label className="field">
             <span>Due</span>
             <input type="date" value={m.due_date ?? ""} onChange={(e) => set("due_date", e.target.value || null)} />

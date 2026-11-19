@@ -1,5 +1,6 @@
 "use client";
 
+import { inDeptView, useDeptView } from "@/lib/deptView";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -44,7 +45,9 @@ export default function Reps() {
   const supabase = useMemo(() => createClient(), []);
   const [orgId, setOrgId] = useState("");
   const [me, setMe] = useState("");
-  const [people, setPeople] = useState<Person[]>([]);
+  const [allPeople, setPeople] = useState<Person[]>([]);
+  const view = useDeptView();
+  const people = useMemo(() => allPeople.filter((p) => p.role !== "rep" || inDeptView(view, p.team)), [allPeople, view]);
   const [calls, setCalls] = useState<CallLite[]>([]);
   const [reports, setReports] = useState<KpiReport[]>([]);
   const [kpiRows, setKpiRows] = useState<KpiRow[]>([]);

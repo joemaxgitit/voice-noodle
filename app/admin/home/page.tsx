@@ -1,5 +1,6 @@
 "use client";
 
+import { inDeptView, useDeptView } from "@/lib/deptView";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -13,7 +14,7 @@ import "../calls/calls.css";
 import "../training/training.css";
 import "../reps/reps.css";
 
-type Person = { id: string; full_name: string | null; role: string; active: boolean };
+type Person = { id: string; full_name: string | null; role: string; active: boolean; team?: string | null };
 type CallLite = {
   id: string;
   rep_id: string | null;
@@ -35,18 +36,23 @@ type Latest = { rep_id: string; created_at: string; trajectory: string | null; h
 export default function ManagerHome() {
   const supabase = useMemo(() => createClient(), []);
   const [name, setName] = useState("");
-  const [people, setPeople] = useState<Person[]>([]);
-  const [calls, setCalls] = useState<CallLite[]>([]);
+  const [allPeople, setPeople] = useState<Person[]>([]);
+  const view = useDeptView();
+  const people = useMemo(() => allPeople.filter((p) => p.role !== "rep" || inDeptView(view, p.team)), [allPeople, view]);
+  const [allCalls, setCalls] = useState<CallLite[]>([]);
   const [events, setEvents] = useState<TrainingEvent[]>([]);
   const [mastery, setMastery] = useState<MasteryWeek | null>(null);
   const [meeting, setMeeting] = useState<(Meeting & { items: number }) | null>(null);
-  const [slipping, setSlipping] = useState<Latest[]>([]);
+  const [allSlipping, setSlipping] = useState<Latest[]>([]);
   const [lastReport, setLastReport] = useState<{ title: string; period_end: string } | null>(null);
   const [spend, setSpend] = useState<SpendSummary | null>(null);
   const [orgId, setOrgId] = useState("");
   const [meId, setMeId] = useState("");
   const [idea, setIdea] = useState(false);
   const [service, setService] = useState(false);
+  // Calls and reviews of the viewed department's reps only.
+  const calls = useMemo(() => (view === "all" ? allCalls : allCalls.filter((c) => people.some((p) => p.id === c.rep_id))), [allCalls, people, view]);
+  const slipping = useMemo(() => (view === "all" ? allSlipping : allSlipping.filter((r) => people.some((p) => p.id === r.rep_id))), [allSlipping, people, view]);
   // The extras show in super mode only.
   const { superMode } = useMode();
   const on = { rotation: superMode, dealclip: superMode, mastery: superMode, meeting: superMode };
@@ -70,7 +76,7 @@ export default function ManagerHome() {
       const since = new Date(Date.now() - 60 * DAY).toISOString();
       const thu = addDays(week, 3);
       const [p, c, e, m, mt, rv, kr] = await Promise.all([
-        supabase.from("profiles").select("id, full_name, role, active").eq("org_id", org),
+        supabase.from("profiles").select("id, full_name, role, active, team").eq("org_id", org),
         supabase
           .from("calls")
           .select("id, rep_id, created_at, call_date, call_time, source, status, slp_score, client_label")

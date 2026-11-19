@@ -54,7 +54,9 @@ const blank = (date: string, start = "09:00"): Draft => ({
 
 /** The training calendar: new-hire and general training only. */
 export default function CalendarTab({ openTab }: { openTab: (t: string) => void }) {
-  const { supabase, orgId, me, topics, managers, personById } = useHub();
+  const { supabase, orgId, me, topics, managers, personById, dept } = useHub();
+  // This department's sessions only (admins see every department's in the database).
+  const ours = (xs: TrainingEvent[]) => xs.filter((x) => !x.dept || x.dept === dept);
   const [view, setView] = useState<"week" | "month">("week");
   const [anchor, setAnchor] = useState(workWeek());
   const [events, setEvents] = useState<TrainingEvent[]>([]);
@@ -87,15 +89,16 @@ export default function CalendarTab({ openTab }: { openTab: (t: string) => void 
     ]);
     const err = e.error || w.error || m.error;
     if (err) setError(err.message);
-    setEvents((e.data || []) as TrainingEvent[]);
-    setWeeks((w.data || []) as MasteryWeek[]);
-    const ms = (m.data || []) as Meeting[];
+    setEvents(ours((e.data || []) as TrainingEvent[]));
+    // Master Your Craft and the Thursday meeting are sales-only.
+    setWeeks(dept === "sales" ? ((w.data || []) as MasteryWeek[]) : []);
+    const ms = dept === "sales" ? ((m.data || []) as Meeting[]) : [];
     setMeetings(ms);
     if (ms.length) {
       const { data } = await supabase.from("meeting_items").select("*").in("meeting_id", ms.map((x) => x.id));
       setItems((data || []) as MeetingItem[]);
     } else setItems([]);
-  }, [supabase, range.from, range.to]);
+  }, [supabase, range.from, range.to, dept]);
 
   useEffect(() => {
     load();
@@ -151,7 +154,7 @@ export default function CalendarTab({ openTab }: { openTab: (t: string) => void 
     };
     const res = d.id
       ? await supabase.from("training_events").update(row).eq("id", d.id)
-      : await supabase.from("training_events").insert({ ...row, created_by: me });
+      : await supabase.from("training_events").insert({ ...row, created_by: me, dept });
     setBusy(false);
     if (res.error) return setError(res.error.message);
     setDraft(null);
@@ -191,7 +194,7 @@ export default function CalendarTab({ openTab }: { openTab: (t: string) => void 
   async function copyPreviousWeek() {
     const prev = addDays(anchor, -7);
     const { data } = await supabase.from("training_events").select("*").gte("event_date", prev).lte("event_date", addDays(prev, 4));
-    const src = (data || []) as TrainingEvent[];
+    const src = ours((data || []) as TrainingEvent[]);
     if (!src.length) return setError("Last week has no sessions to copy.");
     if (!confirm(`Copy ${src.length} session${src.length === 1 ? "" : "s"} from last week into this week as drafts?`)) return;
     const rows = src.map((e) => ({
@@ -211,6 +214,7 @@ export default function CalendarTab({ openTab }: { openTab: (t: string) => void 
       material_ids: e.material_ids,
       created_by: me,
       updated_by: me,
+      dept,
     }));
     const { error } = await supabase.from("training_events").insert(rows);
     if (error) setError(error.message);
@@ -240,6 +244,7 @@ export default function CalendarTab({ openTab }: { openTab: (t: string) => void 
         status: "draft",
         created_by: me,
         updated_by: me,
+        dept,
       };
     });
     const { error } = await supabase.from("training_events").insert(rows);

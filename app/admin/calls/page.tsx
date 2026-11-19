@@ -1,5 +1,6 @@
 "use client";
 
+import { inDeptView, useDeptView } from "@/lib/deptView";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -535,7 +536,16 @@ export default function Calls() {
 
   const outcomeOf = (c: CallRow): Outcome | null => c.outcome_manual ?? c.outcome;
 
-  const shown = useMemo(
+  const view = useDeptView();
+  const inView = useCallback(
+    (c: CallRow) => {
+      if (view === "all") return true;
+      const p = c.rep_id ? people.find((x) => x.id === c.rep_id) : null;
+      return !!p && inDeptView(view, p.team);
+    },
+    [view, people]
+  );
+  const shownAll = useMemo(
     () =>
       filterOutcome === "best"
         ? (best || []).filter((c) => !filterRep || repKeyOf(c) === filterRep)
@@ -554,6 +564,7 @@ export default function Calls() {
       ),
     [calls, best, filterRep, filterOutcome]
   );
+  const shown = useMemo(() => shownAll.filter(inView), [shownAll, inView]);
 
   const repsWithCalls = useMemo(() => {
     const seen = new Map<string, string>();

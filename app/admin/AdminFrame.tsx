@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMode } from "@/lib/superMode";
 import { createClient } from "@/lib/supabase/client";
+import { setDeptView, useDeptView, type DeptView } from "@/lib/deptView";
 import "./admin-frame.css";
 
 /*
@@ -28,7 +29,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
       { href: "/admin/rotation", label: "Rotation", icon: "rotate", match: (p) => p.startsWith("/admin/rotation"), salesOnly: true, extra: true },
       { href: "/admin/dealclip", label: "Deal Clip", icon: "chart", match: (p) => p.startsWith("/admin/dealclip"), salesOnly: true, extra: true, superAdminOnly: true },
       { href: "/admin/coaching", label: "Coaching trends", icon: "chart", match: (p) => p.startsWith("/admin/coaching"), extra: true, superAdminOnly: true },
-      { href: "/admin/reports", label: "Sales reports", icon: "table", match: (p) => p.startsWith("/admin/reports"), extra: true, superAdminOnly: true },
+      { href: "/admin/reports", label: "Sales reports", icon: "table", match: (p) => p.startsWith("/admin/reports"), extra: true, salesOnly: true, superAdminOnly: true },
     ],
   },
   {
@@ -46,8 +47,8 @@ const GROUPS: { title: string; items: Item[] }[] = [
   {
     title: "Meetings",
     items: [
-      { href: "/admin/mastery", label: "Master Your Craft", icon: "cap", match: (p) => p.startsWith("/admin/mastery"), extra: true },
-      { href: "/admin/meeting", label: "Thursday meeting", icon: "megaphone", match: (p) => p.startsWith("/admin/meeting"), extra: true },
+      { href: "/admin/mastery", label: "Master Your Craft", icon: "cap", match: (p) => p.startsWith("/admin/mastery"), extra: true, salesOnly: true },
+      { href: "/admin/meeting", label: "Thursday meeting", icon: "megaphone", match: (p) => p.startsWith("/admin/meeting"), extra: true, salesOnly: true },
     ],
   },
   {
@@ -208,6 +209,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
   const path = usePathname() || "/admin";
   const [open, setOpen] = useState(false);
   // Who's signed in: service managers don't have rotation or the Deal Clip.
+  const view = useDeptView();
   const [who, setWho] = useState<{ label: string; service: boolean; superAdmin: boolean }>({ label: "Manager", service: false, superAdmin: false });
   const mode = useMode();
   useEffect(() => {
@@ -306,7 +308,16 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="af-nav">
-          {GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !(i.salesOnly && who.service) && !(i.extra && !mode.superMode) && !(i.superAdminOnly && !who.superAdmin)) }))
+          {who.superAdmin && (
+            <div className="unit-switch af-dept" role="group" aria-label="Viewing department" title="Which department you're looking at">
+              {(["all", "sales", "service", "openers"] as DeptView[]).map((d) => (
+                <button key={d} aria-pressed={view === d} onClick={() => setDeptView(d)}>
+                  {d === "all" ? "All" : d === "sales" ? "Sales" : d === "service" ? "Service" : "Openers"}
+                </button>
+              ))}
+            </div>
+          )}
+          {GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !(i.salesOnly && (who.service || view === "service" || view === "openers")) && !(i.extra && !mode.superMode) && !(i.superAdminOnly && !who.superAdmin)) }))
             // A heading with nothing under it (Meetings, for everyone but the super admin) isn't shown.
             .filter((g) => g.items.length)
             .map((g) => (

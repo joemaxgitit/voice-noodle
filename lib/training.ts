@@ -10,6 +10,7 @@ export type Person = { id: string; full_name: string | null; role?: string; team
 
 export type Topic = {
   id: string;
+  dept?: Dept;
   title: string;
   category: string | null;
   description: string | null;
@@ -20,6 +21,7 @@ export type MaterialKind = "video" | "pdf" | "doc" | "slides" | "link" | "quiz" 
 
 export type Material = {
   id: string;
+  dept?: Dept;
   topic_id: string | null;
   title: string;
   description: string | null;
@@ -51,7 +53,7 @@ export type QuizQuestion = {
   explain: string | null;
 };
 
-export type Track = { id: string; title: string; description: string | null; archived: boolean };
+export type Track = { id: string; title: string; description: string | null; archived: boolean; dept?: Dept };
 export type TrackItem = { id: string; track_id: string; material_id: string; day_offset: number; position: number };
 export type Enrollment = { id: string; track_id: string; rep_id: string; start_date: string };
 
@@ -115,6 +117,7 @@ export type Progress = {
 
 export type TrainingEvent = {
   id: string;
+  dept?: Dept;
   kind: "training" | "break";
   title: string;
   topic_id: string | null;
@@ -236,9 +239,13 @@ export const KIND_ICON: Record<MaterialKind, string> = {
 export const AUDIENCE_LABEL: Record<string, string> = {
   all: "Everyone",
   new_hires: "New hires",
-  closers: "Sales reps",
-  ams: "Account managers",
 };
+
+/** Each department has its own Training hub. "all" = a material shared with every department (admins only). */
+export type Dept = "sales" | "service" | "openers" | "all";
+export const DEPT_LABEL: Record<Exclude<Dept, "all">, string> = { sales: "Sales", service: "Service", openers: "Openers" };
+/** The department a person's team belongs to. */
+export const deptOfTeam = (team: string | null | undefined): Exclude<Dept, "all"> => (team === "ams" ? "service" : team === "openers" ? "openers" : "sales");
 
 /** Supabase's free plan refuses files over 50 MB. */
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Material, Person, Topic } from "@/lib/training";
+import type { Dept, Material, Person, Topic } from "@/lib/training";
 
 /** Everything the Training Hub tabs share. Loaded once by the page. */
 export type HubData = {
@@ -14,6 +14,9 @@ export type HubData = {
   topics: Topic[];
   materials: Material[];
   reloadLibrary: () => Promise<void>;
+  /** Which department's hub this is. Managers: their own. Admins: the one picked at the top. */
+  dept: Exclude<Dept, "all">;
+  isAdmin: boolean;
   personById: (id: string | null | undefined) => Person | undefined;
 };
 

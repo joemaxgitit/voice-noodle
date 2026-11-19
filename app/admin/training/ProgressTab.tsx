@@ -30,7 +30,7 @@ const WEEKS_BACK = 8;
  * attendance, and the new-hire tracks they're enrolled in.
  */
 export default function ProgressTab() {
-  const { supabase, orgId, me, reps, materials } = useHub();
+  const { supabase, orgId, me, reps, materials, dept } = useHub();
   const [progress, setProgress] = useState<Progress[]>([]);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [items, setItems] = useState<TrackItem[]>([]);
@@ -56,12 +56,12 @@ export default function ProgressTab() {
     const err = t.error || i.error || e.error;
     if (err) setError(/relation|does not exist/i.test(err.message) ? `${err.message} -- run supabase/training-2.sql in the Supabase SQL Editor first.` : err.message);
     setProgress((p.data || []) as Progress[]);
-    setTracks((t.data || []) as Track[]);
+    setTracks(((t.data || []) as Track[]).filter((x) => !x.dept || x.dept === dept));
     setItems((i.data || []) as TrackItem[]);
     setEnrollments((e.data || []) as Enrollment[]);
     setAttendance((a.data || []) as AttRow[]);
     setAttempts((q.data || []) as Attempt[]);
-  }, [supabase]);
+  }, [supabase, dept]);
 
   useEffect(() => {
     load();
@@ -106,7 +106,7 @@ export default function ProgressTab() {
   async function createTrack() {
     const title = newTrack.trim();
     if (!title) return;
-    const { data, error } = await supabase.from("training_tracks").insert({ org_id: orgId, title }).select("*").single();
+    const { data, error } = await supabase.from("training_tracks").insert({ org_id: orgId, title, dept }).select("*").single();
     if (error) return setError(error.message);
     setNewTrack("");
     await load();

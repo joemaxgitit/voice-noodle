@@ -396,3 +396,7 @@ a.rs-sublink:hover {
 .af-fold .rs-chev { display: inline-grid; transition: transform 0.15s ease; opacity: 0.6; }
 .af-fold .rs-chev.open { transform: rotate(90deg); }
 .af-fold .af-icon { width: 14px; height: 14px; }
+
+/* Super admin: which department you're looking at. */
+.af-dept { margin: 4px 10px 12px; display: flex; }
+.af-dept button { flex: 1; padding: 5px 4px; font-size: 11px; }
