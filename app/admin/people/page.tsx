@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { inDeptView, useDeptView } from "@/lib/deptView";
 
 type Person = {
   id: string;
@@ -52,6 +53,7 @@ const TEAMS = [
 ];
 
 export default function People() {
+  const view = useDeptView();
   const supabase = createClient();
 
   const [me, setMe] = useState<string>("");
@@ -166,7 +168,8 @@ export default function People() {
     );
   }
 
-  const members = people.filter((p) => p.org_id);
+  // The super admin's Viewing switch: one department's people (admins show under All).
+  const members = people.filter((p) => p.org_id && (view === "all" || (p.role !== "admin" && inDeptView(view, p.team))));
   const unassigned = people.filter((p) => !p.org_id);
 
   return (
@@ -332,17 +335,18 @@ export default function People() {
       </ul>
 
       <h2>Add someone new</h2>
-      <AddPerson admin={myRole === "admin"} makeTemp={makeTemp} onAdded={() => void load()} />
+      <AddPerson admin={myRole === "admin"} makeTemp={makeTemp} onAdded={() => void load()} startTeam={view === "service" ? "ams" : view === "sales" ? "closers" : "openers"} />
     </main>
   );
 }
 
 /** Adds a new rep: a manager's rep joins the manager's own team; an admin picks the team. */
-function AddPerson({ admin, makeTemp, onAdded }: { admin: boolean; makeTemp: () => string; onAdded: () => void }) {
+function AddPerson({ admin, makeTemp, onAdded, startTeam }: { admin: boolean; makeTemp: () => string; onAdded: () => void; startTeam: string }) {
   const supabase = createClient();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [team, setTeam] = useState("openers");
+  const [team, setTeam] = useState(startTeam);
+  useEffect(() => setTeam(startTeam), [startTeam]);
   const [pw, setPw] = useState(() => makeTemp());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
