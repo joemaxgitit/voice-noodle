@@ -128,7 +128,9 @@ export default function People() {
       setError("Your own profile has no organization.");
       return;
     }
-    await patch(id, { org_id: orgId, active: true });
+    // A manager's claim lands on their own team (the database enforces it too).
+    const mine = people.find((p) => p.id === me);
+    await patch(id, { org_id: orgId, active: true, ...(myRole === "manager" ? { team: mine?.team || "closers" } : {}) });
     void load();
   }
 
