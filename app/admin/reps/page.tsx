@@ -29,7 +29,19 @@ type CallLite = {
   hss: number | null;
   fu: string | null;
 };
-type SortKey = "name" | "slp" | "script" | "product" | "rep" | "company" | "hardship" | "calls" | "review";
+type SortKey = "name" | "slp" | "script" | "product" | "rep" | "company" | "hardship" | "calls" | "review" | "oScript" | "oApp" | "oDisc" | "oSub" | "oLoan";
+// Graded opener calls: the script sections, the application read (questions + read-backs) and the disclaimers.
+type OpenerLite = {
+  rep_id: string;
+  created_at: string;
+  call_date: string | null;
+  outcome: string | null;
+  outcome_manual: string | null;
+  secs: { status?: string }[] | null;
+  ap: number | null;
+  cs: number | null;
+  ct: number | null;
+};
 const clock = (secs: number) => `${Math.floor(secs / 60)}:${String(Math.round(secs % 60)).padStart(2, "0")}`;
 const avg1 = (xs: number[]) => (xs.length ? Math.round((xs.reduce((s, x) => s + x, 0) / xs.length) * 10) / 10 : null);
 const tenBand = (x: number) => (x >= 7 ? "good" : x >= 5 ? "fair" : "poor");
@@ -49,6 +61,10 @@ export default function Reps() {
   const view = useDeptView();
   const people = useMemo(() => allPeople.filter((p) => p.role !== "rep" || inDeptView(view, p.team)), [allPeople, view]);
   const [calls, setCalls] = useState<CallLite[]>([]);
+  const [myTeam, setMyTeam] = useState<string | null>(null);
+  const [openerCalls, setOpenerCalls] = useState<OpenerLite[]>([]);
+  // Openers get their own columns: script, application, disclaimers, sales and approved loans.
+  const openersMode = view === "openers" || myTeam === "openers";
   const [reports, setReports] = useState<KpiReport[]>([]);
   const [kpiRows, setKpiRows] = useState<KpiRow[]>([]);
   const [notes, setNotes] = useState<Map<string, number>>(new Map());
@@ -70,8 +86,9 @@ export default function Reps() {
     } = await supabase.auth.getSession();
     if (!session) return;
     setMe(session.user.id);
-    const { data: mine } = await supabase.from("profiles").select("org_id").eq("id", session.user.id).single();
+    const { data: mine } = await supabase.from("profiles").select("org_id, team").eq("id", session.user.id).single();
     const org = mine?.org_id ?? "";
+    setMyTeam((mine?.team as string | null) ?? null);
     setOrgId(org);
     const since = new Date(Date.now() - 60 * DAY).toISOString();
     const [p, c, r, k, n, v] = await Promise.all([
@@ -101,8 +118,21 @@ export default function Reps() {
       tot.set(x.rep_id, t);
     }
     setTotals(tot);
-    const sc = await supabase.from("scripts").select("id, continues_into");
-    setRenewScripts(new Set(((sc.data || []) as { id: string; continues_into: string | null }[]).filter((x) => x.continues_into).map((x) => x.id)));
+    const sc = await supabase.from("scripts").select("id, continues_into, team");
+    const scRows = (sc.data || []) as { id: string; continues_into: string | null; team: string | null }[];
+    setRenewScripts(new Set(scRows.filter((x) => x.continues_into).map((x) => x.id)));
+    const openerIds = scRows.filter((x) => x.team === "openers").map((x) => x.id);
+    if (openerIds.length) {
+      const oc = await supabase
+        .from("calls")
+        .select("rep_id, created_at, call_date, outcome, outcome_manual, secs:grade->sections, ap:grade->opener->script_pct, cs:grade->opener->compliance_said, ct:grade->opener->compliance_total")
+        .in("script_id", openerIds)
+        .eq("status", "graded")
+        .neq("source", "roleplay")
+        .or(`call_date.gte.${since.slice(0, 10)},and(call_date.is.null,created_at.gte.${since})`)
+        .not("rep_id", "is", null);
+      setOpenerCalls((oc.data || []) as unknown as OpenerLite[]);
+    } else setOpenerCalls([]);
     setReports((r.data || []) as KpiReport[]);
     setKpiRows((k.data || []) as KpiRow[]);
     const counts = new Map<string, number>();
@@ -195,8 +225,30 @@ export default function Reps() {
         const close = kr && kpi ? headlineValue(kr, kpi.cur.columns, "close") : null;
         const closePrev = kp && kpi?.prev ? headlineValue(kp, kpi.prev.columns, "close") : null;
         const review = reviews.find((r) => r.rep_id === p.id && r.status === "done");
+        // Openers, last 30 days by call date.
+        const op = openerCalls.filter((c) => c.rep_id === p.id && callAt(c) >= now - 30 * DAY);
+        const secPct = (c: OpenerLite) => {
+          const reached = (c.secs || []).filter((x) => x.status && x.status !== "not_reached");
+          if (!reached.length) return null;
+          return (100 * reached.reduce((n, x) => n + (x.status === "hit" ? 1 : x.status === "partial" ? 0.5 : 0), 0)) / reached.length;
+        };
+        const said = op.reduce((n, c) => n + (Number(c.cs) || 0), 0);
+        const of = op.reduce((n, c) => n + (Number(c.ct) || 0), 0);
+        const res = (c: OpenerLite) => c.outcome_manual ?? c.outcome;
+        const opener = {
+          n: op.length,
+          script: avg(op.map(secPct).filter((x): x is number => x !== null)),
+          app: avg(op.map((c) => (typeof c.ap === "number" ? c.ap : null)).filter((x): x is number => x !== null)),
+          disc: of ? Math.round((100 * said) / of) : null,
+          said,
+          of,
+          // An approved loan was a sale first, so it counts in both.
+          sub: op.filter((c) => res(c) === "submitted" || res(c) === "loan_approved").length,
+          loan: op.filter((c) => res(c) === "loan_approved").length,
+        };
         return {
           p,
+          opener,
           slp,
           slpDelta: slp !== null && slpPrev !== null ? slp - slpPrev : null,
           scr,
@@ -222,7 +274,7 @@ export default function Reps() {
           })(),
         };
       });
-  }, [people, calls, kpi, notes, reviews, showAll, ret, look, renewScripts]);
+  }, [people, calls, kpi, notes, reviews, showAll, ret, look, renewScripts, openerCalls]);
 
   const TRAJ_RANK: Record<string, number> = { slipping: 0, mixed: 1, early: 2, steady: 3, improving: 4 };
   const sorted = useMemo(() => {
@@ -236,6 +288,11 @@ export default function Reps() {
         case "company": return r.tens.company;
         case "hardship": return r.hs;
         case "calls": return r.real + r.practice;
+        case "oScript": return r.opener.script;
+        case "oApp": return r.opener.app;
+        case "oDisc": return r.opener.disc;
+        case "oSub": return r.opener.n ? r.opener.sub : null;
+        case "oLoan": return r.opener.n ? r.opener.loan : null;
         case "review": {
           const t = r.review ? (superMode ? r.review.trajectory : r.review.core_trajectory) : null;
           return t ? TRAJ_RANK[t] ?? 2 : null;
@@ -271,7 +328,9 @@ export default function Reps() {
       <div className="eyebrow">Team</div>
       <h1>Reps</h1>
       <p className="muted" style={{ maxWidth: "66ch" }}>
-        {superMode
+        {openersMode
+          ? "Every opener’s graded calls from the last 30 days: script, application verification, disclaimers, sales and approved loans. Open one to see their calls."
+          : superMode
           ? "Every rep’s profile collects their graded calls, practice calls, KPI reports, your notes and files, and training. Open one to see the arc, prep a KPI one-on-one, or run a coaching review. Managers only."
           : "Every rep’s graded calls, practice calls and Straight Line progress. Open one to see the arc or run a coaching review. Managers only."}
       </p>
@@ -279,6 +338,44 @@ export default function Reps() {
 
       <div className="rx-scroll" style={{ marginTop: 10 }}>
         <table className="rx-table rx-fit">
+          {openersMode ? (
+            <>
+          <thead>
+            <tr>
+              {head("name", "Rep")}
+              {head("oScript", "Script", "num", "How much of the opener script the rep covered, by section, on graded calls in the last 30 days. Sections the call never reached are left out.")}
+              {head("oApp", <>Application<br />verification</>, "num rx-wrap", "Application questions asked plus the read-backs (second phone, email spelled back, date of birth, last 4 of SSN), last 30 days.")}
+              {head("oDisc", "Disclaimers", "num", "Disclaimers said out of those the call reached (soft pull, permission to submit, 3rd-party contact, texts, FS on our team), last 30 days.")}
+              {head("oSub", <>Submitted<br />(sale)</>, "num rx-wrap", "Calls marked Sale (application submitted) in the last 30 days, including ones later approved.")}
+              {head("oLoan", <>Loan<br />approved</>, "num rx-wrap", "Calls marked Loan approved in the last 30 days. Set it on the call page once the loan comes back approved.")}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((r) => (
+              <tr key={r.p.id} className="link" onClick={() => router.push(`/admin/reps/${r.p.id}`)}>
+                <td>
+                  <a href={`/admin/reps/${r.p.id}`} onClick={(e) => e.preventDefault()}>
+                    <b>{r.p.full_name || "Unnamed"}</b>
+                  </a>
+                  {!r.p.active && <small className="muted"> · inactive</small>}
+                  {r.opener.n > 0 && <small className="muted"> · {r.opener.n} call{r.opener.n === 1 ? "" : "s"}</small>}
+                </td>
+                {[r.opener.script, r.opener.app].map((x, i) => (
+                  <td key={i} className="num">
+                    {x === null ? <span className="muted">--</span> : <span className={`pill ${scoreBand(x)}`}>{x}</span>}
+                  </td>
+                ))}
+                <td className="num" title={r.opener.of ? `${r.opener.said} of ${r.opener.of} said` : undefined}>
+                  {r.opener.disc === null ? <span className="muted">--</span> : <span className={`pill ${scoreBand(r.opener.disc)}`}>{r.opener.disc}%</span>}
+                </td>
+                <td className="num">{r.opener.n ? r.opener.sub : <span className="muted">--</span>}</td>
+                <td className="num">{r.opener.n ? r.opener.loan : <span className="muted">--</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+            </>
+          ) : (
+            <>
           <thead>
             <tr>
               {head("name", "Rep")}
@@ -425,6 +522,8 @@ export default function Reps() {
               </tr>
             ))}
           </tbody>
+            </>
+          )}
         </table>
       </div>
       <label className="hint" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>

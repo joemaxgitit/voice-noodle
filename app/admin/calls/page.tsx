@@ -28,7 +28,7 @@ import { audioSeconds, convosoName, uploadCall } from "@/lib/uploadCall";
 import BulkUpload from "./BulkUpload";
 import "./calls.css";
 
-type Person = { id: string; full_name: string | null; email: string | null; team: string | null; org_id: string | null };
+type Person = { id: string; full_name: string | null; email: string | null; team: string | null; org_id: string | null; role?: string };
 
 const NEW_REP = "__new";
 
@@ -260,7 +260,7 @@ export default function Calls() {
       const uid = session?.user.id;
 
       const [peopleRes, scriptRes] = await Promise.all([
-        supabase.from("profiles").select("id, full_name, email, team, org_id").eq("active", true),
+        supabase.from("profiles").select("id, full_name, email, team, org_id, role").eq("active", true),
         supabase.from("scripts").select("id, title, team, sort_order, continues_into").eq("active", true).order("sort_order"),
       ]);
       if (cancelled) return;
@@ -701,8 +701,9 @@ export default function Calls() {
             <span>Rep</span>
             <select value={repId} onChange={(e) => chooseRep(e.target.value)}>
               <option value="">Choose&hellip;</option>
-              {/* The viewed department's people only (no team = managers and admins, always listed). */}
-              {people.filter((p) => view === "all" || !p.team || inDeptView(view, p.team)).map((p) => (
+              {/* The viewed department's people only (no team = managers and admins, always listed).
+                  Openers: opener reps only. */}
+              {people.filter((p) => (view === "openers" || me?.team === "openers" ? p.team === "openers" && p.role === "rep" : view === "all" || !p.team || inDeptView(view, p.team))).map((p) => (
                 <option key={p.id} value={p.id}>
                   {nameOf(p)}
                 </option>
@@ -747,7 +748,8 @@ export default function Calls() {
               <span>Result (optional)</span>
               <select value={upStatus} onChange={(e) => setUpStatus(e.target.value)}>
                 <option value="">Let the grader decide</option>
-                <option value="submitted">Sale</option>
+                <option value="submitted">Submitted</option>
+                <option value="loan_approved">Loan approved</option>
                 <option value="callback">Follow up</option>
                 <option value="not_interested">Not interested</option>
               </select>

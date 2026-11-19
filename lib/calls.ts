@@ -159,7 +159,7 @@ export type CoachNow = {
 export type LoanAsk = { discussed: boolean; amount: string; asked_by: "client" | "rep" | "n/a"; exchange: string; time: number | null };
 
 // submitted / no_id / not_authorized are opener-call outcomes.
-export type Outcome = "enrolled" | "callback" | "callback_vague" | "not_interested" | "interrupted" | "hung_up" | "other" | "submitted" | "no_id" | "not_authorized";
+export type Outcome = "enrolled" | "callback" | "callback_vague" | "not_interested" | "interrupted" | "hung_up" | "other" | "submitted" | "no_id" | "not_authorized" | "loan_approved";
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
   enrolled: "Enrolled",
@@ -172,6 +172,7 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
   submitted: "Sale (application submitted)",
   no_id: "No client ID",
   not_authorized: "Not the client",
+  loan_approved: "Loan approved",
 };
 
 /* Retention: whether an enrolled client stayed. Entered by a manager for
