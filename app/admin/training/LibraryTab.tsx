@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  CATEGORIES,
+  categoriesFor,
   fmtBytes,
   fmtDate,
   fmtDuration,
@@ -36,7 +36,14 @@ export default function LibraryTab() {
   const [over, setOver] = useState(false);
   const [editing, setEditing] = useState<Material | null>(null);
   const [link, setLink] = useState({ title: "", url: "" });
-  const [topicForm, setTopicForm] = useState({ title: "", category: CATEGORIES[0] });
+  const cats = categoriesFor(dept);
+  const [topicForm, setTopicForm] = useState({ title: "", category: cats[0] });
+  // The category list follows the hub's department.
+  useEffect(() => {
+    setTopicForm((f) => (cats.includes(f.category) ? f : { ...f, category: cats[0] }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dept]);
+  const [sureDelete, setSureDelete] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [modules, setModules] = useState<ModuleRef[]>([]);
   const [personas, setPersonas] = useState<PersonaRef[]>([]);
@@ -214,7 +221,16 @@ export default function LibraryTab() {
   }
 
   async function archiveTopic(id: string, archived: boolean) {
-    await supabase.from("training_topics").update({ archived, updated_at: new Date().toISOString() }).eq("id", id);
+    const { error } = await supabase.from("training_topics").update({ archived, updated_at: new Date().toISOString() }).eq("id", id);
+    if (error) setError(error.message);
+    reloadLibrary();
+  }
+
+  // Gone for good. Materials and calendar items that used it just lose the topic.
+  async function deleteTopic(id: string) {
+    setSureDelete(null);
+    const { error } = await supabase.from("training_topics").delete().eq("id", id);
+    if (error) return setError(error.message);
     reloadLibrary();
   }
 
@@ -339,7 +355,7 @@ export default function LibraryTab() {
         >
           <input value={topicForm.title} onChange={(e) => setTopicForm({ ...topicForm, title: e.target.value })} placeholder="New topic" />
           <select value={topicForm.category} onChange={(e) => setTopicForm({ ...topicForm, category: e.target.value })} style={{ width: "auto" }}>
-            {CATEGORIES.map((c) => (
+            {cats.map((c) => (
               <option key={c}>{c}</option>
             ))}
           </select>
@@ -365,6 +381,22 @@ export default function LibraryTab() {
                     <button className="link-btn" onClick={() => archiveTopic(t.id, !t.archived)}>
                       {t.archived ? "Restore" : "Archive"}
                     </button>
+                    {" · "}
+                    {sureDelete === t.id ? (
+                      <>
+                        <button className="link-btn" style={{ color: "var(--bad, #e5484d)" }} onClick={() => deleteTopic(t.id)}>
+                          Yes, delete
+                        </button>
+                        {" "}
+                        <button className="link-btn" onClick={() => setSureDelete(null)}>
+                          Keep
+                        </button>
+                      </>
+                    ) : (
+                      <button className="link-btn" onClick={() => setSureDelete(t.id)}>
+                        Delete
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

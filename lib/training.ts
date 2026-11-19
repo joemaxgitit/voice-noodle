@@ -214,6 +214,15 @@ export const CATEGORIES = [
   "New Hire Training",
 ];
 
+/** Topic categories for each department's hub. */
+export const CATEGORIES_BY_DEPT: Record<"sales" | "service" | "openers", string[]> = {
+  sales: CATEGORIES,
+  service: ["Account Management", "Retention", "Cancellation Saves", "Credit Background", "Client Questions", "Tone", "Compliance", "CRM", "New Hire Training"],
+  openers: ["Opener Script", "Application Verification", "Disclaimers", "Rebuttals", "Tone", "Compliance", "CRM", "New Hire Training"],
+};
+export const categoriesFor = (dept: string | null | undefined): string[] =>
+  dept === "service" || dept === "openers" ? CATEGORIES_BY_DEPT[dept] : CATEGORIES;
+
 export const KIND_LABEL: Record<MaterialKind, string> = {
   video: "Video",
   pdf: "PDF",
