@@ -3,6 +3,8 @@
 import WholeTakes from "./WholeTakes";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useDeptView } from "@/lib/deptView";
+import { deptOfTeam } from "@/lib/training";
 import { paceNote, type Scores } from "@/lib/score";
 
 type Row = {
@@ -44,7 +46,10 @@ const avg = (ns: number[]) =>
  * a rep can fluff one take and nail the next, and the pattern is the signal.
  */
 export default function Attempts() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+  const view = useDeptView();
+  // Which department's takes to show: an admin's Viewing switch, otherwise the manager's own side.
+  const [dept, setDept] = useState<"sales" | "service" | "openers" | "all" | null>(null);
 
   const [rows, setRows] = useState<Row[]>([]);
   const [who, setWho] = useState<string | null>(null);
@@ -56,13 +61,23 @@ export default function Attempts() {
     let cancelled = false;
 
     (async () => {
-      const { data, error } = await supabase
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const { data: mine } = session ? await supabase.from("profiles").select("team").eq("id", session.user.id).maybeSingle() : { data: null };
+      const d = view !== "all" ? view : mine?.team ? deptOfTeam(mine.team as string) : "all";
+      if (cancelled) return;
+      setDept(d);
+      // Filtered in the query, so the 200 newest are all from this department.
+      let q = supabase
         .from("attempts")
         .select(
-          "id, audio_path, seconds, scores, created_at, user_id, profiles(full_name), segments(segment_code, title), narrators(name)"
-        )
-        .order("created_at", { ascending: false })
-        .limit(200);
+          `id, audio_path, seconds, scores, created_at, user_id, profiles${d === "all" ? "" : "!inner"}(full_name, team), segments(segment_code, title), narrators(name)`
+        );
+      if (d === "openers") q = q.eq("profiles.team", "openers");
+      else if (d === "service") q = q.eq("profiles.team", "ams");
+      else if (d === "sales") q = q.or("team.is.null,team.not.in.(ams,openers)", { referencedTable: "profiles" });
+      const { data, error } = await q.order("created_at", { ascending: false }).limit(200);
 
       if (cancelled) return;
 
@@ -74,7 +89,7 @@ export default function Attempts() {
     return () => {
       cancelled = true;
     };
-  }, [supabase]);
+  }, [supabase, view]);
 
   // One card per person: how much they have done, and how it is going.
   const people = useMemo(() => {
@@ -189,7 +204,7 @@ export default function Attempts() {
 
       {error && <div className="error">{error}</div>}
 
-      <WholeTakes supabase={supabase} />
+      {dept && <WholeTakes key={dept} supabase={supabase} dept={dept} />}
 
       {rows.length === 0 && (
         <p className="muted" style={{ marginTop: 24 }}>

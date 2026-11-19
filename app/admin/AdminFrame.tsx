@@ -59,7 +59,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
       { href: "/admin/roleplay", label: "Practice calls", icon: "headset", match: (p) => p.startsWith("/admin/roleplay"), salesOnly: true },
       { href: "/admin/attempts", label: "Attempts", icon: "mic", match: (p) => p.startsWith("/admin/attempts") },
       { href: "/admin/listening", label: "Listening", icon: "ear", match: (p) => p.startsWith("/admin/listening") },
-      { href: "/admin/live", label: "Live", icon: "live", match: (p) => p.startsWith("/admin/live") },
+      { href: "/admin/live", label: "Live", icon: "live", match: (p) => p.startsWith("/admin/live"), salesOnly: true },
     ],
   },
   {

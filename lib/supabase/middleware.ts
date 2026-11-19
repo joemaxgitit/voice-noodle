@@ -130,7 +130,7 @@ export async function updateSession(request: NextRequest) {
     }
 
     // Rotation and the Deal Clip are sales-side only.
-    if (profile.role === "manager" && (profile.team === "ams" || profile.team === "openers") && (path.startsWith("/admin/rotation") || path.startsWith("/admin/dealclip") || path.startsWith("/admin/mastery") || path.startsWith("/admin/meeting"))) {
+    if (profile.role === "manager" && (profile.team === "ams" || profile.team === "openers") && (path.startsWith("/admin/rotation") || path.startsWith("/admin/dealclip") || path.startsWith("/admin/mastery") || path.startsWith("/admin/meeting") || path.startsWith("/admin/live"))) {
       const url = request.nextUrl.clone();
       url.pathname = "/admin/home";
       url.search = "";

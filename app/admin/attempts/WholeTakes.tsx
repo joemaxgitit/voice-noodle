@@ -8,18 +8,21 @@ type Row = TakeRow & { user_id: string; scripts: { title: string } | null };
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 /** Whole-script run-throughs reps recorded from the Whole script page, each with its review. Hidden until there is one. */
-export default function WholeTakes({ supabase }: { supabase: ReturnType<typeof createClient> }) {
+export default function WholeTakes({ supabase, dept }: { supabase: ReturnType<typeof createClient>; dept: "sales" | "service" | "openers" | "all" }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [openId, setOpenId] = useState<string | null>(null);
 
   async function load() {
-    const { data, error } = await supabase
+    // Only this department's scripts.
+    let q = supabase
       .from("script_takes")
-      .select("id, user_id, audio_path, seconds, created_at, status, error, score, review, scripts(title)")
-      .order("created_at", { ascending: false })
-      .limit(50);
+      .select(`id, user_id, audio_path, seconds, created_at, status, error, score, review, scripts${dept === "all" ? "" : "!inner"}(title, team)`);
+    if (dept === "openers") q = q.eq("scripts.team", "openers");
+    else if (dept === "service") q = q.eq("scripts.team", "ams");
+    else if (dept === "sales") q = q.or("team.is.null,team.not.in.(ams,openers)", { referencedTable: "scripts" });
+    const { data, error } = await q.order("created_at", { ascending: false }).limit(50);
     if (error || !data?.length) return;
     const list = data as unknown as Row[];
     setRows(list);
