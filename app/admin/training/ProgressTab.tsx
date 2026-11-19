@@ -37,7 +37,7 @@ export default function ProgressTab() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [attendance, setAttendance] = useState<AttRow[]>([]);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
-  const [team, setTeam] = useState<"all" | "closers" | "ams">("all");
+  const [team, setTeam] = useState<"all" | "closers" | "ams" | "openers">("all");
   const [openRep, setOpenRep] = useState<Person | null>(null);
   const [openTrack, setOpenTrack] = useState<Track | null>(null);
   const [newTrack, setNewTrack] = useState("");
@@ -166,6 +166,7 @@ export default function ProgressTab() {
             <option value="all">All reps</option>
             <option value="closers">Sales reps</option>
             <option value="ams">Account managers</option>
+              <option value="openers">Openers</option>
           </select>
           <button className="tr-sm" onClick={exportCsv}>Export CSV</button>
         </div>

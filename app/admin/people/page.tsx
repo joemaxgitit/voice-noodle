@@ -18,19 +18,29 @@ type Person = {
 
 /*
   What someone does, as one choice. A manager's side comes from their team:
-  Sales -> sales manager, Account Managers -> service manager. Each side
+  Sales -> sales manager, Account Managers -> service manager, Openers -> opener manager. Each side
   only sees its own reps (enforced in the database); admins see both.
 */
-type Job = "rep" | "sales_manager" | "service_manager" | "admin";
+type Job = "rep" | "sales_manager" | "service_manager" | "opener_manager" | "admin";
 const JOBS: { value: Job; label: string }[] = [
   { value: "rep", label: "Rep" },
   { value: "sales_manager", label: "Sales manager" },
   { value: "service_manager", label: "Service manager" },
+  { value: "opener_manager", label: "Opener manager" },
   { value: "admin", label: "Admin" },
 ];
-const jobOf = (p: Person): Job => (p.role === "admin" ? "admin" : p.role === "manager" ? (p.team === "ams" ? "service_manager" : "sales_manager") : "rep");
+const jobOf = (p: Person): Job =>
+  p.role === "admin" ? "admin" : p.role === "manager" ? (p.team === "ams" ? "service_manager" : p.team === "openers" ? "opener_manager" : "sales_manager") : "rep";
 const changesFor = (job: Job): Partial<Person> =>
-  job === "admin" ? { role: "admin" } : job === "sales_manager" ? { role: "manager", team: "closers" } : job === "service_manager" ? { role: "manager", team: "ams" } : { role: "rep" };
+  job === "admin"
+    ? { role: "admin" }
+    : job === "sales_manager"
+      ? { role: "manager", team: "closers" }
+      : job === "service_manager"
+        ? { role: "manager", team: "ams" }
+        : job === "opener_manager"
+          ? { role: "manager", team: "openers" }
+          : { role: "rep" };
 
 // Team decides which script someone can reach. Enforced by row level
 // security, not just hidden in the interface.
@@ -38,6 +48,7 @@ const TEAMS = [
   { value: "", label: "No team" },
   { value: "closers", label: "Sales" },
   { value: "ams", label: "Account Managers" },
+  { value: "openers", label: "Openers" },
 ];
 
 export default function People() {
@@ -320,13 +331,84 @@ export default function People() {
         ))}
       </ul>
 
-      <h2>Adding someone new</h2>
-      <ol className="muted" style={{ lineHeight: 1.8, paddingLeft: 20 }}>
-        <li>Supabase &rarr; Authentication &rarr; Users &rarr; Add user</li>
-        <li>Enter their email and a starting password</li>
-        <li>Check <strong>Auto Confirm User</strong></li>
-        <li>Come back here and press <strong>Add to my team</strong></li>
-      </ol>
+      <h2>Add someone new</h2>
+      <AddPerson admin={myRole === "admin"} makeTemp={makeTemp} onAdded={() => void load()} />
     </main>
+  );
+}
+
+/** Adds a new rep: a manager's rep joins the manager's own team; an admin picks the team. */
+function AddPerson({ admin, makeTemp, onAdded }: { admin: boolean; makeTemp: () => string; onAdded: () => void }) {
+  const supabase = createClient();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [team, setTeam] = useState("openers");
+  const [pw, setPw] = useState(() => makeTemp());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState<{ name: string; email: string; pw: string } | null>(null);
+
+  async function add() {
+    setBusy(true);
+    setError("");
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const res = await fetch("/api/admin/add-person", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session?.access_token ?? ""}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email, password: pw, team }),
+    }).catch((e) => e as Error);
+    setBusy(false);
+    if (res instanceof Error) return setError(res.message);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return setError(body?.error || `Failed (${res.status}).`);
+    setDone({ name, email, pw });
+    setName("");
+    setEmail("");
+    setPw(makeTemp());
+    onAdded();
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 8 }}>
+      {done && (
+        <div className="status" style={{ marginTop: 0 }}>
+          Added {done.name}. Give them: <b>www.voicenoodle.com</b>, email <b>{done.email}</b>, temporary password{" "}
+          <b style={{ fontFamily: "var(--mono)" }}>{done.pw}</b>. They&rsquo;ll pick their own password when they sign in.
+        </div>
+      )}
+      <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <label className="field" style={{ margin: 0, flex: "1 1 180px" }}>
+          <span className="label">Full name</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="First Last" />
+        </label>
+        <label className="field" style={{ margin: 0, flex: "1 1 220px" }}>
+          <span className="label">Email</span>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" />
+        </label>
+        {admin && (
+          <label className="field" style={{ margin: 0 }}>
+            <span className="label">Team</span>
+            <select value={team} onChange={(e) => setTeam(e.target.value)} style={{ width: "auto" }}>
+              <option value="closers">Sales</option>
+              <option value="ams">Account Managers</option>
+              <option value="openers">Openers</option>
+            </select>
+          </label>
+        )}
+        <label className="field" style={{ margin: 0 }}>
+          <span className="label">Temporary password</span>
+          <input value={pw} onChange={(e) => setPw(e.target.value)} style={{ maxWidth: 170, fontFamily: "var(--mono)" }} />
+        </label>
+        <button className="primary" disabled={busy || !name.trim() || !email.trim() || pw.length < 8} onClick={() => void add()}>
+          {busy ? "Adding\u2026" : "Add rep"}
+        </button>
+      </div>
+      <small className="muted" style={{ display: "block", marginTop: 6 }}>
+        {admin ? "They start as a rep on the team you pick; change their job in the list above." : "They join your team as a rep. To remove someone later, press Disable next to their name."}
+      </small>
+      {error && <p className="error" style={{ marginTop: 6 }}>{error}</p>}
+    </div>
   );
 }

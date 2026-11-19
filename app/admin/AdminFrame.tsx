@@ -219,14 +219,17 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
       if (!session) return;
       const { data } = await supabase.from("profiles").select("role, team").eq("id", session.user.id).single();
       const { data: sa } = await supabase.from("profiles").select("super_admin").eq("id", session.user.id).maybeSingle();
-      const service = data?.role === "manager" && data?.team === "ams";
+      // Service and opener managers don't have the sales-only pages (rotation, Deal Clip...).
+      const service = data?.role === "manager" && (data?.team === "ams" || data?.team === "openers");
       const label = (sa as { super_admin?: boolean } | null)?.super_admin
         ? "Super admin"
         : data?.role === "admin"
           ? "Admin"
-          : service
-            ? "Service manager"
-            : "Sales manager";
+          : data?.team === "openers"
+            ? "Opener manager"
+            : service
+              ? "Service manager"
+              : "Sales manager";
       setWho({ label, service, superAdmin: !!(sa as { super_admin?: boolean } | null)?.super_admin });
     })();
   }, []);

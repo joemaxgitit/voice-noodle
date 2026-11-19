@@ -70,7 +70,7 @@ export default function SuperModeList({ supabase }: { supabase: SupabaseClient }
               <b>{p.full_name || p.email || "Unnamed"}</b>
               {p.id === me && <small className="muted"> · you</small>}
               <br />
-              <small className="muted">{p.role === "admin" ? "Admin" : p.team === "ams" ? "Service manager" : "Sales manager"}</small>
+              <small className="muted">{p.role === "admin" ? "Admin" : p.team === "ams" ? "Service manager" : p.team === "openers" ? "Opener manager" : "Sales manager"}</small>
             </span>
             <span className={`pill ${on.has(p.id) ? "good" : ""}`}>{on.has(p.id) ? "Super mode" : "Core"}</span>
           </label>

@@ -1,6 +1,7 @@
 "use client";
 
 import { paceOf } from "@/lib/pace";
+import OpenerCard from "./OpenerCard";
 import { printAs } from "@/lib/printAs";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
@@ -1205,6 +1206,7 @@ export default function CallDetail() {
               {g.ended.read}
             </p>
           )}
+          {g.opener && <OpenerCard o={g.opener} seek={seek} />}
           {!!call.live_notes?.length && (
             <>
               <h2>Notes from listening in</h2>

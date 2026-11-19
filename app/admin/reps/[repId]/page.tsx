@@ -122,7 +122,7 @@ export default function RepProfile() {
           <h1>{rep ? name : "Loading…"}</h1>
           {rep && (
             <p className="muted" style={{ margin: 0 }}>
-              {rep.team === "closers" ? "Sales" : rep.team === "ams" ? "Account manager" : rep.role === "rep" ? "Rep" : rep.role}
+              {rep.team === "closers" ? "Sales" : rep.team === "ams" ? "Account manager" : rep.team === "openers" ? "Opener" : rep.role === "rep" ? "Rep" : rep.role}
               {!rep.active ? " · inactive" : ""}
               {rep.kpi_name && rep.kpi_name !== rep.full_name ? ` · "${rep.kpi_name}" in the CRM reports` : ""}
             </p>

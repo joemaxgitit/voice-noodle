@@ -1,4 +1,5 @@
 import { paceNotes, paceOf } from "./pace";
+import { finishOpener, openerPrompt, OPENER_SCHEMA } from "./gradeOpener";
 import { jsonrepair } from "jsonrepair";
 import { clockify, hardshipScoreOf, lineScoreOf, type CoachNow, type Ended, type LoanAsk, type Objection } from "@/lib/calls";
 
@@ -104,6 +105,7 @@ type ModuleRow = {
 
 type ScriptRow = {
   title: string;
+  team?: string | null;
   continues_into: string | null;
   continues_from: string | null;
   grading_note: string | null;
@@ -168,7 +170,7 @@ export async function prepareGrade(
   const [{ data: scriptData }, { data: modules, error: modErr }] = await Promise.all([
     supabase
       .from("scripts")
-      .select("title, continues_into, continues_from, grading_note")
+      .select("title, team, continues_into, continues_from, grading_note")
       .eq("id", call.script_id)
       .single(),
     supabase
@@ -244,6 +246,43 @@ export async function prepareGrade(
     return [...own, ...carried];
   };
   const useModules = assemble(lang);
+
+  // Opener calls (inbound loan applications) are graded their own way: script, compliance, rebuttals, outcome.
+  if (script?.team === "openers") {
+    const { error: claimErr } = dry
+      ? { error: null }
+      : await supabase.from("calls").update({ status: "grading", updated_at: new Date().toISOString() }).eq("id", callId);
+    if (claimErr) return { ok: false, status: 500, error: `Could not start. ${claimErr.message}` };
+    const notesV = voiceNotes((call.voice as VoiceTimeline | null) ?? null, transcript);
+    const seq = useModules.filter((m) => m.kind !== "loop").map((m) => m.title);
+    const stable = openerPrompt({
+      scriptTitle: script.title,
+      script: scriptText(useModules).text,
+      sections: seq,
+      voiceGuide: notesV.header
+        ? `Some transcript lines end with {measurements} taken from the recording (pace in words per minute, pitch movement, loudness). Use them for "control".
+<voice_summary>
+${notesV.header}
+</voice_summary>`
+        : "",
+    });
+    const previous: GradeVersion | null =
+      call.grade && call.score !== undefined ? { grade: call.grade as Grade, score: call.score as number | null, slp_score: (call.slp_score as number | null) ?? null } : null;
+    return {
+      ok: true,
+      summary: `${lang}, opener`,
+      run: () =>
+        gradeOpenerCall(supabase, callId, key, started, {
+          stable,
+          perCall: `<transcript>\n${transcriptText(transcript, notesV.lines)}\n</transcript>\nGrade this call now.`,
+          previous,
+          history: (call.grade_history as GradeVersion[] | null) || [],
+          cost: (call.cost as CallCost | null) || {},
+          dry,
+          transcript,
+        }),
+    };
+  }
   if (script?.continues_into) {
     notes.push(
       `After the sections above, the call continues on "${contTitle || "the next script"}"` +
@@ -1969,5 +2008,113 @@ async function grade(
       timedOut ? "Grading took longer than the time limit. Try again." : e instanceof Error ? e.message : String(e)
     );
     log("grade", callId, started, `failed: ${e instanceof Error ? e.message : e}`);
+  }
+}
+
+/**
+ * Grades an opener call: one request with the opener schema, scores worked out in
+ * code, saved the same way as a closer grade (with history and cost).
+ */
+async function gradeOpenerCall(
+  supabase: Supa,
+  callId: string,
+  key: string,
+  started: number,
+  p: { stable: string; perCall: string; previous: GradeVersion | null; history: GradeVersion[]; cost: CallCost; dry: boolean; transcript: Transcript }
+): Promise<DryGrade | void> {
+  try {
+    const send = (strict: boolean) =>
+      fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {
+        method: "POST",
+        headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 16000,
+          ...thinkingFor(MODEL),
+          output_config: strict ? { effort: "high", format: { type: "json_schema", schema: OPENER_SCHEMA } } : { effort: "high" },
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: p.stable, cache_control: { type: "ephemeral" } },
+                { type: "text", text: strict ? p.perCall : `${p.perCall}\nReply with one JSON object only, matching this JSON Schema:\n${JSON.stringify(OPENER_SCHEMA)}` },
+              ],
+            },
+          ],
+        }),
+        signal: AbortSignal.timeout(270_000),
+      });
+    let res = await send(true);
+    if (res.status === 400) {
+      const raw = await res.clone().text().catch(() => "");
+      if (/grammar|schema|too (large|complex)|output_config/i.test(raw)) res = await send(false);
+    }
+    if (!res.ok) {
+      const raw = await res.text().catch(() => "");
+      let message = raw.slice(0, 300);
+      try {
+        message = JSON.parse(raw)?.error?.message || message;
+      } catch {
+        // not JSON
+      }
+      throw new Error(`Grading failed (${res.status}). ${message}`);
+    }
+    const data = (await res.json()) as { content?: { type: string; text?: string }[]; stop_reason?: string; usage?: Usage };
+    if (data.stop_reason === "refusal") throw new Error("The grader declined to grade this call.");
+    if (data.stop_reason === "max_tokens") throw new Error("The grade was too long and got cut off. Try again.");
+    const text = (data.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("").trim();
+    let raw: Record<string, unknown>;
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      raw = JSON.parse(jsonrepair(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)));
+    }
+    let result = finishOpener(raw);
+    if (!result.sections.length) throw new Error("The grade came back empty. Try again.");
+    result = clockify(result);
+    const repSpeaker = (result.speaker_roles || []).find((x) => x.role === "rep")?.speaker ?? null;
+    result.pace = paceOf(p.transcript, repSpeaker, result.sections);
+    result.grader_version = GRADER_VERSION;
+    result.model = MODEL;
+    result.graded_at = new Date().toISOString();
+
+    const u = data.usage || {};
+    const usd = gradeCostUsd(MODEL, u);
+    if (p.dry) return { grade: result, usd };
+    const cost: CallCost = {
+      ...p.cost,
+      grade_model: MODEL,
+      grade_input_tokens: u.input_tokens ?? 0,
+      grade_cache_read_tokens: u.cache_read_input_tokens ?? 0,
+      grade_cache_write_tokens: u.cache_creation_input_tokens ?? 0,
+      grade_output_tokens: u.output_tokens ?? 0,
+      grade_usd: usd,
+      grade_usd_total: (p.cost.grade_usd_total ?? 0) + (usd ?? 0),
+    };
+    const prev = p.previous;
+    const alreadyFiled = !!prev && p.history[0]?.grade?.graded_at === prev.grade.graded_at;
+    const history = prev && !alreadyFiled ? [prev, ...p.history].slice(0, HISTORY_KEEP) : p.history;
+    const { error } = await supabase
+      .from("calls")
+      .update({
+        status: "graded",
+        error: null,
+        grade: result,
+        // The opener's script score: application questions and read-backs.
+        score: result.opener?.script_pct ?? scoreOf(result),
+        slp_score: null,
+        outcome: result.outcome ?? null,
+        grade_history: history,
+        cost,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", callId);
+    if (error) throw new Error(`Could not save the grade. ${error.message}`);
+    log("grade", callId, started, `opener saved; in ${u.input_tokens} out ${u.output_tokens}`);
+  } catch (e) {
+    if (p.dry) throw e;
+    const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+    await failCall(supabase, callId, timedOut ? "Grading took longer than the time limit. Try again." : e instanceof Error ? e.message : String(e));
+    log("grade", callId, started, `opener failed: ${e instanceof Error ? e.message : e}`);
   }
 }

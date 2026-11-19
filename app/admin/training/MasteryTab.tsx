@@ -68,7 +68,7 @@ export default function MasteryTab() {
   const [requests, setRequests] = useState<MasteryRequest[]>([]);
   const [mode, setMode] = useState<"week" | "regular">("week");
   const [taking, setTaking] = useState(false);
-  const [team, setTeam] = useState<"all" | "closers" | "ams">("all");
+  const [team, setTeam] = useState<"all" | "closers" | "ams" | "openers">("all");
   const [over, setOver] = useState<number | null>(null);
   const [historyDays, setHistoryDays] = useState(0);
   const [error, setError] = useState("");
@@ -162,8 +162,8 @@ export default function MasteryTab() {
       const plan = new Map<string, number>();
       // Deal each team round the three days in turn, carrying on where the last team stopped so the days stay even overall.
       let next = Math.floor(Math.random() * 3);
-      for (const tm of ["closers", "ams", null]) {
-        const group = classReps.filter((r) => (tm === null ? r.team !== "closers" && r.team !== "ams" : r.team === tm));
+      for (const tm of ["closers", "ams", "openers", null]) {
+        const group = classReps.filter((r) => (tm === null ? !["closers", "ams", "openers"].includes(r.team || "") : r.team === tm));
         for (const r of [...group].sort(() => Math.random() - 0.5)) {
           plan.set(r.id, (next % 3) + 1);
           next++;
@@ -468,6 +468,7 @@ export default function MasteryTab() {
               <option value="all">All reps</option>
               <option value="closers">Sales reps</option>
               <option value="ams">Account managers</option>
+              <option value="openers">Openers</option>
             </select>
             <div className="unit-switch" role="group" aria-label="What a move changes">
               <button aria-pressed={mode === "week"} onClick={() => setMode("week")}>Move this week</button>
@@ -514,7 +515,7 @@ export default function MasteryTab() {
                           {r.full_name || "Unnamed"}
                           <div className="moved-tag" style={{ color: "var(--muted)" }}>
                             {regular.get(r.id) ? (regular.get(r.id) === d ? "same day" : `was ${DAY_NAME[regular.get(r.id)!].slice(0, 3)}`) : "new"}
-                            {r.team === "ams" ? " · AM" : ""}
+                            {r.team === "ams" ? " · AM" : r.team === "openers" ? " · Opener" : ""}
                           </div>
                         </span>
                       </div>

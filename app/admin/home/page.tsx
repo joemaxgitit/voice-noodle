@@ -62,7 +62,7 @@ export default function ManagerHome() {
       } = await supabase.auth.getSession();
       if (!session) return;
       const { data: me } = await supabase.from("profiles").select("org_id, full_name, role, team").eq("id", session.user.id).single();
-      setService(me?.role === "manager" && me?.team === "ams");
+      setService(me?.role === "manager" && (me?.team === "ams" || me?.team === "openers"));
       setName((me?.full_name || "").split(" ")[0]);
       setOrgId(me?.org_id ?? "");
       setMeId(session.user.id);

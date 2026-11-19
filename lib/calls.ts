@@ -158,7 +158,8 @@ export type CoachNow = {
 /** v12: the loan amount and who asked for it. */
 export type LoanAsk = { discussed: boolean; amount: string; asked_by: "client" | "rep" | "n/a"; exchange: string; time: number | null };
 
-export type Outcome = "enrolled" | "callback" | "callback_vague" | "not_interested" | "interrupted" | "hung_up" | "other";
+// submitted / no_id / not_authorized are opener-call outcomes.
+export type Outcome = "enrolled" | "callback" | "callback_vague" | "not_interested" | "interrupted" | "hung_up" | "other" | "submitted" | "no_id" | "not_authorized";
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
   enrolled: "Enrolled",
@@ -168,6 +169,9 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
   interrupted: "Call interrupted",
   hung_up: "Hung up",
   other: "Other",
+  submitted: "Application submitted",
+  no_id: "No client ID",
+  not_authorized: "Not the client",
 };
 
 /* Retention: whether an enrolled client stayed. Entered by a manager for
@@ -400,6 +404,8 @@ export type Grade = {
   focus_check?: import("@/lib/coachFocus").FocusCheckGrade;
   /** v12: the loan amount and who asked for it. */
   loan?: LoanAsk;
+  /** Opener calls only: the application questions, read-backs, rebuttals and scores (lib/gradeOpener.ts). */
+  opener?: import("./gradeOpener").OpenerParts;
   /** Which version of the grading rules produced this grade (missing = 1). */
   grader_version?: number;
   model?: string;

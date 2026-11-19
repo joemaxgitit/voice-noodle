@@ -32,7 +32,7 @@ export type Material = {
   version: number;
   published: boolean;
   required: boolean;
-  audience: "all" | "closers" | "ams";
+  audience: "all" | "closers" | "ams" | "openers";
   due_date: string | null;
   complete_pct: number;
   module_id?: string | null; // kind "module": a script section in the karaoke trainer
@@ -123,7 +123,7 @@ export type TrainingEvent = {
   minutes: number;
   instructor_ids: string[];
   guest_instructors: string | null;
-  audience: "all" | "new_hires" | "closers" | "ams";
+  audience: "all" | "new_hires" | "closers" | "ams" | "openers";
   required: boolean;
   status: "draft" | "published";
   notes: string | null;

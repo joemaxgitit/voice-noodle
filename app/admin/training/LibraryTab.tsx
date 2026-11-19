@@ -527,6 +527,7 @@ function MaterialEditor({
               <option value="all">Everyone</option>
               <option value="closers">Sales reps</option>
               <option value="ams">Account managers</option>
+              <option value="openers">Openers</option>
             </select>
           </label>
           <label className="field">
