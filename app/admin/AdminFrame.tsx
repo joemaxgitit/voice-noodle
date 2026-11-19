@@ -8,6 +8,7 @@ import { useMode } from "@/lib/superMode";
 import { createClient } from "@/lib/supabase/client";
 import { setDeptView, useDeptView, type DeptView } from "@/lib/deptView";
 import { deptOfTeam } from "@/lib/training";
+import { setLang, useLang } from "@/lib/lang";
 import "./admin-frame.css";
 
 /*
@@ -121,6 +122,7 @@ function ScriptTree({ path, dept }: { path: string; dept: DeptView }) {
   const [tree, setTree] = useState(treeCache);
   const [qs, setQs] = useState("");
   const [open, setOpen] = useState<Set<string>>(new Set());
+  const lang = useLang();
   useEffect(() => {
     if (treeCache) return;
     const supabase = createClient();
@@ -147,7 +149,9 @@ function ScriptTree({ path, dept }: { path: string; dept: DeptView }) {
   if (!tree) return null;
   // Only the department being looked at: Sales (closers / no team), Service (AMs) or Openers.
   const scripts = tree.scripts.filter((sc) => dept === "all" || deptOfTeam(sc.team) === dept);
-  const en = tree.modules.filter((m) => (m.language || "en") === "en" && scripts.some((sc) => sc.id === m.script_id));
+  // The chosen language (English / Español at the bottom of the menu); a script with no Spanish stays in English.
+  const hasLang = (scriptId: string) => tree.modules.some((m) => m.script_id === scriptId && (m.language || "en") === lang);
+  const en = tree.modules.filter((m) => scripts.some((sc) => sc.id === m.script_id) && (m.language || "en") === (hasLang(m.script_id) ? lang : "en"));
   // Each script's own loops (the openers' are its rebuttals), listed once by title.
   const loopsOf = (scriptId: string) => {
     const seen = new Set<string>();
@@ -218,6 +222,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   // Who's signed in: service managers don't have rotation or the Deal Clip.
   const view = useDeptView();
+  const lang = useLang();
   const [who, setWho] = useState<{ label: string; service: boolean; superAdmin: boolean; team?: string | null; admin?: boolean }>({ label: "Manager", service: false, superAdmin: false });
   const mode = useMode();
   useEffect(() => {
@@ -370,6 +375,14 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="af-foot">
+          <div className="rs-lang" role="group" aria-label="Language">
+            <button aria-pressed={lang !== "es"} onClick={() => setLang("en")}>
+              English
+            </button>
+            <button aria-pressed={lang === "es"} onClick={() => setLang("es")}>
+              Español
+            </button>
+          </div>
           {!(who.service || view === "service" || view === "openers") && (
           <Link href="/roleplay" className="af-link">
             <Icon name="headset" />
