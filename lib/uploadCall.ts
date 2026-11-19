@@ -86,6 +86,8 @@ export type UploadMeta = {
   /** "HH:MM", 24-hour. Saved once supabase/quick_reads.sql has been run. */
   callTime?: string | null;
   retention?: string | null;
+  /** Opener calls: the result picked at upload (submitted = sale, callback = follow up, not_interested). Kept through re-grades. */
+  outcome?: string | null;
   callNumber?: number | null;
   handoff?: string | null;
 };
@@ -146,6 +148,7 @@ export async function uploadCall(supabase: SupabaseClient, file: File, meta: Upl
     client_label: meta.clientLabel,
     call_date: meta.callDate,
     ...(meta.retention ? { retention: meta.retention } : {}),
+    ...(meta.outcome ? { outcome_manual: meta.outcome } : {}),
     ...(meta.callNumber ? { call_number: meta.callNumber } : {}),
     ...(meta.handoff ? { handoff: meta.handoff } : {}),
     file_name: file.name,

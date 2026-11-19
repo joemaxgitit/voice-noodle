@@ -169,7 +169,7 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
   interrupted: "Call interrupted",
   hung_up: "Hung up",
   other: "Other",
-  submitted: "Application submitted",
+  submitted: "Sale (application submitted)",
   no_id: "No client ID",
   not_authorized: "Not the client",
 };

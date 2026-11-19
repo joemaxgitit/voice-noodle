@@ -484,6 +484,23 @@ export default function Calls() {
     };
   }, [file, supabase]);
 
+  // An opener call (graded on the Opener Script) gets Sale / Follow up / Not interested instead of a client status.
+  const openerUpload = scripts.find((s) => s.id === scriptId)?.team === "openers";
+  // Openers grade against the Opener Script only (no renews); everyone else never sees it.
+  const pickedTeam = repId && repId !== NEW_REP ? people.find((p) => p.id === repId)?.team ?? null : null;
+  const openerSide = me?.team === "openers" || pickedTeam === "openers";
+  const upScripts = openerSide ? scripts.filter((s) => s.team === "openers") : pickedTeam ? scripts.filter((s) => s.team !== "openers") : scripts;
+  useEffect(() => {
+    setUpStatus("");
+    if (openerUpload) setUpHandoff("");
+  }, [openerUpload]);
+  // An opener's upload can only be graded on the Opener Script.
+  useEffect(() => {
+    if (openerSide && upScripts.length && !upScripts.some((s) => s.id === scriptId)) setScriptId(upScripts[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openerSide, upScripts.length, scriptId]);
+
+
   async function upload() {
     setError("");
     setDupe(null);
@@ -508,7 +525,9 @@ export default function Calls() {
         clientLabel: client.trim() || null,
         callDate: callDate || null,
         callTime: ct,
-        retention: upStatus || null,
+        // Opener calls have no client status; the result they pick goes in as the call's outcome.
+        retention: openerUpload ? null : upStatus || null,
+        outcome: openerUpload ? upStatus || null : null,
         callNumber: upNumber ? Number(upNumber) : null,
         handoff: upHandoff || null,
       },
@@ -660,7 +679,7 @@ export default function Calls() {
           A whole day (call log + recordings)
         </button>
       </div>
-      {bulk && <BulkUpload supabase={supabase} me={me} people={people} scripts={scripts} onDone={() => void loadCalls()} />}
+      {bulk && <BulkUpload supabase={supabase} me={me} people={people} scripts={me?.team === "openers" ? scripts.filter((s) => s.team === "openers") : scripts} onDone={() => void loadCalls()} />}
 
       <div className="card" style={{ marginTop: 18, display: bulk ? "none" : undefined }}>
         <div className="calls-form">
@@ -699,7 +718,7 @@ export default function Calls() {
             <span>Grade against</span>
             <select value={scriptId} onChange={(e) => setScriptId(e.target.value)}>
               <option value="">Choose&hellip;</option>
-              {scripts.map((s) => (
+              {upScripts.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.title}
                 </option>
@@ -718,16 +737,28 @@ export default function Calls() {
             <span>Call date</span>
             <input type="date" value={callDate} onChange={(e) => setCallDate(e.target.value)} />
           </label>
-          <label className="field">
-            <span>Client status (optional)</span>
-            <select value={upStatus} onChange={(e) => setUpStatus(e.target.value)}>
-              <option value="">Not known yet</option>
-              <option value="active">Active</option>
-              <option value="cancelled">Cancelled</option>
-              <option value="paid6">Made 6+ payments</option>
-              <option value="graduated">Graduated</option>
-            </select>
-          </label>
+          {openerUpload ? (
+            <label className="field">
+              <span>Result (optional)</span>
+              <select value={upStatus} onChange={(e) => setUpStatus(e.target.value)}>
+                <option value="">Let the grader decide</option>
+                <option value="submitted">Sale</option>
+                <option value="callback">Follow up</option>
+                <option value="not_interested">Not interested</option>
+              </select>
+            </label>
+          ) : (
+            <label className="field">
+              <span>Client status (optional)</span>
+              <select value={upStatus} onChange={(e) => setUpStatus(e.target.value)}>
+                <option value="">Not known yet</option>
+                <option value="active">Active</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="paid6">Made 6+ payments</option>
+                <option value="graduated">Graduated</option>
+              </select>
+            </label>
+          )}
           <label className="field">
             <span>Call # with this client</span>
             <select value={upNumber} onChange={(e) => setUpNumber(e.target.value)}>
@@ -739,6 +770,7 @@ export default function Calls() {
               ))}
             </select>
           </label>
+          {!openerUpload && (
           <label className="field">
             <span>Renew?</span>
             <select
@@ -757,6 +789,7 @@ export default function Calls() {
               <option value="renew">Renew</option>
             </select>
           </label>
+          )}
         </div>
 
         <div className="row">
