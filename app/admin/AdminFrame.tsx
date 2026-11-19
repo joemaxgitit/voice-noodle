@@ -316,7 +316,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="af-nav">
-          {who.superAdmin && (
+          {(who.superAdmin || who.admin) && (
             <div className="unit-switch af-dept" role="group" aria-label="Viewing department" title="Which department you're looking at">
               {(["all", "sales", "service", "openers"] as DeptView[]).map((d) => (
                 <button key={d} aria-pressed={view === d} onClick={() => setDeptView(d)}>
@@ -362,7 +362,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
               {g.title === "Training" && (
                 <>
                   {foldHead("Scripts", { marginTop: 10 })}
-                  {(shown.has("Scripts") || path === "/admin" || path.startsWith("/admin/timing")) && <ScriptTree path={path} dept={who.superAdmin ? view : who.admin ? "all" : deptOfTeam(who.team)} />}
+                  {(shown.has("Scripts") || path === "/admin" || path.startsWith("/admin/timing")) && <ScriptTree path={path} dept={who.superAdmin || who.admin ? view : deptOfTeam(who.team)} />}
                 </>
               )}
             </div>
