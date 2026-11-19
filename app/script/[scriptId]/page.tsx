@@ -10,7 +10,7 @@ import { useKaraoke, stateFor, type Phrase } from "@/lib/useKaraoke";
 import { useListenLog } from "@/lib/useListenLog";
 import { usePresence } from "@/lib/usePresence";
 import { tonesForPhrases, type ToneSpan } from "@/lib/tones";
-import { readLang, setLang as rememberLang, type Lang } from "@/lib/lang";
+import { setLang as rememberLang, useLang, type Lang } from "@/lib/lang";
 import { copyFor } from "@/lib/copy";
 import WholeTake from "./WholeTake";
 
@@ -72,7 +72,8 @@ function ScriptView() {
   const [title, setTitle] = useState("");
   const [mods, setMods] = useState<Mod[]>([]);
   const [segs, setSegs] = useState<Seg[]>([]);
-  const [lang, setLangState] = useState<Lang>("en");
+  // Follows the site-wide English / Español switch, live.
+  const lang = useLang();
   const [loading, setLoading] = useState(true);
 
   const [narratorId, setNarratorId] = useState<string | null>(null);
@@ -188,16 +189,9 @@ function ScriptView() {
     if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [focus, loading, segs]);
 
-  // Pick up whatever language was last chosen, so the page and the
-  // footer's tone key agree on arrival rather than after a click.
-  useEffect(() => {
-    setLangState(readLang());
-  }, []);
-
   const c = copyFor(lang);
 
   function choose(next: Lang) {
-    setLangState(next);
     rememberLang(next);
   }
 

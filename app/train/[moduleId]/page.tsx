@@ -72,8 +72,24 @@ export default function Train() {
   const [done, setDone] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [modLang, setModLang] = useState<"en" | "es" | null>(null);
+  const [siblings, setSiblings] = useState<{ id: string; sort_order: number; language: string; kind: string }[]>([]);
 
   const segment = segments[index];
+
+  /*
+    The English / Español switch was flipped while on a card: jump straight
+    to the same section and line in the other language (matched by position
+    among that language's sections of the same kind).
+  */
+  useEffect(() => {
+    if (loading || !modLang || lang === modLang) return;
+    const here = siblings.find((m) => m.id === params.moduleId);
+    if (!here) return;
+    const list = (lg: string) => siblings.filter((m) => (m.language || "en") === lg && (m.kind === "loop") === (here.kind === "loop")).sort((a, b) => a.sort_order - b.sort_order);
+    const twin = list(lang)[list(modLang).findIndex((m) => m.id === here.id)];
+    if (twin) router.replace(`/train/${twin.id}?at=${index}`);
+  }, [lang, modLang, loading, siblings, params.moduleId, index, router]);
 
   // Remember the line they're on, so leaving and coming back lands here.
   useEffect(() => {
@@ -200,6 +216,7 @@ export default function Train() {
       const modLang =
         (modRes.data as { language?: string })?.language === "es" ? "es" : "en";
       setLang(modLang);
+      setModLang(modLang);
 
       setModuleTitle(modRes.data?.title || "Training");
       const sid = (modRes.data as { script_id?: string })?.script_id ?? null;
@@ -213,10 +230,11 @@ export default function Train() {
       if (sid) {
         const { data: sibs } = await supabase
           .from("modules")
-          .select("id, sort_order, language")
+          .select("id, sort_order, language, kind")
           .eq("script_id", sid);
 
         if (!cancelled) {
+          setSiblings((sibs || []) as { id: string; sort_order: number; language: string; kind: string }[]);
           const ordered = (
             (sibs || []) as { id: string; sort_order: number; language: string }[]
           )
@@ -236,7 +254,10 @@ export default function Train() {
       // Pick up where they left off: the line they were last on (this device),
       // else the first line they haven't finished yet.
       let resume = -1;
-      try {
+      // Arriving from the English / Español switch: the same line in this language.
+      const atLine = Number(new URLSearchParams(window.location.search).get("at"));
+      if (Number.isInteger(atLine) && atLine > 0 && atLine < sorted.length) resume = atLine;
+      if (resume < 0) try {
         const saved = localStorage.getItem(`vn_place_${params.moduleId}`);
         if (saved) resume = sorted.findIndex((sg) => sg.id === saved);
       } catch {}

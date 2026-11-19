@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useLang } from "@/lib/lang";
 
 import PracticeToggle from "./PracticeToggle";
 type ScriptRef = { id: string; title: string; sort_order: number };
@@ -56,6 +57,8 @@ function Admin() {
   const wantScript = params.get("script");
   const wantModule = params.get("module");
   const [rows, setRows] = useState<Row[]>([]);
+  // The English / Español switch in the menu: only that language's lines.
+  const lang = useLang();
   const [activeScript, setActiveScript] = useState<string | null>(null);
   const [hideRecorded, setHideRecorded] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -127,9 +130,12 @@ function Admin() {
       { module: ModuleRef | null; all: Row[]; shown: Row[] }
     >();
 
+    // A script with no lines in the chosen language stays in English.
+    const hasLang = rows.some((r) => scriptOf(r).id === activeScript && (r.modules?.language || "en") === lang);
+    const lg = hasLang ? lang : "en";
     for (const r of rows) {
       if (scriptOf(r).id !== activeScript) continue;
-      if (focusModule && !(r.modules?.id === focusModule.id || (r.modules?.sort_order === focusModule.sort_order && r.modules?.language !== focusModule.language))) continue;
+      if (focusModule ? r.modules?.id !== focusModule.id : (r.modules?.language || "en") !== lg) continue;
       const key = r.modules?.id ?? "__none";
       const b = buckets.get(key) || { module: r.modules, all: [], shown: [] };
       b.all.push(r);
@@ -145,7 +151,7 @@ function Admin() {
     return list.sort(
       (a, b) => (a.module?.sort_order ?? 999) - (b.module?.sort_order ?? 999)
     );
-  }, [rows, activeScript, hideRecorded, focusModule]);
+  }, [rows, activeScript, hideRecorded, focusModule, lang]);
 
   const timed = rows.filter((r) => voiceCount(r) > 0).length;
   const nothingLeft =
