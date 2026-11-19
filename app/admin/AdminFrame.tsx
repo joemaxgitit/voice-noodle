@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { useMode } from "@/lib/superMode";
 import { createClient } from "@/lib/supabase/client";
 import { setDeptView, useDeptView, type DeptView } from "@/lib/deptView";
+import { deptOfTeam } from "@/lib/training";
 import "./admin-frame.css";
 
 /*
@@ -104,7 +105,7 @@ export function Icon({ name }: { name: keyof typeof ICONS }) {
   );
 }
 
-type TreeScript = { id: string; title: string; sort_order: number };
+type TreeScript = { id: string; title: string; sort_order: number; team?: string | null };
 type TreeModule = { id: string; title: string; script_id: string; kind: string; language: string; sort_order: number };
 let treeCache: { scripts: TreeScript[]; modules: TreeModule[] } | null = null;
 
@@ -115,7 +116,8 @@ const cleanTitle = (t: string) => t.replace(/\s+[—-]\s+.*$/, "");
  * its sections, and the objection loops sit together under Loops. Each link
  * opens the recording page on that script or section.
  */
-function ScriptTree({ path }: { path: string }) {
+/** dept: which department's scripts to list ("all" for everything). */
+function ScriptTree({ path, dept }: { path: string; dept: DeptView }) {
   const [tree, setTree] = useState(treeCache);
   const [qs, setQs] = useState("");
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -123,7 +125,7 @@ function ScriptTree({ path }: { path: string }) {
     if (treeCache) return;
     const supabase = createClient();
     void Promise.all([
-      supabase.from("scripts").select("id, title, sort_order").eq("active", true).order("sort_order"),
+      supabase.from("scripts").select("id, title, sort_order, team").eq("active", true).order("sort_order"),
       supabase.from("modules").select("id, title, script_id, kind, language, sort_order").eq("active", true).order("sort_order"),
     ]).then(([s, m]) => {
       treeCache = { scripts: (s.data || []) as TreeScript[], modules: (m.data || []) as TreeModule[] };
@@ -139,13 +141,18 @@ function ScriptTree({ path }: { path: string }) {
   useEffect(() => {
     if (!tree || !curScript) return;
     const m = tree.modules.find((x) => x.id === curModule);
-    setOpen((o) => new Set(o).add(m?.kind === "loop" ? "loops" : curScript));
+    setOpen((o) => new Set(o).add(m?.kind === "loop" ? `loops-${m.script_id}` : curScript));
   }, [tree, curScript, curModule]);
 
   if (!tree) return null;
-  const en = tree.modules.filter((m) => (m.language || "en") === "en");
-  const seen = new Set<string>();
-  const loops = en.filter((m) => m.kind === "loop" && !seen.has(m.title.toLowerCase()) && (seen.add(m.title.toLowerCase()), true));
+  // Only the department being looked at: Sales (closers / no team), Service (AMs) or Openers.
+  const scripts = tree.scripts.filter((sc) => dept === "all" || deptOfTeam(sc.team) === dept);
+  const en = tree.modules.filter((m) => (m.language || "en") === "en" && scripts.some((sc) => sc.id === m.script_id));
+  // Each script's own loops (the openers' are its rebuttals), listed once by title.
+  const loopsOf = (scriptId: string) => {
+    const seen = new Set<string>();
+    return en.filter((m) => m.script_id === scriptId && m.kind === "loop" && !seen.has(m.title.toLowerCase()) && (seen.add(m.title.toLowerCase()), true));
+  };
   const toggle = (k: string) =>
     setOpen((o) => {
       const n = new Set(o);
@@ -170,19 +177,21 @@ function ScriptTree({ path }: { path: string }) {
       {open.has(key) && <div className="rs-sub">{body}</div>}
     </div>
   );
-  const loopsGroup =
-    loops.length > 0 &&
-    group(
-      "loops",
-      "Loops",
-      "loop",
-      loops.map((m) => link(`/admin?script=${m.script_id}&module=${m.id}`, m.title, curModule === m.id))
+  const loopsGroup = (sc: TreeScript) => {
+    const loops = loopsOf(sc.id);
+    return (
+      loops.length > 0 &&
+      group(
+        `loops-${sc.id}`,
+        sc.team === "openers" ? "Rebuttals" : "Loops",
+        "loop",
+        loops.map((m) => link(`/admin?script=${m.script_id}&module=${m.id}`, m.title.replace(/^Rebuttals:\s*/, ""), curModule === m.id))
+      )
     );
-  // Loops sit right under the script they belong to (the Options Script).
-  const loopsAfter = loops[0]?.script_id;
+  };
   return (
     <>
-      {tree.scripts.map((sc) => {
+      {scripts.map((sc) => {
         const mods = en.filter((m) => m.script_id === sc.id && m.kind !== "loop");
         if (!mods.length) return null;
         return (
@@ -196,11 +205,10 @@ function ScriptTree({ path }: { path: string }) {
                 {mods.map((m) => link(`/admin?script=${sc.id}&module=${m.id}`, m.title, curModule === m.id))}
               </>
             )}
-            {sc.id === loopsAfter && loopsGroup}
+            {loopsGroup(sc)}
           </div>
         );
       })}
-      {!tree.scripts.some((sc) => sc.id === loopsAfter) && loopsGroup}
     </>
   );
 }
@@ -210,7 +218,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   // Who's signed in: service managers don't have rotation or the Deal Clip.
   const view = useDeptView();
-  const [who, setWho] = useState<{ label: string; service: boolean; superAdmin: boolean }>({ label: "Manager", service: false, superAdmin: false });
+  const [who, setWho] = useState<{ label: string; service: boolean; superAdmin: boolean; team?: string | null; admin?: boolean }>({ label: "Manager", service: false, superAdmin: false });
   const mode = useMode();
   useEffect(() => {
     const supabase = createClient();
@@ -232,7 +240,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
             : service
               ? "Service manager"
               : "Sales manager";
-      setWho({ label, service, superAdmin: !!(sa as { super_admin?: boolean } | null)?.super_admin });
+      setWho({ label, service, superAdmin: !!(sa as { super_admin?: boolean } | null)?.super_admin, team: data?.team ?? null, admin: data?.role === "admin" });
     })();
   }, []);
 
@@ -354,7 +362,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
               {g.title === "Training" && (
                 <>
                   {foldHead("Scripts", { marginTop: 10 })}
-                  {(shown.has("Scripts") || path === "/admin" || path.startsWith("/admin/timing")) && <ScriptTree path={path} />}
+                  {(shown.has("Scripts") || path === "/admin" || path.startsWith("/admin/timing")) && <ScriptTree path={path} dept={who.superAdmin ? view : who.admin ? "all" : deptOfTeam(who.team)} />}
                 </>
               )}
             </div>

@@ -251,7 +251,7 @@ export default function RepShell({
                   mods.filter((m) => m.script_id === sc.id && m.kind !== "loop"),
                   sc.id
                 )}
-                {loops[0]?.script_id === sc.id && group("loops", "Loops", "loop", loops)}
+                {loops[0]?.script_id === sc.id && group("loops", data?.team === "openers" ? "Rebuttals" : "Loops", "loop", loops)}
               </div>
             ))}
             {!(data?.scripts || []).some((sc) => sc.id === loops[0]?.script_id) && group("loops", "Loops", "loop", loops)}
