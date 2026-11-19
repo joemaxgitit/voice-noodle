@@ -1,6 +1,7 @@
 "use client";
 
 import { inDeptView, useDeptView } from "@/lib/deptView";
+import { deptOfTeam } from "@/lib/training";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -102,6 +103,7 @@ export default function Calls() {
 
   const [me, setMe] = useState<Person | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
+  const view = useDeptView();
   const [scripts, setScripts] = useState<ScriptOpt[]>([]);
   const [calls, setCalls] = useState<CallRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -485,20 +487,23 @@ export default function Calls() {
   }, [file, supabase]);
 
   // An opener call (graded on the Opener Script) gets Sale / Follow up / Not interested instead of a client status.
-  const openerUpload = scripts.find((s) => s.id === scriptId)?.team === "openers";
-  // Openers grade against the Opener Script only (no renews); everyone else never sees it.
+  // Openers grade against the Opener Script only (no renews); everyone else never sees it. Which side this
+  // upload is on: the rep picked, else the uploader's own team, else the super admin's Viewing switch.
   const pickedTeam = repId && repId !== NEW_REP ? people.find((p) => p.id === repId)?.team ?? null : null;
-  const openerSide = me?.team === "openers" || pickedTeam === "openers";
-  const upScripts = openerSide ? scripts.filter((s) => s.team === "openers") : pickedTeam ? scripts.filter((s) => s.team !== "openers") : scripts;
+  const upDept = pickedTeam ? deptOfTeam(pickedTeam) : me?.team ? deptOfTeam(me.team) : view !== "all" ? view : null;
+  const openerSide = upDept === "openers";
+  const upScripts = upDept ? scripts.filter((s) => deptOfTeam(s.team) === upDept) : scripts;
+  const openerUpload = openerSide || scripts.find((s) => s.id === scriptId)?.team === "openers";
   useEffect(() => {
     setUpStatus("");
     if (openerUpload) setUpHandoff("");
   }, [openerUpload]);
   // An opener's upload can only be graded on the Opener Script.
   useEffect(() => {
-    if (openerSide && upScripts.length && !upScripts.some((s) => s.id === scriptId)) setScriptId(upScripts[0].id);
+    // An Opener / Service / Sales upload starts on that department's script.
+    if (upDept && upScripts.length && !upScripts.some((s) => s.id === scriptId)) setScriptId(upScripts[0].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openerSide, upScripts.length, scriptId]);
+  }, [upDept, upScripts.length, scriptId]);
 
 
   async function upload() {
@@ -555,7 +560,6 @@ export default function Calls() {
 
   const outcomeOf = (c: CallRow): Outcome | null => c.outcome_manual ?? c.outcome;
 
-  const view = useDeptView();
   const inView = useCallback(
     (c: CallRow) => {
       if (view === "all") return true;
@@ -697,7 +701,8 @@ export default function Calls() {
             <span>Rep</span>
             <select value={repId} onChange={(e) => chooseRep(e.target.value)}>
               <option value="">Choose&hellip;</option>
-              {people.map((p) => (
+              {/* The viewed department's people only (no team = managers and admins, always listed). */}
+              {people.filter((p) => view === "all" || !p.team || inDeptView(view, p.team)).map((p) => (
                 <option key={p.id} value={p.id}>
                   {nameOf(p)}
                 </option>
