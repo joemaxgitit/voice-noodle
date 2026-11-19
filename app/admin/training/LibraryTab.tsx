@@ -283,7 +283,7 @@ export default function LibraryTab() {
       <div className="row" style={{ marginTop: 10 }}>
         <button className="tr-sm" onClick={() => create("quiz")}>+ Knowledge check</button>
         <button className="tr-sm" onClick={() => create("module")}>+ Script practice assignment</button>
-        <button className="tr-sm" onClick={() => create("practice")}>+ Practice call assignment</button>
+        {dept === "sales" && <button className="tr-sm" onClick={() => create("practice")}>+ Practice call assignment</button>}
       </div>
 
       <div className="tr-bar" style={{ marginTop: 22 }}>

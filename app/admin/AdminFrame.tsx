@@ -56,7 +56,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
     title: "Training",
     items: [
       { href: "/admin/training", label: "Training hub", icon: "calendar", match: (p) => p.startsWith("/admin/training") },
-      { href: "/admin/roleplay", label: "Practice calls", icon: "headset", match: (p) => p.startsWith("/admin/roleplay") },
+      { href: "/admin/roleplay", label: "Practice calls", icon: "headset", match: (p) => p.startsWith("/admin/roleplay"), salesOnly: true },
       { href: "/admin/attempts", label: "Attempts", icon: "mic", match: (p) => p.startsWith("/admin/attempts") },
       { href: "/admin/listening", label: "Listening", icon: "ear", match: (p) => p.startsWith("/admin/listening") },
       { href: "/admin/live", label: "Live", icon: "live", match: (p) => p.startsWith("/admin/live") },
@@ -370,10 +370,12 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="af-foot">
+          {!(who.service || view === "service" || view === "openers") && (
           <Link href="/roleplay" className="af-link">
             <Icon name="headset" />
             Try a practice call
           </Link>
+          )}
           <Link href="/account" className="af-link">
             <Icon name="key" />
             Account

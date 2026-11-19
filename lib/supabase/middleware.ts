@@ -88,6 +88,17 @@ export async function updateSession(request: NextRequest) {
 
   if (user && path.startsWith("/admin") && request.cookies.get(REP_VIEW)) response.cookies.delete(REP_VIEW);
 
+  // Practice calls with the AI client are sales-only: service and opener people go home instead.
+  if (user && (path.startsWith("/roleplay") || path.startsWith("/admin/roleplay"))) {
+    const { data: who } = await supabase.from("profiles").select("role, team").eq("id", user.id).maybeSingle();
+    if (who && who.role !== "admin" && (who.team === "ams" || who.team === "openers")) {
+      const url = request.nextUrl.clone();
+      url.pathname = who.role === "manager" ? "/admin/home" : "/";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+  }
+
   if (user && path.startsWith("/admin")) {
     const { data: profile } = await supabase
       .from("profiles")

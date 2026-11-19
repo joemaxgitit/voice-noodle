@@ -235,9 +235,12 @@ export default function RepShell({
         </div>
 
         <nav className="af-nav">
-          <div className="af-group">
-            {item("roleplay", "/roleplay", es ? "Llamadas de práctica" : "Practice calls", "headset", path.startsWith("/roleplay"))}
-          </div>
+          {/* Practice calls with the AI client are sales-only. */}
+          {data?.team !== "ams" && data?.team !== "openers" && (
+            <div className="af-group">
+              {item("roleplay", "/roleplay", es ? "Llamadas de práctica" : "Practice calls", "headset", path.startsWith("/roleplay"))}
+            </div>
+          )}
 
           <div className="af-group">
             <div className="af-group-title">{es ? "Guiones" : "Scripts"}</div>
