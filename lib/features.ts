@@ -4,5 +4,6 @@
 */
 
 /** Pages that only exist in super mode. */
-export const EXTRA_PATHS = ["/admin/rotation", "/admin/dealclip", "/admin/mastery", "/admin/meeting", "/admin/coaching", "/admin/reports"];
+// Master Your Craft and the Thursday meeting are always on for the sales side (no super mode needed).
+export const EXTRA_PATHS = ["/admin/rotation", "/admin/dealclip", "/admin/coaching", "/admin/reports"];
 export const isExtraPath = (path: string) => EXTRA_PATHS.some((p) => path.startsWith(p));

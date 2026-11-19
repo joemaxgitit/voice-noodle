@@ -55,7 +55,9 @@ export default function ManagerHome() {
   const slipping = useMemo(() => (view === "all" ? allSlipping : allSlipping.filter((r) => people.some((p) => p.id === r.rep_id))), [allSlipping, people, view]);
   // The extras show in super mode only.
   const { superMode } = useMode();
-  const on = { rotation: superMode, dealclip: superMode, mastery: superMode, meeting: superMode };
+  // Master Your Craft and the Thursday meeting: always on for the sales side.
+  const salesSide = !service && view !== "service" && view !== "openers";
+  const on = { rotation: superMode, dealclip: superMode, mastery: salesSide, meeting: salesSide };
   useEffect(() => {
     void loadSpend(supabase).then(({ summary }) => setSpend(summary));
   }, [supabase]);
