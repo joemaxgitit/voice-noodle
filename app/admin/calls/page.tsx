@@ -563,11 +563,12 @@ export default function Calls() {
   const inView = useCallback(
     (c: CallRow) => {
       if (view === "all") return true;
-      const p = c.rep_id ? people.find((x) => x.id === c.rep_id) : null;
-      if (p) return inDeptView(view, p.team);
-      // A typed-in rep name (no account): go by the script it was graded against.
+      // A call belongs to the department of the script it was graded against
+      // (an opener call is an opener call, whoever's name is on it); else the rep's.
       const sc = scripts.find((x) => x.id === c.script_id);
-      return !!sc && inDeptView(view, sc.team ?? null);
+      if (sc) return inDeptView(view, sc.team ?? null);
+      const p = c.rep_id ? people.find((x) => x.id === c.rep_id) : null;
+      return !!p && inDeptView(view, p.team);
     },
     [view, people, scripts]
   );
