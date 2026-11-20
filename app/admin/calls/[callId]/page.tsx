@@ -106,7 +106,7 @@ type Call = {
   rep_id: string | null;
   call_time?: string | null;
   rep_name: string | null;
-  scripts: { title: string; logo_url: string | null } | null;
+  scripts: { title: string; logo_url: string | null; team?: string | null } | null;
 };
 
 const BUSY: CallStatus[] = ["uploading", "uploaded", "transcribing", "grading"];
@@ -529,7 +529,7 @@ export default function CallDetail() {
     const { data, error } = await supabase
       .from("calls")
       .select(
-        "id, source, roleplay, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, retention, cancel_date, cancel_reason, cancel_note, graduated_date, final_credit_score, call_time, audio_redact_state, audio_redacted_at, audio_redact_note, grade_history, cost, translation, voice_v:voice->v, script_id, updated_at, rep_id, rep_name, profiles:rep_id(full_name), scripts(title, logo_url)"
+        "id, source, roleplay, client_label, call_date, file_name, audio_path, duration_secs, status, error, transcript, redaction_count, speaker_roles, grade, score, slp_score, outcome, outcome_manual, retention, cancel_date, cancel_reason, cancel_note, graduated_date, final_credit_score, call_time, audio_redact_state, audio_redacted_at, audio_redact_note, grade_history, cost, translation, voice_v:voice->v, script_id, updated_at, rep_id, rep_name, profiles:rep_id(full_name), scripts(title, logo_url, team)"
       )
       .eq("id", callId)
       .single();
@@ -967,7 +967,8 @@ export default function CallDetail() {
   };
   // fixCtx.fixes is keyed with the grade prefix; Fix looks up by the full key.
   const fx = (k: string) => `${gradeKey}|${k}`;
-  const printLogo = (call.scripts?.logo_url || "/proedge-logo.png")
+  // Service calls carry Bolton's brand, whatever logo the script row has; Sales and Openers carry Lionside's.
+  const printLogo = (call.scripts?.team === "ams" ? "/bolton-logo.png" : call.scripts?.logo_url || "/proedge-logo.png")
     .replace(/\.png$/, "-light.png")
     .replace("/lionside-logo-light.png", "/lionside-logo-print.png");
   const utterances = call.transcript?.utterances ?? [];

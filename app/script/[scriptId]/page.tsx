@@ -70,6 +70,8 @@ function ScriptView() {
   const focus = search.get("segment");
 
   const [title, setTitle] = useState("");
+  // Service scripts carry Bolton's brand; Sales and Openers carry Lionside's.
+  const [bolton, setBolton] = useState(false);
   const [mods, setMods] = useState<Mod[]>([]);
   const [segs, setSegs] = useState<Seg[]>([]);
   // Follows the site-wide English / Español switch, live.
@@ -172,6 +174,7 @@ function ScriptView() {
         )
       );
       setTitle(sRes.data?.title || "Script");
+      setBolton((sRes.data as { team?: string | null } | null)?.team === "ams");
       setMods(modules);
       setSegs([...((segData || []) as unknown as Seg[]), ...carriedSegs].sort((a, b) => a.sort_order - b.sort_order));
       setLoading(false);
@@ -472,7 +475,7 @@ function ScriptView() {
       {/* Print only: the paper leaves the building, so it carries the brand. */}
       <div className="print-header">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/lionside-logo-print.png" alt="Lionside Financial" />
+        <img src={bolton ? "/bolton-logo-light.png" : "/lionside-logo-print.png"} alt={bolton ? "Bolton" : "Lionside Financial"} />
         <span>
           {title}
           <br />
