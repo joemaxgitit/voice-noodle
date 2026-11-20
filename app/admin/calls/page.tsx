@@ -564,9 +564,12 @@ export default function Calls() {
     (c: CallRow) => {
       if (view === "all") return true;
       const p = c.rep_id ? people.find((x) => x.id === c.rep_id) : null;
-      return !!p && inDeptView(view, p.team);
+      if (p) return inDeptView(view, p.team);
+      // A typed-in rep name (no account): go by the script it was graded against.
+      const sc = scripts.find((x) => x.id === c.script_id);
+      return !!sc && inDeptView(view, sc.team ?? null);
     },
-    [view, people]
+    [view, people, scripts]
   );
   const shownAll = useMemo(
     () =>
