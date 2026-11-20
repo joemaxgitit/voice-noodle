@@ -237,7 +237,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
   // Who's signed in: service managers don't have rotation or the Deal Clip.
   const view = useDeptView();
   const lang = useLang();
-  const [who, setWho] = useState<{ label: string; service: boolean; superAdmin: boolean; team?: string | null; admin?: boolean }>({ label: "Manager", service: false, superAdmin: false });
+  const [who, setWho] = useState<{ label: string; service: boolean; superAdmin: boolean; team?: string | null; admin?: boolean; loaded?: boolean }>({ label: "Manager", service: false, superAdmin: false });
   const mode = useMode();
   useEffect(() => {
     const supabase = createClient();
@@ -259,7 +259,7 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
             : service
               ? "Service manager"
               : "Sales manager";
-      setWho({ label, service, superAdmin: !!(sa as { super_admin?: boolean } | null)?.super_admin, team: data?.team ?? null, admin: data?.role === "admin" });
+      setWho({ label, service, superAdmin: !!(sa as { super_admin?: boolean } | null)?.super_admin, team: data?.team ?? null, admin: data?.role === "admin", loaded: true });
     })();
   }, []);
 
@@ -320,19 +320,33 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
       {open && <div className="af-backdrop" onClick={() => setOpen(false)} aria-hidden="true" />}
 
       <aside className={`af-side${open ? " open" : ""}`} aria-label="Manager navigation">
-        <div className="af-brand">
-          <span className="af-mark" aria-hidden="true">
+        {/* Admins see Voice Noodle; a manager sees their own company: Bolton for Service, Lionside for Sales and Openers. */}
+        {who.superAdmin || who.admin || !who.loaded ? (
+          <div className="af-brand">
+            <span className="af-mark" aria-hidden="true">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/voicenoodle-mark-sm.png" alt="" />
+            </span>
+            <span>
+              <b>Voice Noodle</b>
+              <small>{who.label}</small>
+            </span>
+            <button className="af-close" aria-label="Close menu" onClick={() => setOpen(false)}>
+              <Icon name="close" />
+            </button>
+          </div>
+        ) : (
+          <div className="rs-brand" style={{ flexDirection: "column", gap: 6 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/voicenoodle-mark-sm.png" alt="" />
-          </span>
-          <span>
-            <b>Voice Noodle</b>
-            <small>{who.label}</small>
-          </span>
-          <button className="af-close" aria-label="Close menu" onClick={() => setOpen(false)}>
-            <Icon name="close" />
-          </button>
-        </div>
+            <img className="dark-only" src={who.team === "ams" ? "/bolton-logo.png" : "/lionside-logo.png"} alt={who.team === "ams" ? "Bolton" : "Lionside"} />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="light-only" src={who.team === "ams" ? "/bolton-logo-light.png" : "/lionside-logo-print.png"} alt="" />
+            <small className="muted" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase" }}>{who.label}</small>
+            <button className="af-close" aria-label="Close menu" onClick={() => setOpen(false)}>
+              <Icon name="close" />
+            </button>
+          </div>
+        )}
 
         <nav className="af-nav">
           {(who.superAdmin || who.admin) && (
