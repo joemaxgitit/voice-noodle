@@ -594,14 +594,21 @@ export default function Calls() {
 
   const repsWithCalls = useMemo(() => {
     const seen = new Map<string, string>();
+    // Only the department being viewed: its reps, and typed-in names from its own uploads.
     for (const c of calls) {
+      if (!inView(c)) continue;
       const key = repKeyOf(c);
       if (key && !seen.has(key)) seen.set(key, repLabelOf(c));
     }
     return [...seen.entries()]
       .map(([key, label]) => ({ key, label }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [calls]);
+  }, [calls, inView]);
+
+  // Switching department drops a rep filter that isn't in it.
+  useEffect(() => {
+    if (filterRep && !repsWithCalls.some((r) => r.key === filterRep)) setFilterRep("");
+  }, [repsWithCalls, filterRep]);
 
   // Estimated spend this calendar month, from each call's recorded cost.
   const monthCost = useMemo(() => {
@@ -850,7 +857,7 @@ export default function Calls() {
           <option value="quick">Voicemails &amp; short calls</option>
           <option value="all">Everything, voicemails too</option>
         </select>
-        {repsWithCalls.length > 1 && (
+        {repsWithCalls.length > 0 && (
           <select
             value={filterRep}
             onChange={(e) => setFilterRep(e.target.value)}
