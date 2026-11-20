@@ -30,7 +30,20 @@ export type BenchKey = {
   script?: number;
   slp?: number;
   notes?: string;
+  /** Service and Openers keys; no dept = Sales. Each department's lessons are tested on its own keys. */
+  dept?: "service" | "openers";
+  /** Openers: application verification (questions + read-backs), gut 0-100. */
+  app_pct?: number;
+  /** Openers: disclaimers said. */
+  disclaimers?: "all" | "some" | "few";
+  /** Openers: how the objections were handled. */
+  rebuttals?: "good" | "mixed" | "poor" | "none";
+  /** Openers: let the client go before the same objection came twice? */
+  let_go_early?: "yes" | "no";
 };
+
+/** Which department a key belongs to (no dept = Sales). */
+export const keyDept = (k: BenchKey | null | undefined): "sales" | "service" | "openers" => k?.dept ?? "sales";
 
 export type BenchItem = { item: string; label: string; key: string; grader: string; score: number };
 
@@ -51,6 +64,10 @@ export const BENCH_ITEM_LABEL: Record<string, string> = {
   company: "Company certainty",
   script: "Script score",
   slp: "Straight Line score",
+  app_pct: "Application verification",
+  disclaimers: "Disclaimers said",
+  rebuttals: "Rebuttals",
+  let_go_early: "Let the client go early",
 };
 
 /** A short fingerprint of a set of standing rules, to tell rule sets apart. */
@@ -129,6 +146,31 @@ export function compare(key: BenchKey, g: Grade, coachMatch: number | null): Ben
     const v = scoreOf(g);
     add("script", String(key.script), v === null ? "" : String(v), v === null ? 0 : near(key.script, v, 8, 15));
   }
+  const o = g.opener;
+  if (typeof key.app_pct === "number") {
+    const v = typeof o?.script_pct === "number" ? o.script_pct : null;
+    add("app_pct", String(key.app_pct), v === null ? "" : String(v), v === null ? 0 : near(key.app_pct, v, 8, 15));
+  }
+  if (key.disclaimers) {
+    const tot = o?.compliance_total ?? 0;
+    const r = tot ? (o?.compliance_said ?? 0) / tot : null;
+    const gv = r === null ? "" : r >= 0.999 ? "all" : r >= 0.5 ? "some" : "few";
+    const order = ["few", "some", "all"];
+    const d = gv ? Math.abs(order.indexOf(gv) - order.indexOf(key.disclaimers)) : 9;
+    add("disclaimers", key.disclaimers, gv, d === 0 ? 1 : d === 1 ? 0.5 : 0);
+  }
+  if (key.rebuttals) {
+    const rb = o?.rebuttals ?? [];
+    const good = o?.rebuttals_good ?? 0;
+    const gv = !rb.length ? "none" : good / rb.length >= 0.75 ? "good" : good / rb.length >= 0.4 ? "mixed" : "poor";
+    const order = ["poor", "mixed", "good"];
+    const d = key.rebuttals === "none" || gv === "none" ? (key.rebuttals === gv ? 0 : 9) : Math.abs(order.indexOf(gv) - order.indexOf(key.rebuttals));
+    add("rebuttals", key.rebuttals, gv, d === 0 ? 1 : d === 1 ? 0.5 : 0);
+  }
+  if (key.let_go_early) {
+    const gv = o ? (o.let_go_early?.early ? "yes" : "no") : "";
+    add("let_go_early", key.let_go_early, gv, key.let_go_early === gv ? 1 : 0);
+  }
   if (typeof key.slp === "number") {
     const v = slpScoreOf(g);
     add("slp", String(key.slp), v === null ? "" : String(v), v === null ? 0 : near(key.slp, v, 8, 15));
@@ -145,5 +187,5 @@ export function agreementOf(items: BenchItem[]): number | null {
 /** Which items the key has answers for -- a key with none of these isn't usable yet. */
 export function keyIsUsable(k: BenchKey | null | undefined): boolean {
   if (!k) return false;
-  return !!(k.outcome || k.ended_why || k.close_quality || k.coach_first?.trim() || k.arc_break || k.hardship || typeof k.product === "number" || typeof k.rep === "number" || typeof k.company === "number" || typeof k.script === "number" || typeof k.slp === "number");
+  return !!(k.outcome || k.ended_why || k.close_quality || k.coach_first?.trim() || k.arc_break || k.hardship || typeof k.product === "number" || typeof k.rep === "number" || typeof k.company === "number" || typeof k.script === "number" || typeof k.slp === "number" || typeof k.app_pct === "number" || !!k.disclaimers || !!k.rebuttals || !!k.let_go_early);
 }

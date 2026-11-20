@@ -5,24 +5,30 @@ import type { createClient } from "@/lib/supabase/client";
 import { ENDED_LABEL, OUTCOME_LABEL, ROADMAP, type Ended, type Outcome } from "@/lib/calls";
 import { keyIsUsable, type BenchKey } from "@/lib/benchmark";
 import { useMode } from "@/lib/superMode";
+import { OPENER_OUTCOMES } from "@/lib/gradeOpener";
 
 /*
-  The super admin's own grade of this call, for the answer key. Filled once,
-  from a fresh listen; every grader version and every new set of standing
-  rules is then tested against it. Only the super admin sees this box.
+  A manager's own grade of this call, for the answer key. Filled once, from a
+  fresh listen; every grader version and every new set of standing rules (or,
+  for Service and Openers, every new set of learned lessons) is then tested
+  against it. Sales: only the super admin. Service and Openers: their managers
+  and admins, with questions that fit their calls.
 */
 export default function AnswerKeyBox({
   supabase,
   callId,
   orgId,
   enrolled,
+  dept = "sales",
 }: {
   supabase: ReturnType<typeof createClient>;
   callId: string;
   orgId: string | null;
   enrolled: boolean;
+  dept?: "sales" | "service" | "openers";
 }) {
   const mode = useMode();
+  const allowed = dept === "sales" ? mode.superAdmin : true;
   const [k, setK] = useState<BenchKey>({});
   const [saved, setSaved] = useState<BenchKey | null>(null);
   const [open, setOpen] = useState(false);
@@ -31,7 +37,7 @@ export default function AnswerKeyBox({
   const [missing, setMissing] = useState(false);
 
   useEffect(() => {
-    if (!mode.superAdmin) return;
+    if (!allowed) return;
     void supabase
       .from("grading_benchmark")
       .select("key")
@@ -43,9 +49,9 @@ export default function AnswerKeyBox({
         setSaved(key);
         if (key) setK(key);
       });
-  }, [supabase, callId, mode.superAdmin]);
+  }, [supabase, callId, allowed]);
 
-  if (!mode.superAdmin) return null;
+  if (!allowed) return null;
 
   const set = <F extends keyof BenchKey>(f: F, v: BenchKey[F] | "" | undefined) =>
     setK((x) => {
@@ -61,12 +67,13 @@ export default function AnswerKeyBox({
     if (!keyIsUsable(k)) return setMsg("Answer at least one question first.");
     setBusy(true);
     setMsg("");
+    const key: BenchKey = dept === "sales" ? k : { ...k, dept };
     const { error } = await supabase
       .from("grading_benchmark")
-      .upsert({ call_id: callId, org_id: orgId, key: k, updated_at: new Date().toISOString() }, { onConflict: "call_id" });
+      .upsert({ call_id: callId, org_id: orgId, key, updated_at: new Date().toISOString() }, { onConflict: "call_id" });
     setBusy(false);
     if (error) return setMsg(/grading_benchmark/.test(error.message) ? "Run supabase/grading_benchmark.sql in the Supabase SQL Editor first." : error.message);
-    setSaved(k);
+    setSaved(key);
     setOpen(false);
     setMsg("Saved to the answer key.");
   }
@@ -100,12 +107,74 @@ export default function AnswerKeyBox({
       {missing && <p className="hint">Run supabase/grading_benchmark.sql in the Supabase SQL Editor to turn this on.</p>}
       {!open && !missing && (
         <p className="hint" style={{ marginBottom: 0 }}>
-          Your own grade of this call, from a fresh listen. Every new grader version and every new set of grading rules is tested against the calls in the answer key.
+          {dept === "sales"
+            ? "Your own grade of this call, from a fresh listen. Every new grader version and every new set of grading rules is tested against the calls in the answer key."
+            : "Your own grade of this call, from a fresh listen. Before the grader starts using anything it learned, it's tested against these calls: it only goes live if the grader agrees with you at least as often as before. About 10 calls is plenty."}
         </p>
       )}
       {open && (
         <div style={{ marginTop: 10 }}>
           <p className="hint" style={{ marginTop: 0 }}>Answer what you&rsquo;re sure of and leave the rest blank &mdash; only what you answer is compared. Go by what you heard, not by the grade above.</p>
+          {dept !== "sales" ? (
+            <div className="retention-fields">
+              {dept === "openers" && (
+                <>
+                  <label className="field">
+                    <span>Result</span>
+                    <select value={k.outcome ?? ""} onChange={(e) => set("outcome", e.target.value as Outcome)}>
+                      <option value="">--</option>
+                      {OPENER_OUTCOMES.map((o) => (
+                        <option key={o} value={o}>{OUTCOME_LABEL[o as Outcome] ?? o}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Application verification, your gut (0&ndash;100)</span>
+                    <input type="number" min={0} max={100} value={k.app_pct ?? ""} onChange={(e) => set("app_pct", num(e.target.value, 0, 100))} />
+                  </label>
+                  <label className="field">
+                    <span>Disclaimers said</span>
+                    <select value={k.disclaimers ?? ""} onChange={(e) => set("disclaimers", e.target.value as BenchKey["disclaimers"])}>
+                      <option value="">--</option>
+                      <option value="all">All of them</option>
+                      <option value="some">Missed one or two</option>
+                      <option value="few">Missed most</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Rebuttals</span>
+                    <select value={k.rebuttals ?? ""} onChange={(e) => set("rebuttals", e.target.value as BenchKey["rebuttals"])}>
+                      <option value="">--</option>
+                      <option value="good">Handled well</option>
+                      <option value="mixed">Mixed</option>
+                      <option value="poor">Poorly</option>
+                      <option value="none">No objections came up</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Let the client go early?</span>
+                    <select value={k.let_go_early ?? ""} onChange={(e) => set("let_go_early", e.target.value as BenchKey["let_go_early"])}>
+                      <option value="">--</option>
+                      <option value="no">No</option>
+                      <option value="yes">Yes &mdash; gave up before the same objection came twice</option>
+                    </select>
+                  </label>
+                </>
+              )}
+              <label className="field">
+                <span>Script score, your gut (0&ndash;100)</span>
+                <input type="number" min={0} max={100} value={k.script ?? ""} onChange={(e) => set("script", num(e.target.value, 0, 100))} />
+              </label>
+              <label className="field wide">
+                <span>The one thing you&rsquo;d coach first</span>
+                <textarea rows={2} value={k.coach_first ?? ""} onChange={(e) => set("coach_first", e.target.value)} placeholder={dept === "openers" ? "e.g. Ask what their concerns are before the rebuttal, and tie it down after" : "e.g. Slow down and confirm the payment date back to the client"} />
+              </label>
+              <label className="field wide">
+                <span>Notes (optional, not compared)</span>
+                <input value={k.notes ?? ""} onChange={(e) => set("notes", e.target.value)} />
+              </label>
+            </div>
+          ) : (
           <div className="retention-fields">
             <label className="field">
               <span>Outcome</span>
@@ -178,6 +247,7 @@ export default function AnswerKeyBox({
               <input value={k.notes ?? ""} onChange={(e) => set("notes", e.target.value)} />
             </label>
           </div>
+          )}
           <div className="row" style={{ marginTop: 10 }}>
             <button className="primary" disabled={busy} onClick={save}>
               Save my answers

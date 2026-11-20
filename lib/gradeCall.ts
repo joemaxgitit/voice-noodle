@@ -128,6 +128,8 @@ export type GradeOptions = {
   dryRun?: boolean;
   /** Grade by these standing rules instead of the live ones (testing new rules against the answer key). */
   rules?: { rule: string }[] | null;
+  /** Service / Openers: grade by these learned lessons instead of the live ones (testing them on the answer key). */
+  deptLessons?: string | null;
 };
 
 /**
@@ -255,7 +257,7 @@ export async function prepareGrade(
     if (claimErr) return { ok: false, status: 500, error: `Could not start. ${claimErr.message}` };
     const notesV = voiceNotes((call.voice as VoiceTimeline | null) ?? null, transcript);
     const seq = useModules.filter((m) => m.kind !== "loop").map((m) => m.title);
-    const openerGuidance = await managerGuidance(supabase, false, null, "openers");
+    const openerGuidance = await managerGuidance(supabase, false, null, "openers", opts.deptLessons);
     const stable = openerGuidance + openerPrompt({
       scriptTitle: script.title,
       script: scriptText(useModules).text,
@@ -359,7 +361,7 @@ ${notesV.header}
 
   // After the claim: a rep grading their own practice call can only read
   // the managers' lessons while that call is marked as grading.
-  const guidance = await managerGuidance(supabase, isPractice, opts.rules, script?.team === "ams" ? "service" : "sales");
+  const guidance = await managerGuidance(supabase, isPractice, opts.rules, script?.team === "ams" ? "service" : "sales", opts.deptLessons);
 
   const repName =
     (call as unknown as { profiles: { full_name: string | null } | null }).profiles?.full_name ||
@@ -608,7 +610,7 @@ const CORRECTIONS_IN_PROMPT = 12;
 */
 type Fix = { item_kind: string; item_label: string | null; original: string; correction: string };
 
-async function managerGuidance(supabase: Supa, practice = false, rulesOverride?: { rule: string }[] | null, dept: "sales" | "service" | "openers" = "sales"): Promise<string> {
+async function managerGuidance(supabase: Supa, practice = false, rulesOverride?: { rule: string }[] | null, dept: "sales" | "service" | "openers" = "sales", lessonsOverride?: string | null): Promise<string> {
   // Service and Openers learn on their own: their lessons from proven results, and their own corrections.
   if (dept !== "sales") {
     const [{ data: dg }, { data: df }] = await Promise.all([
@@ -616,7 +618,7 @@ async function managerGuidance(supabase: Supa, practice = false, rulesOverride?:
       supabase.from("call_corrections").select("item_kind, item_label, original, correction").eq("dept", dept).order("created_at", { ascending: false }).limit(CORRECTIONS_IN_PROMPT),
     ]);
     const parts: string[] = [];
-    const l = ((dg as { lessons?: string | null } | null)?.lessons ?? "").trim();
+    const l = (lessonsOverride ?? (dg as { lessons?: string | null } | null)?.lessons ?? "").trim();
     if (l)
       parts.push(
         `Lessons learned from this team's own calls, by what actually happened afterwards (${dept === "openers" ? "applications submitted and leads Sales went on to enroll, vs leads the opener lost" : "clients who stayed or graduated, vs clients who cancelled"}). Use them to sharpen your judgment and coaching -- they are patterns, not rules, and they never relax the disclaimers or word-for-word lines:\n` +

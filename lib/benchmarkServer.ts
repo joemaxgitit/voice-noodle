@@ -4,7 +4,7 @@ import { thinkingFor, type Supa } from "@/lib/callsServer";
 import { gradeCostUsd } from "@/lib/calls";
 import { GRADER_VERSION, prepareGrade } from "@/lib/gradeCall";
 import { logSpend } from "@/lib/spendServer";
-import { BENCH_MIN, BENCH_TOLERANCE, agreementOf, compare, keyIsUsable, rulesHash, type BenchItem, type BenchKey } from "@/lib/benchmark";
+import { BENCH_MIN, BENCH_TOLERANCE, agreementOf, compare, keyDept, keyIsUsable, rulesHash, type BenchItem, type BenchKey } from "@/lib/benchmark";
 import type { GradingRule } from "@/lib/gradingRules";
 
 /*
@@ -51,9 +51,10 @@ export async function guidanceOf(supabase: Supa): Promise<Guidance | null> {
   return (data as Guidance | null) ?? { rules: null, rules_pending: null, rules_history: null };
 }
 
-export async function keyedCalls(supabase: Supa): Promise<{ call_id: string; key: BenchKey }[]> {
+/** The answer key for one department (Sales by default: the standing rules are Sales's). */
+export async function keyedCalls(supabase: Supa, dept: "sales" | "service" | "openers" = "sales"): Promise<{ call_id: string; key: BenchKey }[]> {
   const { data } = await supabase.from("grading_benchmark").select("call_id, key");
-  return ((data || []) as { call_id: string; key: BenchKey }[]).filter((r) => keyIsUsable(r.key));
+  return ((data || []) as { call_id: string; key: BenchKey }[]).filter((r) => keyIsUsable(r.key) && keyDept(r.key) === dept);
 }
 
 /** Starts a run: one row, then one request per keyed call. */
@@ -79,7 +80,7 @@ export async function startRun(
 }
 
 /** Does the grader's first coaching point match the manager's? 1 same, 0.5 related, 0 different. About a tenth of a cent. */
-async function coachMatch(key: string, manager: string, grader: string): Promise<{ score: number | null; usd: number }> {
+export async function coachMatch(key: string, manager: string, grader: string): Promise<{ score: number | null; usd: number }> {
   if (!manager.trim() || !grader.trim()) return { score: grader.trim() ? 0 : null, usd: 0 };
   try {
     const res = await fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {
@@ -92,7 +93,7 @@ async function coachMatch(key: string, manager: string, grader: string): Promise
         messages: [
           {
             role: "user",
-            content: `A sales manager and an AI grader each said what a sales rep should work on first after one call.\nManager: "${manager.slice(0, 600)}"\nGrader: "${grader.slice(0, 600)}"\nAre they pointing at the same behavior? Reply with only JSON: {"match": "same" | "related" | "different"}. "same" = the same behavior to change, in any words; "related" = the same part of the call or skill but a different change; "different" = something else.`,
+            content: `A manager and an AI grader each said what a phone rep should work on first after one call.\nManager: "${manager.slice(0, 600)}"\nGrader: "${grader.slice(0, 600)}"\nAre they pointing at the same behavior? Reply with only JSON: {"match": "same" | "related" | "different"}. "same" = the same behavior to change, in any words; "related" = the same part of the call or skill but a different change; "different" = something else.`,
           },
         ],
       }),

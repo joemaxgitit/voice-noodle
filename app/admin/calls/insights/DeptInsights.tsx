@@ -111,6 +111,21 @@ export default function DeptInsights({ dept }: { dept: LearnDept }) {
           </section>
 
           <section className="card" style={{ marginTop: 14 }}>
+            <b>Answer key</b>
+            <p style={{ margin: "6px 0 0" }}>
+              {d.keyed} call{d.keyed === 1 ? "" : "s"} graded by hand.{" "}
+              {d.keyed < d.keyMin ? (
+                <span className="muted">
+                  At {d.keyMin} or more, every new set of lessons is tested on them first and only goes live if the grader agrees with you at least as often as before. Open any {dept === "openers" ? "opener" : "service"} call and use the Answer key box at the bottom.
+                </span>
+              ) : (
+                <span className="muted">New lessons are tested on these before they go live.</span>
+              )}
+            </p>
+            {d.test?.last_test && <p style={{ margin: "6px 0 0" }}>{d.test.last_test}</p>}
+          </section>
+
+          <section className="card" style={{ marginTop: 14 }}>
             <b>
               {w.good} vs {w.bad.toLowerCase()} calls
             </b>

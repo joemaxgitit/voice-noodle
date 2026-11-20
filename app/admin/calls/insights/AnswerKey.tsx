@@ -64,7 +64,8 @@ export default function AnswerKey() {
     ]);
     if (k.error || r.error || gd.error) return setError(/grading_benchmark|rules_pending|rules_history/.test((k.error || r.error || gd.error)!.message) ? "Run supabase/grading_benchmark.sql in the Supabase SQL Editor first." : (k.error || r.error || gd.error)!.message);
     setError("");
-    setKeyed((k.data || []) as unknown as Keyed[]);
+    // Sales's answer key only: Service and Openers keys are tested with their own lessons.
+    setKeyed(((k.data || []) as unknown as Keyed[]).filter((x) => !(x.key as { dept?: string }).dept));
     setRuns((r.data || []) as Run[]);
     setG((gd.data as Guidance | null) ?? { rules: null, rules_pending: null, rules_pending_at: null, rules_history: null });
   }, [supabase]);

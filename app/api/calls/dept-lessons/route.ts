@@ -4,6 +4,9 @@ import { gradeCostUsd } from "@/lib/calls";
 import { logSpend } from "@/lib/spendServer";
 import { plainCounts } from "@/lib/plain";
 import { clientKey } from "@/lib/journey";
+import { prepareGrade } from "@/lib/gradeCall";
+import { coachMatch, keyedCalls } from "@/lib/benchmarkServer";
+import { BENCH_MIN, BENCH_TOLERANCE, agreementOf, compare, rulesHash } from "@/lib/benchmark";
 import { DEPT_MIN, DEPT_WORDS, LOWER_IS_BETTER, deptMetrics, digestCall, labelCalls, type LearnCall, type LearnDept, type LeadResult } from "@/lib/deptLearning";
 
 export const runtime = "nodejs";
@@ -48,6 +51,38 @@ async function gather(supabase: Supa, dept: LearnDept) {
   return { labeled: labelCalls(dept, calls, leads), total: calls.length };
 }
 
+/**
+ * Grades every answer-key call of this department with these lessons (never
+ * saved onto the calls) and returns how often the grader agreed with the
+ * manager. All calls at once, so it fits in one request.
+ */
+async function testLessons(supabase: Supa, apiKey: string, dept: LearnDept, lessons: string, keyed: Awaited<ReturnType<typeof keyedCalls>>) {
+  let usd = 0;
+  const all = await Promise.all(
+    keyed.map(async (k) => {
+      try {
+        const prep = await prepareGrade(supabase, k.call_id, apiKey, Date.now(), { dryRun: true, deptLessons: lessons });
+        if (!prep.ok || prep.already) return [];
+        const out = await prep.run();
+        if (!out) return [];
+        usd += out.usd ?? 0;
+        const g = out.grade;
+        const cm = await coachMatch(apiKey, k.key.coach_first ?? "", g.coach_now?.priority.title ? `${g.coach_now.priority.title}. ${g.coach_now.priority.next_call}` : g.coaching_priorities?.[0] ?? "");
+        usd += cm.usd;
+        return compare(k.key, g, cm.score);
+      } catch {
+        return [];
+      }
+    })
+  );
+  void dept;
+  return { agreement: agreementOf(all.flat()), usd };
+}
+
+const lessonsHash = (lessons: string | null | undefined, keyed: { call_id: string }[]) =>
+  // The lessons and which calls are in the key: either changing means testing again.
+  `${rulesHash((lessons ?? "").split("\n").map((rule) => ({ rule })))}:${rulesHash(keyed.map((k) => ({ rule: k.call_id })).sort((a, b) => a.rule.localeCompare(b.rule)))}`;
+
 export async function GET(request: Request) {
   const ctx = await requireAdmin(request);
   if (ctx instanceof NextResponse) return ctx;
@@ -64,6 +99,14 @@ export async function GET(request: Request) {
     metrics: deptMetrics(dept, labeled).slice(0, 30),
     lessons: (g as { lessons: string | null } | null)?.lessons ?? null,
     updated_at: (g as { updated_at: string } | null)?.updated_at ?? null,
+    keyed: (await keyedCalls(ctx.supabase, dept)).length,
+    keyMin: BENCH_MIN,
+    test: await ctx.supabase
+      .from("dept_guidance")
+      .select("key_agreement, last_test")
+      .eq("dept", dept)
+      .maybeSingle()
+      .then(({ data }) => (data as { key_agreement: number | null; last_test: string | null } | null) ?? null, () => null),
   });
 }
 
@@ -166,9 +209,49 @@ Rules:
     return NextResponse.json({ error: "The lessons could not be read. Try again." }, { status: 502 });
   }
   if (!lines.length) return NextResponse.json({ skipped: "no clear lessons yet" });
-  const { error } = await supabase
-    .from("dept_guidance")
-    .upsert({ org_id: orgId, dept, lessons: lines.join("\n"), good_n: good.length, bad_n: bad.length, updated_at: new Date().toISOString() });
+  const next = lines.join("\n");
+  const row: Record<string, unknown> = { org_id: orgId, dept, lessons: next, good_n: good.length, bad_n: bad.length, updated_at: new Date().toISOString() };
+
+  /*
+    The answer key keeps it honest: with enough of this department's calls
+    graded by hand, the new lessons only go live if the grader agrees with
+    the manager at least about as often as with the lessons before. Each test
+    re-grades every keyed call (about 20 cents a call).
+  */
+  const keyed = await keyedCalls(supabase, dept);
+  if (keyed.length >= BENCH_MIN) {
+    const { data: cur } = await supabase.from("dept_guidance").select("lessons, key_agreement, key_hash").eq("dept", dept).maybeSingle();
+    const c = cur as { lessons: string | null; key_agreement: number | null; key_hash: string | null } | null;
+    const [cand, base] = await Promise.all([
+      testLessons(supabase, key, dept, next, keyed),
+      c?.key_hash === lessonsHash(c?.lessons, keyed) && c?.key_agreement !== null && c?.key_agreement !== undefined
+        ? Promise.resolve({ agreement: c.key_agreement, usd: 0 })
+        : testLessons(supabase, key, dept, c?.lessons ?? "", keyed),
+    ]);
+    const spent = cand.usd + base.usd;
+    if (spent > 0) await logSpend(supabase, { org_id: orgId, kind: "benchmark", usd: spent, user_id: userId });
+    const when = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Los_Angeles" });
+    if (cand.agreement !== null && base.agreement !== null && cand.agreement < base.agreement - BENCH_TOLERANCE) {
+      // Held back: keep the lessons in use, remember why.
+      await supabase
+        .from("dept_guidance")
+        .upsert({ org_id: orgId, dept, lessons: c?.lessons ?? null, good_n: good.length, bad_n: bad.length, key_agreement: base.agreement, key_hash: lessonsHash(c?.lessons, keyed), last_test: `${when}: new lessons held back -- the grader agreed with your answer key ${cand.agreement}% of the time with them vs ${base.agreement}% without.` });
+      return NextResponse.json({ held: true, candidate: cand.agreement, current: base.agreement });
+    }
+    Object.assign(row, {
+      key_agreement: cand.agreement,
+      key_hash: lessonsHash(next, keyed),
+      last_test: `${when}: tested on ${keyed.length} answer-key calls -- ${cand.agreement ?? "?"}% agreement with your answers (${base.agreement ?? "?"}% before).`,
+    });
+  }
+  let { error } = await supabase.from("dept_guidance").upsert(row);
+  // Before supabase/dept-answer-key.sql has run there are no test columns: save the lessons anyway.
+  if (error && /key_|last_test/.test(error.message)) {
+    delete row.key_agreement;
+    delete row.key_hash;
+    delete row.last_test;
+    ({ error } = await supabase.from("dept_guidance").upsert(row));
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ saved: true, good: good.length, bad: bad.length });
 }
@@ -182,4 +265,7 @@ export type DeptLessonsView = {
   metrics: ReturnType<typeof deptMetrics>;
   lessons: string | null;
   updated_at: string | null;
+  keyed: number;
+  keyMin: number;
+  test: { key_agreement: number | null; last_test: string | null } | null;
 };

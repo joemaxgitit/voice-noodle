@@ -440,7 +440,7 @@ export default function CallDetail() {
   const { callId } = useParams<{ callId: string }>();
 
   const [call, setCall] = useState<Call | null>(null);
-  const [scripts, setScripts] = useState<{ id: string; title: string }[]>([]);
+  const [scripts, setScripts] = useState<{ id: string; title: string; team?: string | null }[]>([]);
   const [people, setPeople] = useState<{ id: string; name: string }[]>([]);
   const [repDraft, setRepDraft] = useState<string | null>(null); // typed name being edited
   const [audioUrl, setAudioUrl] = useState("");
@@ -561,7 +561,7 @@ export default function CallDetail() {
     void load();
     void supabase
       .from("scripts")
-      .select("id, title")
+      .select("id, title, team")
       .eq("active", true)
       .order("sort_order")
       .then(({ data }) => setScripts(data || []));
@@ -2106,7 +2106,16 @@ export default function CallDetail() {
 
       <div className="no-print">
       {call.source !== "roleplay" && call.transcript && (
-        <AnswerKeyBox supabase={supabase} callId={call.id} orgId={myOrg} enrolled={(call.outcome_manual ?? call.outcome ?? g?.outcome) === "enrolled"} />
+        <AnswerKeyBox
+          supabase={supabase}
+          callId={call.id}
+          orgId={myOrg}
+          enrolled={(call.outcome_manual ?? call.outcome ?? g?.outcome) === "enrolled"}
+          dept={(() => {
+            const t = scripts.find((x) => x.id === call.script_id)?.team;
+            return t === "openers" ? "openers" : t === "ams" ? "service" : "sales";
+          })()}
+        />
       )}
       <JourneyBox supabase={supabase} callId={call.id} clientLabel={call.client_label} source={call.source} onChanged={() => void load()} version={`${call.status}|${call.updated_at ?? ""}`} />
 
