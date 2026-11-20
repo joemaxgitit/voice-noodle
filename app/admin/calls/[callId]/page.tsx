@@ -1277,9 +1277,9 @@ export default function CallDetail() {
                       <>
                         Sped up{" "}
                         {pace.stretches.map((st, i) => (
-                          <span key={i} style={{ whiteSpace: "nowrap" }}>
+                          <span key={i}>
                             {i > 0 && ", "}
-                            <button className="time-link" onClick={() => seek(st.start)}>
+                            <button className="time-link" style={{ whiteSpace: "nowrap" }} onClick={() => seek(st.start)}>
                               {clock(st.start)}&ndash;{clock(st.end)}
                             </button>{" "}
                             <span className={st.key ? "" : "muted"}>
