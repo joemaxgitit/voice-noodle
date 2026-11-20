@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useMode } from "@/lib/superMode";
 import { createClient } from "@/lib/supabase/client";
 import { setDeptView, useDeptView, type DeptView } from "@/lib/deptView";
@@ -145,6 +145,20 @@ function ScriptTree({ path, dept }: { path: string; dept: DeptView }) {
     const m = tree.modules.find((x) => x.id === curModule);
     setOpen((o) => new Set(o).add(m?.kind === "loop" ? `loops-${m.script_id}` : curScript));
   }, [tree, curScript, curModule]);
+  // Flipping English / Español while a section is open: go straight to the same section in the other language.
+  const router = useRouter();
+  useEffect(() => {
+    if (!tree || !curModule || path !== "/admin") return;
+    const m = tree.modules.find((x) => x.id === curModule);
+    if (!m || (m.language || "en") === lang) return;
+    const same = (lg: string) =>
+      tree.modules.filter((x) => x.script_id === m.script_id && (x.language || "en") === lg && (x.kind === "loop") === (m.kind === "loop")).sort((a, b) => a.sort_order - b.sort_order);
+    const twin = same(lang)[same(m.language || "en").findIndex((x) => x.id === m.id)];
+    if (!twin) return;
+    const href = `/admin?script=${twin.script_id}&module=${twin.id}`;
+    setQs(href.slice(href.indexOf("?")));
+    router.replace(href);
+  }, [lang, tree, curModule, path, router]);
 
   if (!tree) return null;
   // Only the department being looked at: Sales (closers / no team), Service (AMs) or Openers.
