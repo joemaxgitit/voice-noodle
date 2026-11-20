@@ -493,6 +493,7 @@ export default function Calls() {
   const upDept = pickedTeam ? deptOfTeam(pickedTeam) : me?.team ? deptOfTeam(me.team) : view !== "all" ? view : null;
   const openerSide = upDept === "openers";
   const upScripts = upDept ? scripts.filter((s) => deptOfTeam(s.team) === upDept) : scripts;
+  const needLead = upDept === "openers" || upDept === "service" || scripts.find((s) => s.id === scriptId)?.team === "ams";
   const openerUpload = openerSide || scripts.find((s) => s.id === scriptId)?.team === "openers";
   useEffect(() => {
     setUpStatus("");
@@ -516,6 +517,8 @@ export default function Calls() {
       setError(missing.length ? `Choose ${missing.join(", ")}.` : "Couldn't find your organization -- sign out and back in.");
       return;
     }
+    // Service and Openers learn from what became of each lead, so their calls need the lead ID.
+    if (needLead && !client.trim()) return setError("Enter the lead ID -- it's how the call is matched to what happened to that client.");
     if (est && !(await okToSpend(supabase, est.usd, "This call"))) return;
     const ct = convosoName(file.name).time;
     const res = await uploadCall(
@@ -743,10 +746,10 @@ export default function Calls() {
             </select>
           </label>
           <label className="field">
-            <span>Client (optional)</span>
+            <span>{needLead ? "Lead ID" : "Client (optional)"}</span>
             <input
               value={client}
-              placeholder="First name or lead ID"
+              placeholder={needLead ? "Lead ID (required)" : "First name or lead ID"}
               onChange={(e) => setClient(e.target.value)}
             />
           </label>

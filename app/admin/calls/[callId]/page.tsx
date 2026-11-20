@@ -828,7 +828,9 @@ export default function CallDetail() {
     const manual = !value || value === call.outcome ? null : (value as Outcome);
     setCall({ ...call, outcome_manual: manual });
     const { error } = await supabase.from("calls").update({ outcome_manual: manual }).eq("id", call.id);
-    if (error) setError(error.message);
+    if (error) return setError(error.message);
+    // Sales, loan approvals and enrollments are what Service and Openers learn from.
+    if (call.source !== "roleplay") void afterOutcomes(supabase, []);
   }
 
   /*

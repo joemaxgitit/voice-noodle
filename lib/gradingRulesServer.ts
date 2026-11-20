@@ -16,11 +16,19 @@ import type { GradingRule } from "@/lib/gradingRules";
 
 type Fix = { item_kind: string; item_label: string | null; original: string; correction: string; created_at: string };
 
+/** The standing rules are Sales's: only Sales calls' corrections (all of them before supabase/dept-learning.sql). */
+async function hasDept(supabase: SupabaseClient) {
+  const { error } = await supabase.from("call_corrections").select("dept").limit(1);
+  return !error;
+}
+
 export async function rulesState(supabase: SupabaseClient) {
+  const d = await hasDept(supabase);
+  const corr = <T,>(q: T) => (d ? (q as unknown as { eq: (c: string, v: string) => T }).eq("dept", "sales") : q);
   const [g, n, last] = await Promise.all([
     supabase.from("grading_guidance").select("rules, rules_updated_at, rules_from").maybeSingle(),
-    supabase.from("call_corrections").select("id", { count: "exact", head: true }),
-    supabase.from("call_corrections").select("created_at").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    corr(supabase.from("call_corrections").select("id", { count: "exact", head: true })),
+    corr(supabase.from("call_corrections").select("created_at")).order("created_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
   if (g.error) return { error: /rules/.test(g.error.message) ? "Run supabase/grading_rules.sql in the Supabase SQL Editor first." : g.error.message, rules: [] as GradingRule[], updated_at: null as string | null, count: 0, stale: false, lastAt: null as string | null, hasRow: false };
   const row = g.data as { rules: GradingRule[] | null; rules_updated_at: string | null; rules_from: number | null } | null;
@@ -47,7 +55,8 @@ export async function rewriteRules(supabase: SupabaseClient, key: string, orgId:
     if (!claimed) return { skipped: "another grade is rewriting them", rules: s.rules };
   }
 
-  const { data: f, error } = await supabase.from("call_corrections").select("item_kind, item_label, original, correction, created_at").order("created_at", { ascending: true }).limit(600);
+  const base = supabase.from("call_corrections").select("item_kind, item_label, original, correction, created_at");
+  const { data: f, error } = await ((await hasDept(supabase)) ? base.eq("dept", "sales") : base).order("created_at", { ascending: true }).limit(600);
   if (error) return { error: error.message };
   const fixes = (f || []) as Fix[];
   const current = (s.rules ?? []) as GradingRule[];

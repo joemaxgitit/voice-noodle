@@ -31,22 +31,30 @@ export async function afterTranscribe(request: Request, supabase: Supa, callId: 
   await Promise.all(jobs);
 }
 
+const mySideOf = (me: unknown) => {
+  const t = (me as { scripts?: { team: string | null } | null }).scripts?.team;
+  return t === "ams" ? "service" : t === "openers" ? "openers" : "sales";
+};
+
 /** After a real call is graded. */
 export async function afterGrade(request: Request, supabase: Supa, callId: string) {
-  const { data: me } = await supabase.from("calls").select("id, source, status, client_label, rep_id, retention").eq("id", callId).single();
+  const { data: me } = await supabase.from("calls").select("id, source, status, client_label, rep_id, retention, scripts(team)").eq("id", callId).single();
   if (!me || me.status !== "graded" || me.source === "roleplay") return;
   const jobs: Promise<unknown>[] = [kick(request, "/api/calls/learn", { callId, background: true })];
 
   const label = (me.client_label as string | null)?.trim();
   if (label) {
     const [{ data: cs }, nums] = await Promise.all([
-      supabase.from("calls").select("id, client_label, call_date, call_time, created_at, status, graded_at:grade->>graded_at").ilike("client_label", label).neq("source", "roleplay"),
+      supabase.from("calls").select("id, client_label, call_date, call_time, created_at, status, graded_at:grade->>graded_at, scripts(team)").ilike("client_label", label).neq("source", "roleplay"),
       supabase.from("calls").select("id, call_number").ilike("client_label", label),
     ]);
     const num = new Map(((nums.data || []) as { id: string; call_number: number | null }[]).map((x) => [x.id, x.call_number]));
     type C = { id: string; client_label: string | null; call_date: string | null; call_time?: string | null; created_at: string; status: string; graded_at: string | null };
+    // The lead ID is shared by every department: the journey is only this department's calls.
+    const sideOf = (t: string | null | undefined) => (t === "ams" ? "service" : t === "openers" ? "openers" : "sales");
+    const mySide = sideOf((me as unknown as { scripts: { team: string | null } | null }).scripts?.team);
     const list = numbered(
-      ((cs || []) as C[]).map((c) => ({ ...c, call_number: num.get(c.id) ?? null, rep_id: null, outcome: null, outcome_manual: null, retention: null, score: null, slp_score: null }))
+      ((cs || []) as unknown as (C & { scripts: { team: string | null } | null })[]).filter((c) => sideOf(c.scripts?.team) === mySide).map((c) => ({ ...c, call_number: num.get(c.id) ?? null, rep_id: null, outcome: null, outcome_manual: null, retention: null, score: null, slp_score: null }))
     );
     const mine = list.find((c) => c.id === callId);
     if (mine && list.length > 1) {
@@ -64,6 +72,8 @@ export async function afterGrade(request: Request, supabase: Supa, callId: strin
     // ...and the grader's lessons from proven sales vs cancels (waits for enough of both; at most every 6 hours).
     jobs.push(kick(request, "/api/calls/lessons", { auto: true }));
   }
+  // Service and Openers learn from their own results (waits for enough; at most every 6 hours; no spend until then).
+  if (mySideOf(me) !== "sales") jobs.push(kick(request, "/api/calls/dept-lessons", { dept: mySideOf(me), auto: true }));
   // Practice voices pick up anything new from real calls (free; skips voices already up to date).
   jobs.push(kick(request, "/api/roleplay/sync", { background: true }));
   await Promise.all(jobs);

@@ -10,6 +10,8 @@ import { asProven, compare, favouring, formatValue, MIN_FOR_FINDINGS, type Insig
 import Archetypes from "./Archetypes";
 import GradingRules from "./GradingRules";
 import AnswerKey from "./AnswerKey";
+import DeptInsights from "./DeptInsights";
+import { useDeptView } from "@/lib/deptView";
 import { useMode } from "@/lib/superMode";
 import { plainCounts } from "@/lib/plain";
 import "../calls.css";
@@ -54,7 +56,26 @@ const INSIGHT_TABS: { id: InsightTab; label: string }[] = [
   { id: "tuning", label: "Tuning the grader" },
 ];
 
+/** Service and Openers get their own Insights (learned from lead results); Sales keeps this page. */
 export default function Insights() {
+  const view = useDeptView();
+  const [team, setTeam] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    const sb = createClient();
+    void sb.auth.getSession().then(async ({ data }) => {
+      const uid = data.session?.user.id;
+      if (!uid) return setTeam(null);
+      const { data: p } = await sb.from("profiles").select("team, role").eq("id", uid).maybeSingle();
+      setTeam((p as { role?: string } | null)?.role === "admin" ? null : ((p as { team?: string | null } | null)?.team ?? null));
+    });
+  }, []);
+  if (team === undefined) return null;
+  const dept = view === "service" || team === "ams" ? "service" : view === "openers" || team === "openers" ? "openers" : "sales";
+  if (dept !== "sales") return <DeptInsights key={dept} dept={dept} />;
+  return <SalesInsights />;
+}
+
+function SalesInsights() {
   const supabase = createClient();
   // Which tab is open: kept in the address (?tab=) so links and the back button land on it.
   const { superAdmin } = useMode();

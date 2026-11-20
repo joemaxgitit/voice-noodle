@@ -13,5 +13,5 @@ export async function afterOutcomes(supabase: SupabaseClient, repIds: (string | 
   const post = (path: string, body: Record<string, unknown>) =>
     fetch(path, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
   const reps = [...new Set(repIds.filter((x): x is string => !!x))];
-  await Promise.all([...reps.map((repId) => post("/api/reps/fingerprint", { repId, auto: true })), post("/api/calls/lessons", { auto: true })]);
+  await Promise.all([...reps.map((repId) => post("/api/reps/fingerprint", { repId, auto: true })), post("/api/calls/lessons", { auto: true }), post("/api/calls/dept-lessons", { dept: "service", auto: true }), post("/api/calls/dept-lessons", { dept: "openers", auto: true })]);
 }

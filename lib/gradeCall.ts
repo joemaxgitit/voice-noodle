@@ -255,7 +255,8 @@ export async function prepareGrade(
     if (claimErr) return { ok: false, status: 500, error: `Could not start. ${claimErr.message}` };
     const notesV = voiceNotes((call.voice as VoiceTimeline | null) ?? null, transcript);
     const seq = useModules.filter((m) => m.kind !== "loop").map((m) => m.title);
-    const stable = openerPrompt({
+    const openerGuidance = await managerGuidance(supabase, false, null, "openers");
+    const stable = openerGuidance + openerPrompt({
       scriptTitle: script.title,
       script: scriptText(useModules).text,
       sections: seq,
@@ -358,7 +359,7 @@ ${notesV.header}
 
   // After the claim: a rep grading their own practice call can only read
   // the managers' lessons while that call is marked as grading.
-  const guidance = await managerGuidance(supabase, isPractice, opts.rules);
+  const guidance = await managerGuidance(supabase, isPractice, opts.rules, script?.team === "ams" ? "service" : "sales");
 
   const repName =
     (call as unknown as { profiles: { full_name: string | null } | null }).profiles?.full_name ||
@@ -541,8 +542,11 @@ async function recentFocus(supabase: Supa, repId: string, callId: string): Promi
   record" -- neutral. Everything that happened on this call is graded as normal.
 */
 async function journeyNote(supabase: Supa, callId: string, scriptTitle: string): Promise<string> {
-  const { data: me } = await supabase.from("calls").select("id, org_id, client_label, call_date, created_at").eq("id", callId).single();
+  const { data: me } = await supabase.from("calls").select("id, org_id, client_label, call_date, created_at, scripts(team)").eq("id", callId).single();
   const label = (me?.client_label as string | null)?.trim();
+  // The lead ID is shared by every department: a journey is only this department's calls.
+  const sideOf = (team: string | null | undefined) => (team === "ams" ? "service" : team === "openers" ? "openers" : "sales");
+  const mySide = sideOf((me as unknown as { scripts: { team: string | null } | null } | null)?.scripts?.team);
   // The manager's call number and handoff (separate, so grading works before those columns exist).
   const extra = await supabase.from("calls").select("call_number, handoff").eq("id", callId).maybeSingle();
   const myNumber = (extra.data as { call_number?: number | null } | null)?.call_number ?? null;
@@ -553,13 +557,14 @@ async function journeyNote(supabase: Supa, callId: string, scriptTitle: string):
   if (label) {
     const { data } = await supabase
       .from("calls")
-      .select("id, call_date, created_at, grade, outcome, outcome_manual, rep_name, profiles:rep_id(full_name)")
+      .select("id, call_date, created_at, grade, outcome, outcome_manual, rep_name, profiles:rep_id(full_name), scripts(team)")
       .eq("org_id", me!.org_id)
       .ilike("client_label", label)
       .neq("id", callId)
       .neq("source", "roleplay");
     const mine = (me!.call_date as string | null) || String(me!.created_at).slice(0, 10);
-    earlier = ((data || []) as unknown as typeof earlier)
+    earlier = ((data || []) as unknown as (typeof earlier[number] & { scripts: { team: string | null } | null })[])
+      .filter((c) => sideOf(c.scripts?.team) === mySide)
       .filter((c) => (c.call_date || c.created_at.slice(0, 10)) < mine || ((c.call_date || c.created_at.slice(0, 10)) === mine && c.created_at < String(me!.created_at)))
       .sort((a, b) => (a.call_date || a.created_at).localeCompare(b.call_date || b.created_at));
   }
@@ -603,14 +608,40 @@ const CORRECTIONS_IN_PROMPT = 12;
 */
 type Fix = { item_kind: string; item_label: string | null; original: string; correction: string };
 
-async function managerGuidance(supabase: Supa, practice = false, rulesOverride?: { rule: string }[] | null): Promise<string> {
+async function managerGuidance(supabase: Supa, practice = false, rulesOverride?: { rule: string }[] | null, dept: "sales" | "service" | "openers" = "sales"): Promise<string> {
+  // Service and Openers learn on their own: their lessons from proven results, and their own corrections.
+  if (dept !== "sales") {
+    const [{ data: dg }, { data: df }] = await Promise.all([
+      supabase.from("dept_guidance").select("lessons").eq("dept", dept).maybeSingle(),
+      supabase.from("call_corrections").select("item_kind, item_label, original, correction").eq("dept", dept).order("created_at", { ascending: false }).limit(CORRECTIONS_IN_PROMPT),
+    ]);
+    const parts: string[] = [];
+    const l = ((dg as { lessons?: string | null } | null)?.lessons ?? "").trim();
+    if (l)
+      parts.push(
+        `Lessons learned from this team's own calls, by what actually happened afterwards (${dept === "openers" ? "applications submitted and leads Sales went on to enroll, vs leads the opener lost" : "clients who stayed or graduated, vs clients who cancelled"}). Use them to sharpen your judgment and coaching -- they are patterns, not rules, and they never relax the disclaimers or word-for-word lines:\n` +
+          l
+      );
+    const fx = (df as Fix[] | null) ?? [];
+    if (fx.length)
+      parts.push(
+        "The manager's most recent corrections to earlier grades of calls like this one. Apply the principle behind each wherever it fits; never copy a correction onto a call where it does not apply:\n" +
+          fx.map((f) => `- [${f.item_kind}${f.item_label ? `: ${f.item_label}` : ""}] the grader said: "${String(f.original).slice(0, 240)}" -- the manager corrected: "${String(f.correction).slice(0, 400)}"`).join("\n")
+      );
+    return parts.length ? `<manager_guidance>\n${parts.join("\n\n")}\n</manager_guidance>\n` : "";
+  }
+  const salesFixes = async () => {
+    const q = (dept: boolean) => {
+      const b = supabase.from("call_corrections").select("item_kind, item_label, original, correction");
+      return (dept ? b.eq("dept", "sales") : b).order("created_at", { ascending: false }).limit(CORRECTIONS_IN_PROMPT);
+    };
+    // Only Sales calls' corrections; before supabase/dept-learning.sql has run, all of them.
+    const r = await q(true);
+    return r.error ? q(false) : r;
+  };
   const [{ data: gRow }, { data: f }, { data: rRow }] = await Promise.all([
     supabase.from("grading_guidance").select("lessons").maybeSingle(),
-    supabase
-      .from("call_corrections")
-      .select("item_kind, item_label, original, correction")
-      .order("created_at", { ascending: false })
-      .limit(CORRECTIONS_IN_PROMPT),
+    salesFixes(),
     // Needs supabase/grading_rules.sql; until then this comes back empty.
     supabase.from("grading_guidance").select("rules").maybeSingle(),
   ]);
