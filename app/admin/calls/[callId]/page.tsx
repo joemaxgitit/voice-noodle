@@ -60,6 +60,7 @@ import QuickCard from "./QuickCard";
 import { fmtTime } from "@/lib/dayReview";
 import { isApprovedScoreTalk } from "@/lib/approvedWording";
 import AnswerKeyBox from "./AnswerKeyBox";
+import SendToRep from "./SendToRep";
 import CoachThis from "./CoachThis";
 import "../calls.css";
 import "../../reps/reps.css";
@@ -1192,6 +1193,17 @@ export default function CallDetail() {
             );
           }}
         />
+      )}
+      {g && call.source !== "roleplay" && call.status === "graded" && (
+        <div className="no-print">
+          <SendToRep
+            supabase={supabase}
+            call={{ id: call.id, rep_id: call.rep_id, call_date: call.call_date, created_at: new Date().toISOString(), score: call.score }}
+            grade={g}
+            repFirst={(call.profiles?.full_name?.trim() || call.rep_name?.trim() || "the rep").split(/\s+/)[0]}
+            scriptTitle={(call as unknown as { scripts?: { title?: string } | null }).scripts?.title ?? null}
+          />
+        </div>
       )}
       {g && (
         <>

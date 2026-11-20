@@ -25,6 +25,9 @@ export type ShellData = {
   role: string;
   team: string | null;
   inTraining: boolean;
+  /** Call feedback a manager sent (0 = no menu item); unseen = not opened yet. */
+  feedback: number;
+  feedbackNew: number;
   roleplayOn: boolean;
   scripts: ShellScript[];
   modules: ShellModule[];
@@ -47,6 +50,8 @@ export async function loadShell(repId?: string): Promise<ShellData | null> {
     supabase.from("progress").select("segment_id").eq("completed", true).eq("user_id", uid),
   ]);
   const tr = await supabase.from("profiles").select("in_training").eq("id", uid).maybeSingle();
+  const fb = await supabase.from("rep_feedback").select("seen_at").eq("rep_id", uid).limit(200);
+  const fbRows = (fb.error ? [] : fb.data || []) as { seen_at: string | null }[];
   const org = p.data?.org_id ? await supabase.from("orgs").select("roleplay_enabled").eq("id", p.data.org_id).maybeSingle() : null;
   const team = (p.data?.team as string | null) ?? null;
   // RLS already limits a rep to their team's scripts; a manager viewing a rep gets the same filter here.
@@ -57,6 +62,8 @@ export async function loadShell(repId?: string): Promise<ShellData | null> {
     role: p.data?.role || "rep",
     team,
     inTraining: !!(tr.data as { in_training?: boolean } | null)?.in_training,
+    feedback: fbRows.length,
+    feedbackNew: fbRows.filter((r) => !r.seen_at).length,
     roleplayOn: !!org?.data?.roleplay_enabled,
     scripts,
     modules: ((m.data || []) as unknown as ShellModule[]).filter((x) => scripts.some((sc) => sc.id === x.script_id)).sort((a, b) => a.sort_order - b.sort_order),
@@ -261,6 +268,12 @@ export default function RepShell({
           </div>
 
           {/* Only for a rep a manager has put into training. */}
+          {/* Only once a manager has sent feedback on a call. */}
+          {!!data?.feedback && (
+            <div className="af-group">
+              {item("feedback", "/feedback", `${es ? "Mis comentarios" : "My feedback"}${data.feedbackNew ? ` (${data.feedbackNew})` : ""}`, "target", path.startsWith("/feedback"))}
+            </div>
+          )}
           {data?.inTraining && <div className="af-group">{item("training", "/training", es ? "Mi capacitación" : "My training", "calendar", path.startsWith("/training"))}</div>}
         </nav>
 
