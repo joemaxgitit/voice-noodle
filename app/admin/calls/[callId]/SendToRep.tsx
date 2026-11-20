@@ -150,7 +150,7 @@ export default function SendToRep({
       {open && (
         <div className="retention-fields" style={{ marginTop: 12 }}>
           <div className="error" style={{ gridColumn: "1 / -1", background: "transparent" }}>
-            {repFirst} will see exactly what&rsquo;s below. Read it first: fix anything the AI got wrong, and take out client names.
+            {repFirst} will see exactly what&rsquo;s below. Read it first: fix anything the AI got wrong.
           </div>
           <label className="field wide">
             <span>A note from you (optional)</span>
