@@ -7,10 +7,10 @@ import type { DeptLessonsView } from "@/app/api/calls/dept-lessons/route";
 
 const WORDS: Record<LearnDept, { good: string; bad: string; intro: string }> = {
   openers: {
-    good: "Won",
-    bad: "Lost",
+    good: "Submitted",
+    bad: "Pending",
     intro:
-      "Every opener call is matched by lead ID to what happened next. Won: the application was submitted, the loan approved, or Sales enrolled the lead. Lost: not interested, a callback with no set time, or a hang-up, and the lead never came back.",
+      "Every opener call is matched by lead ID. Submitted: the application was submitted (or the loan approved, or Sales enrolled the lead). Pending: anything else -- not interested, a callback, a hang-up, a call that ended mid-application -- until that lead gets submitted on a later call. No client ID and not-the-client calls don't count either way.",
   },
   service: {
     good: "Stayed",

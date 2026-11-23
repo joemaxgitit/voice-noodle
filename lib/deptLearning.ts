@@ -7,9 +7,11 @@ import { clientKey } from "@/lib/journey";
   Every call is tied to a lead ID, and the lead ID is the same in every
   department, so each call can be judged by what happened to that lead
   afterwards:
-  - Openers: good = the application was submitted (or the loan approved),
-    or Sales went on to enroll the lead. Bad = the opener lost the lead
-    (not interested, vague callback, hung up) and it never came back.
+  - Openers (their own words): Submitted = the application was submitted
+    (or the loan approved), or Sales went on to enroll the lead. Pending =
+    any other result -- not interested, a callback, a hang-up, a call that
+    ended mid-application -- unless that lead was submitted on a later call.
+    No client ID / not the client don't count either way.
   - Service: good = the client went on to make 6+ payments or graduate, or
     is still with us 90 days after the call. Bad = the client cancelled
     after (or within a week before) the call.
@@ -45,7 +47,8 @@ export type Labeled = LearnCall & { label: "good" | "bad"; why: string };
 const DAY = 86_400_000;
 const dayOf = (c: LearnCall) => c.call_date || c.created_at.slice(0, 10);
 const WON = new Set(["submitted", "loan_approved"]);
-const LOST = new Set(["not_interested", "callback_vague", "hung_up"]);
+/** Not the opener's doing: left out. Every other result is "pending" (not submitted). */
+const NOT_COUNTED = new Set(["no_id", "not_authorized"]);
 
 export function labelCalls(dept: LearnDept, calls: LearnCall[], leads: Map<string, LeadResult>, now = Date.now()): Labeled[] {
   const out: Labeled[] = [];
@@ -59,7 +62,7 @@ export function labelCalls(dept: LearnDept, calls: LearnCall[], leads: Map<strin
       const res = (c.outcome_manual ?? c.outcome) || "";
       if (WON.has(res)) out.push({ ...c, label: "good", why: res === "loan_approved" ? "loan approved" : "application submitted" });
       else if (lead?.enrolled) out.push({ ...c, label: "good", why: "sales enrolled the lead" });
-      else if (LOST.has(res) && !(key && wonLeads.has(key))) out.push({ ...c, label: "bad", why: res.replace("_", " ") });
+      else if (res && !NOT_COUNTED.has(res) && !(key && wonLeads.has(key))) out.push({ ...c, label: "bad", why: `not submitted (${res.replace(/_/g, " ")})` });
       continue;
     }
     // Service
@@ -153,7 +156,7 @@ export const DEPT_WORDS: Record<LearnDept, { who: string; calls: string; good: s
     who: "an opener (inbound loan-application) manager",
     calls: "opener calls, where the rep verifies the client, takes the loan application, reads the disclaimers and hands off to a financial specialist",
     good: "the application was submitted, the loan was approved, or Sales went on to enroll the lead",
-    bad: "the opener lost the lead (not interested, a callback with no set time, hung up) and it never came back",
+    bad: "the application was not submitted (pending): the client wasn't interested, asked for a callback, hung up or dropped off mid-application, and the lead wasn't submitted on a later call either",
   },
   service: {
     who: "an account-manager (client service) manager at a debt-relief company",
