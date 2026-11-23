@@ -24,7 +24,7 @@ import {
 } from "@/lib/calls";
 import { SHORT_LABEL, type Quick } from "@/lib/quick";
 import { fmtTime } from "@/lib/dayReview";
-import { audioSeconds, convosoName, uploadCall } from "@/lib/uploadCall";
+import { audioSeconds, convosoName, phoneFromName, uploadCall } from "@/lib/uploadCall";
 import BulkUpload from "./BulkUpload";
 import "./calls.css";
 
@@ -518,7 +518,9 @@ export default function Calls() {
       return;
     }
     // Service and Openers learn from what became of each lead, so their calls need the lead ID.
-    if (needLead && !client.trim()) return setError("Enter the lead ID -- it's how the call is matched to what happened to that client.");
+    // The phone number in the file name links the client too; a lead ID is only required without one.
+    if (needLead && !client.trim() && !phoneFromName(file.name))
+      return setError("Enter the lead ID -- this file name has no phone number, and one of the two is how the call is matched to what happened to that client.");
     if (est && !(await okToSpend(supabase, est.usd, "This call"))) return;
     const ct = convosoName(file.name).time;
     const res = await uploadCall(
@@ -749,7 +751,7 @@ export default function Calls() {
             <span>{needLead ? "Lead ID" : "Client (optional)"}</span>
             <input
               value={client}
-              placeholder={needLead ? "Lead ID (required)" : "First name or lead ID"}
+              placeholder={needLead ? (file && phoneFromName(file.name) ? "Lead ID (optional: phone found in the file name)" : "Lead ID") : "First name or lead ID"}
               onChange={(e) => setClient(e.target.value)}
             />
           </label>

@@ -61,6 +61,7 @@ import { fmtTime } from "@/lib/dayReview";
 import { isApprovedScoreTalk } from "@/lib/approvedWording";
 import AnswerKeyBox from "./AnswerKeyBox";
 import SendToRep from "./SendToRep";
+import PhoneCalls from "./PhoneCalls";
 import CoachThis from "./CoachThis";
 import "../calls.css";
 import "../../reps/reps.css";
@@ -2131,6 +2132,7 @@ export default function CallDetail() {
         />
       )}
       <JourneyBox supabase={supabase} callId={call.id} clientLabel={call.client_label} source={call.source} onChanged={() => void load()} version={`${call.status}|${call.updated_at ?? ""}`} />
+      {call.source !== "roleplay" && <PhoneCalls supabase={supabase} callId={call.id} />}
 
       <h2>Settings</h2>
       {call.audio_path && call.audio_redact_state === "done" && call.audio_redact_note && (

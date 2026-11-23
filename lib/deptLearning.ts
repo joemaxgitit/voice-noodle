@@ -33,6 +33,8 @@ export type LeadResult = { lead: string; enrolled: boolean; retention: string | 
 
 export type LearnCall = {
   id: string;
+  /** The client's number from the recording's file name: links calls across departments (supabase/call-phone.sql). */
+  phone?: string | null;
   client_label: string | null;
   call_date: string | null;
   created_at: string;
@@ -53,11 +55,13 @@ const NOT_COUNTED = new Set(["no_id", "not_authorized"]);
 export function labelCalls(dept: LearnDept, calls: LearnCall[], leads: Map<string, LeadResult>, now = Date.now()): Labeled[] {
   const out: Labeled[] = [];
   // Openers: a lead another opener call later won isn't a loss.
-  const wonLeads = new Set(calls.filter((c) => WON.has((c.outcome_manual ?? c.outcome) || "")).map((c) => clientKey(c.client_label)));
+  // A client is the phone number when the file name had one, else the lead ID.
+  const keyOf = (c: LearnCall) => (c.phone ? `p:${c.phone}` : clientKey(c.client_label));
+  const wonLeads = new Set(calls.filter((c) => WON.has((c.outcome_manual ?? c.outcome) || "")).map(keyOf));
   for (const c of calls) {
     if (!c.grade) continue;
-    const key = clientKey(c.client_label);
-    const lead = key ? leads.get(key) : undefined;
+    const key = keyOf(c);
+    const lead = mergeLeads(c.phone ? leads.get(`p:${c.phone}`) : undefined, clientKey(c.client_label) ? leads.get(clientKey(c.client_label)) : undefined);
     if (dept === "openers") {
       const res = (c.outcome_manual ?? c.outcome) || "";
       if (WON.has(res)) out.push({ ...c, label: "good", why: res === "loan_approved" ? "loan approved" : "application submitted" });
@@ -74,6 +78,15 @@ export function labelCalls(dept: LearnDept, calls: LearnCall[], leads: Map<strin
     else if (!lead.cancelled_on && (lead.enrolled || lead.retention === "active") && now - new Date(`${d}T12:00:00`).getTime() >= 90 * DAY) out.push({ ...c, label: "good", why: "still with us 90 days later" });
   }
   return out;
+}
+
+const RANK: Record<string, number> = { graduated: 1, paid6: 2, cancelled: 3, active: 4 };
+/** The same client found by phone and by lead ID: one result. */
+function mergeLeads(a?: LeadResult, b?: LeadResult): LeadResult | undefined {
+  if (!a || !b) return a ?? b;
+  const ret = [a.retention, b.retention].filter(Boolean).sort((x, y) => (RANK[x!] ?? 9) - (RANK[y!] ?? 9))[0] ?? null;
+  const can = [a.cancelled_on, b.cancelled_on].filter(Boolean).sort()[0] ?? null;
+  return { lead: a.lead, enrolled: a.enrolled || b.enrolled, retention: ret, cancelled_on: can };
 }
 
 export type DeptMetric = { group: string; label: string; good: number | null; bad: number | null; gap: number | null; nGood: number; nBad: number };

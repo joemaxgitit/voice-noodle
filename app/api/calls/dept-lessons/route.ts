@@ -32,21 +32,23 @@ async function gather(supabase: Supa, dept: LearnDept) {
   const { data: sc } = await supabase.from("scripts").select("id, team");
   const ids = ((sc || []) as { id: string; team: string | null }[]).filter((s) => (dept === "openers" ? s.team === "openers" : s.team === "ams")).map((s) => s.id);
   if (!ids.length) return { labeled: [], total: 0 };
-  const { data } = await supabase
-    .from("calls")
-    .select("id, client_label, call_date, created_at, outcome, outcome_manual, score, grade")
-    .in("script_id", ids)
-    .eq("status", "graded")
-    .neq("source", "roleplay")
-    .not("grade", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(600);
-  const calls = (data || []) as unknown as LearnCall[];
+  const q = (cols: string) =>
+    supabase.from("calls").select(cols).in("script_id", ids).eq("status", "graded").neq("source", "roleplay").not("grade", "is", null).order("created_at", { ascending: false }).limit(600);
+  // The phone column comes with supabase/call-phone.sql; before that, lead IDs only.
+  let res = await q("id, phone, client_label, call_date, created_at, outcome, outcome_manual, score, grade");
+  if (res.error) res = await q("id, client_label, call_date, created_at, outcome, outcome_manual, score, grade");
+  const calls = (res.data || []) as unknown as LearnCall[];
   const keys = [...new Set(calls.map((c) => clientKey(c.client_label)).filter(Boolean))];
   const leads = new Map<string, LeadResult>();
   for (let i = 0; i < keys.length; i += 300) {
     const { data: r } = await supabase.rpc("lead_results", { p_leads: keys.slice(i, i + 300) });
     for (const x of (r || []) as LeadResult[]) leads.set(x.lead, x);
+  }
+  // And by phone: the same client in every department, whatever lead ID each system gave them.
+  const phones = [...new Set(calls.map((c) => c.phone).filter(Boolean))] as string[];
+  for (let i = 0; i < phones.length; i += 300) {
+    const { data: r } = await supabase.rpc("phone_results", { p_phones: phones.slice(i, i + 300) });
+    for (const x of (r || []) as (Omit<LeadResult, "lead"> & { phone: string })[]) leads.set(`p:${x.phone}`, { ...x, lead: `p:${x.phone}` });
   }
   return { labeled: labelCalls(dept, calls, leads), total: calls.length };
 }

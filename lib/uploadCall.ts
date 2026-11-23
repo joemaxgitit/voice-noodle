@@ -179,6 +179,18 @@ export async function uploadCall(supabase: SupabaseClient, file: File, meta: Upl
   return { ok: true, id: row.id };
 }
 
+/**
+ * The client's phone number from a recording's file name (10 digits), or null.
+ * Opener files: Camp3175_Conv_(347)328-7197_LO..._Oct13-055606PM.mp3; Sales and
+ * Service (Convoso): ..._<client number>_<caller id>_MMDDYYYY_HHMMSS.mp3.
+ * Same rule as supabase/call-phone.sql, which links every call by it.
+ */
+export function phoneFromName(name: string): string | null {
+  const o = name.match(/\((\d{3})\)\s*(\d{3})-(\d{4})/);
+  if (o) return o[1] + o[2] + o[3];
+  return convosoName(name).phone;
+}
+
 /** Convoso file names: ..._<client number>_<caller id>_MMDDYYYY_HHMMSS.mp3 */
 export function convosoName(name: string): { phone: string | null; date: string | null; time: string | null } {
   // A copy saved twice gets " (1)" or " - Copy" before the extension: read past it.
