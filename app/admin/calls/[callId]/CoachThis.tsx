@@ -56,7 +56,13 @@ export default function CoachThis({
     void load();
   }, [load]);
 
-  if (!repId) return null;
+  // A typed-in rep has nowhere to track it yet: say so, instead of leaving the card without a button.
+  if (!repId)
+    return (
+      <p className="muted" style={{ fontSize: 13, margin: "8px 0 0" }}>
+        To coach this one, link the call to the rep&rsquo;s account first: Settings &rarr; Rep, at the bottom of the page.
+      </p>
+    );
   const p = need;
   // Being tracked from this call AND this need (a call can offer two).
   const fromHere = active?.call_id === callId && active.title === p.title;
