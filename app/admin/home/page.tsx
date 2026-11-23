@@ -23,6 +23,7 @@ type CallLite = {
   source: string;
   status: string;
   slp_score: number | null;
+  score: number | null;
   client_label: string | null;
 };
 type Attn = { href: string; title: string; why: string; tone: "bad" | "fair" };
@@ -81,7 +82,7 @@ export default function ManagerHome() {
         supabase.from("profiles").select("id, full_name, role, active, team").eq("org_id", org),
         supabase
           .from("calls")
-          .select("id, rep_id, created_at, call_date, call_time, source, status, slp_score, client_label")
+          .select("id, rep_id, created_at, call_date, call_time, source, status, slp_score, score, client_label")
           .gte("created_at", since)
           .order("created_at", { ascending: false })
           .limit(400),
@@ -284,7 +285,12 @@ export default function ManagerHome() {
                   </b>
                   {c.client_label && <small>{c.client_label}</small>}
                 </span>
-                <span className={`pill ${scoreBand(c.slp_score)}`}>SLP {c.slp_score ?? "--"}</span>
+                {/* Openers and Service have no Straight Line score: show the script score. */}
+                {c.slp_score === null && c.score !== null ? (
+                  <span className={`pill ${scoreBand(c.score)}`}>Script {c.score}</span>
+                ) : (
+                  <span className={`pill ${scoreBand(c.slp_score)}`}>SLP {c.slp_score ?? "--"}</span>
+                )}
               </Link>
             ))}
           </div>
