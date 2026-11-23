@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import RepShell, { useShell } from "../../RepShell";
+import { setViewAs } from "@/lib/viewAs";
 import SectionsHome from "../../SectionsHome";
 import "../../training/training.css";
 
@@ -29,6 +30,11 @@ export default function ViewAs() {
     })();
   }, [supabase]);
 
+  // Carry it to every rep page they click into, until they're back on the manager side.
+  useEffect(() => {
+    if (allowed) setViewAs({ id: repId, name: data?.name || "this rep" });
+  }, [allowed, repId, data?.name]);
+
   if (allowed === false) return <main className="shell"><p className="muted">Managers only.</p></main>;
 
   return (
@@ -37,9 +43,7 @@ export default function ViewAs() {
         {!data ? (
           <p className="muted">Loading…</p>
         ) : (
-          <div inert>
-            <SectionsHome data={data} lang="en" viewing />
-          </div>
+          <SectionsHome data={data} lang="en" viewing />
         )}
       </main>
     </RepShell>

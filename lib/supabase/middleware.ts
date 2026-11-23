@@ -65,6 +65,14 @@ export async function updateSession(request: NextRequest) {
   // side; going back into /admin clears it.
   const REP_VIEW = "vn_repview";
   if (user && (path === "/" || path === "/proedgesolutions")) {
+    // A manager viewing as a rep: the rep's home is the view-as page.
+    const va = request.cookies.get("vn_viewas")?.value;
+    if (va && /^[0-9a-f-]{36}$/i.test(va)) {
+      const url = request.nextUrl.clone();
+      url.pathname = `/view-as/${va}`;
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
     if (request.nextUrl.searchParams.get("view") === "rep") {
       response.cookies.set(REP_VIEW, "1", { path: "/", sameSite: "lax" });
       return response;
@@ -87,6 +95,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user && path.startsWith("/admin") && request.cookies.get(REP_VIEW)) response.cookies.delete(REP_VIEW);
+  if (user && path.startsWith("/admin") && request.cookies.get("vn_viewas")) response.cookies.delete("vn_viewas");
 
   // Practice calls with the AI client are sales-only: service and opener people go home instead.
   if (user && (path.startsWith("/roleplay") || path.startsWith("/admin/roleplay"))) {

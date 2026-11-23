@@ -46,11 +46,7 @@ export default function SectionsHome({ data, lang, viewing }: { data: ShellData;
         <small className="muted">{total ? `${done}/${total}` : ""}</small>
       </>
     );
-    return viewing ? (
-      <div key={m.id} className="card sh-row">
-        {inner}
-      </div>
-    ) : (
+    return (
       <Link key={m.id} href={`/train/${m.id}`} className="card sh-row">
         {inner}
       </Link>

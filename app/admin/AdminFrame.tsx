@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import { setDeptView, useDeptView, type DeptView } from "@/lib/deptView";
 import { deptOfTeam } from "@/lib/training";
 import { setLang, useLang } from "@/lib/lang";
+import { setViewAs } from "@/lib/viewAs";
 import "./admin-frame.css";
 
 /*
@@ -263,6 +264,8 @@ export default function AdminFrame({ children }: { children: ReactNode }) {
     })();
   }, []);
 
+  // Back on the manager side: stop viewing as a rep.
+  useEffect(() => setViewAs(null), []);
   // Close the drawer on navigation and on Escape.
   useEffect(() => setOpen(false), [path]);
   // Back in the manager side: the next visit to the rep home sends them here again.

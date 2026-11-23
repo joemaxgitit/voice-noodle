@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import { readViewAs } from "@/lib/viewAs";
 import { createClient } from "@/lib/supabase/client";
 import { useKaraoke, stateFor, type Phrase } from "@/lib/useKaraoke";
 import { useListenLog } from "@/lib/useListenLog";
@@ -70,6 +71,7 @@ function ScriptView() {
   const focus = search.get("segment");
 
   const [title, setTitle] = useState("");
+  const [viewingAs, setViewingAs] = useState(false);
   // Service scripts carry Bolton's brand; Sales and Openers carry Lionside's.
   const [bolton, setBolton] = useState(false);
   const [mods, setMods] = useState<Mod[]>([]);
@@ -156,12 +158,14 @@ function ScriptView() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+      const va = readViewAs();
+      if (!cancelled) setViewingAs(!!va);
 
       if (user) {
         const { data: prof } = await supabase
           .from("profiles")
           .select("narrator_id")
-          .eq("id", user.id)
+          .eq("id", va?.id ?? user.id)
           .single();
         if (!cancelled && prof?.narrator_id) setNarratorId(prof.narrator_id);
       }
@@ -362,7 +366,7 @@ function ScriptView() {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (user) {
+    if (user && !readViewAs()) {
       await supabase.from("profiles").update({ narrator_id: id }).eq("id", user.id);
     }
   }
@@ -485,7 +489,7 @@ function ScriptView() {
 
       <h1>{title}</h1>
       <p className="muted no-print">{c.fullScriptBlurb}</p>
-      <WholeTake supabase={supabase} scriptId={params.scriptId} />
+      {!viewingAs && <WholeTake supabase={supabase} scriptId={params.scriptId} />}
 
       {hasSpanish && (
         <div className="lang-switch no-print">

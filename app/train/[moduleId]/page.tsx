@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { readViewAs } from "@/lib/viewAs";
 import { createClient } from "@/lib/supabase/client";
 import { useKaraoke, stateFor, type Phrase } from "@/lib/useKaraoke";
 import {
@@ -72,6 +73,7 @@ export default function Train() {
   const [done, setDone] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [viewingAs, setViewingAs] = useState(false);
   const [modLang, setModLang] = useState<"en" | "es" | null>(null);
   const [siblings, setSiblings] = useState<{ id: string; sort_order: number; language: string; kind: string }[]>([]);
 
@@ -169,10 +171,11 @@ export default function Train() {
         supabase.auth.getUser(),
       ]);
 
-      const { data: prog } = await supabase
-        .from("progress")
-        .select("segment_id")
-        .eq("completed", true);
+      // Viewing as a rep: their progress, their voice; nothing saved.
+      const va = readViewAs();
+      setViewingAs(!!va);
+      const progQ = supabase.from("progress").select("segment_id").eq("completed", true);
+      const { data: prog } = await (va ? progQ.eq("user_id", va.id) : progQ);
 
       if (!cancelled) {
         setDone(new Set((prog || []).map((r) => r.segment_id)));
@@ -186,7 +189,7 @@ export default function Train() {
       );
       setNarrators(nar);
 
-      const uid = meRes.data.user?.id;
+      const uid = va?.id ?? meRes.data.user?.id;
       if (uid) {
         const { data: prof } = await supabase
           .from("profiles")
@@ -302,6 +305,7 @@ export default function Train() {
 
   async function pickNarrator(id: string) {
     setNarratorId(id);
+    if (readViewAs()) return;
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -315,7 +319,7 @@ export default function Train() {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (user && segment) {
+    if (user && segment && !readViewAs()) {
       await supabase.from("progress").upsert({
         user_id: user.id,
         segment_id: segment.id,
@@ -573,7 +577,8 @@ export default function Train() {
         ask when it is coming back; nothing at all reads as a tool that simply
         does not have this feature.
       */}
-      {practiceOn && (
+      {viewingAs && practiceOn && <p className="muted">Recording is off while you&rsquo;re viewing as a rep.</p>}
+      {practiceOn && !viewingAs && (
         <PracticeRecorder
           // A fresh recorder per line: "Passed", a take waiting to be kept and any error belong to the line they happened on.
           key={segment.id}

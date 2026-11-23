@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { readViewAs } from "@/lib/viewAs";
 import { createClient } from "@/lib/supabase/client";
 import { fmtDuration, KIND_LABEL, type Material, type Progress } from "@/lib/training";
 import { ModuleStatus, PracticeStatus, QuizTaker } from "./Activities";
@@ -29,6 +30,7 @@ export default function MaterialPage() {
   const [userId, setUserId] = useState("");
   const video = useRef<HTMLVideoElement>(null);
   const played = useRef(0); // seconds played since the last report
+  const viewing = useRef(false);
   const lastT = useRef<number | null>(null);
   const resumed = useRef(false);
 
@@ -40,12 +42,15 @@ export default function MaterialPage() {
       router.replace("/login");
       return;
     }
-    setUserId(session.user.id);
+    // Viewing as a rep: their progress, and nothing they'd do here is recorded.
+    const va = readViewAs();
+    viewing.current = !!va;
+    setUserId(va?.id ?? session.user.id);
     // Script-practice and practice-call assignments complete from what was done.
-    await supabase.rpc("training_sync_links");
+    if (!va) await supabase.rpc("training_sync_links");
     const [{ data, error }, { data: prog }] = await Promise.all([
       supabase.from("training_materials").select("*").eq("id", materialId).maybeSingle(),
-      supabase.from("training_progress").select("*").eq("material_id", materialId).eq("user_id", session.user.id).maybeSingle(),
+      supabase.from("training_progress").select("*").eq("material_id", materialId).eq("user_id", va?.id ?? session.user.id).maybeSingle(),
     ]);
     if (error || !data) {
       setError("This training isn't available.");
@@ -74,6 +79,7 @@ export default function MaterialPage() {
     if (!m || !v) return;
     const secs = played.current;
     played.current = 0;
+    if (viewing.current) return;
     const { data } = await supabase.rpc("training_watch", { p_material: m.id, p_position: v.currentTime, p_played: secs });
     const r = (Array.isArray(data) ? data[0] : data) as { pct: number; completed: boolean } | null;
     if (r) {
@@ -102,7 +108,7 @@ export default function MaterialPage() {
   }, [m, report]);
 
   async function acknowledge() {
-    if (!m) return;
+    if (!m || viewing.current) return;
     const { error } = await supabase.rpc("training_acknowledge", { p_material: m.id });
     if (error) return setError(error.message);
     setDone(true);

@@ -72,7 +72,7 @@ export default function TodayPanel({
               <h3 style={{ margin: "4px 0 6px" }}>{m.title}</h3>
               <p className="muted" style={{ marginTop: 0 }}>{move!.why}</p>
               <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-                <Link className="btn primary big" href={viewing ? "#" : `/train/${m.id}`} style={{ textDecoration: "none" }}>
+                <Link className="btn primary big" href={`/train/${m.id}`} style={{ textDecoration: "none" }}>
                   {es ? "Empezar a practicar" : "Start drilling it"}
                 </Link>
                 <Link className="btn big" href={viewing ? "#" : "/roleplay"} style={{ textDecoration: "none" }}>

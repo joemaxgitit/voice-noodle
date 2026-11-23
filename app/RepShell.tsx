@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { setViewAs, useViewAs } from "@/lib/viewAs";
 import { setLang as rememberLang, useLang } from "@/lib/lang";
 import { Icon } from "./admin/AdminFrame";
 import "./admin/admin-frame.css";
@@ -105,7 +106,10 @@ export default function RepShell({
 }) {
   const path = usePathname() || "/";
   const router = useRouter();
-  const data = useShell(viewAs?.id);
+  // Viewing as a rep carries from page to page (lib/viewAs.ts), so the whole rep side clicks through as them.
+  const stored = useViewAs();
+  const va = viewAs ?? (stored ? { ...stored, back: `/admin/reps/${stored.id}` } : undefined);
+  const data = useShell(va?.id);
   const [open, setOpen] = useState(false);
   const lang = useLang();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -140,15 +144,16 @@ export default function RepShell({
       return n;
     });
 
-  const viewing = !!viewAs;
+  const viewing = !!va;
+  const home = va ? `/view-as/${va.id}` : "/proedgesolutions";
   const service = data?.team === "ams";
   const logo = service ? { dark: "/bolton-logo.png", light: "/bolton-logo-light.png" } : { dark: "/lionside-logo.png", light: "/lionside-logo-print.png" };
 
 
-  /** A menu link; in view-as mode only Today and My progress do anything. */
+  /** A menu link. Viewing as a rep, Today / My progress switch sections on the view-as home; everything else goes where the rep would. */
   const item = (key: string, href: string, label: ReactNode, icon: Parameters<typeof Icon>[0]["name"], active: boolean) =>
-    viewing ? (
-      <button type="button" key={key} className={`af-link${active ? " active" : ""}`} onClick={() => (key === "today" || key === "progress" ? onSection?.(key) : undefined)}>
+    viewing && onSection && (key === "today" || key === "progress") ? (
+      <button type="button" key={key} className={`af-link${active ? " active" : ""}`} onClick={() => onSection(key)}>
         <Icon name={icon} />
         {label}
       </button>
@@ -161,7 +166,7 @@ export default function RepShell({
 
   const moduleList = (list: typeof mods, scriptId?: string) => (
     <div className="rs-sub">
-      {scriptId && !viewing && (
+      {scriptId && (
         <Link href={`/script/${scriptId}`} className={`rs-sublink${path === `/script/${scriptId}` ? " active" : ""}`}>
           <span>{es ? "Guion completo" : "Whole script"}</span>
         </Link>
@@ -175,11 +180,7 @@ export default function RepShell({
             <small>{total ? `${complete}/${total}` : ""}</small>
           </>
         );
-        return viewing ? (
-          <span key={m.id} className="rs-sublink">
-            {inner}
-          </span>
-        ) : (
+        return (
           <Link key={m.id} href={`/train/${m.id}`} className={`rs-sublink${currentModule === m.id ? " active" : ""}`}>
             {inner}
           </Link>
@@ -203,13 +204,13 @@ export default function RepShell({
     ) : null;
 
   return (
-    <div className={`admin-frame rep-frame${viewAs ? " viewing" : ""}`}>
-      {viewAs && (
+    <div className={`admin-frame rep-frame${va ? " viewing" : ""}`}>
+      {va && (
         <div className="rs-viewbar">
           <span>
-            Viewing as <b>{viewAs.name}</b><span className="rs-long"> -- this is exactly what they see</span>
+            Viewing as <b>{va.name}</b><span className="rs-long"> -- click around as them; nothing you do here is saved</span>
           </span>
-          <Link className="btn primary" href={viewAs.back} style={{ textDecoration: "none" }}>
+          <Link className="btn primary" href={va.back} onClick={() => setViewAs(null)} style={{ textDecoration: "none" }}>
             Exit rep view
           </Link>
         </div>
@@ -218,7 +219,7 @@ export default function RepShell({
         <button className="af-menu" aria-label="Open menu" aria-expanded={open} onClick={() => setOpen(true)}>
           <Icon name="menu" />
         </button>
-        <Link href="/proedgesolutions" aria-label="Home" style={{ display: "flex" }}>
+        <Link href={home} aria-label="Home" style={{ display: "flex" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className="rs-mobile-logo dark-only" src={logo.dark} alt="" />
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -230,7 +231,7 @@ export default function RepShell({
 
       <aside className={`af-side${open ? " open" : ""}`} aria-label="Menu">
         <div className="rs-brand">
-          <Link href="/proedgesolutions" aria-label="Home" style={{ display: "contents" }}>
+          <Link href={home} aria-label="Home" style={{ display: "contents" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img className="dark-only" src={logo.dark} alt={service ? "Bolton" : "Lionside"} />
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -243,7 +244,8 @@ export default function RepShell({
 
         <nav className="af-nav">
           {/* Practice calls with the AI client are sales-only. */}
-          {data?.team !== "ams" && data?.team !== "openers" && (
+          {/* Viewing as a rep: a practice call would be a real call, so it's left out. */}
+          {!viewing && data?.team !== "ams" && data?.team !== "openers" && (
             <div className="af-group">
               {item("roleplay", "/roleplay", es ? "Llamadas de práctica" : "Practice calls", "headset", path.startsWith("/roleplay"))}
             </div>
@@ -294,19 +296,20 @@ export default function RepShell({
               {es ? "Vista de gerente" : "Manager view"}
             </Link>
           )}
-          {item("account", "/account", es ? "Cuenta" : "Account", "key", path.startsWith("/account"))}
-          <button
-            type="button"
-            className="af-link"
-            onClick={async () => {
-              if (viewing) return;
-              await createClient().auth.signOut();
-              router.push("/login");
-            }}
-          >
-            <Icon name="signout" />
-            {es ? "Cerrar sesión" : "Sign out"}
-          </button>
+          {!viewing && item("account", "/account", es ? "Cuenta" : "Account", "key", path.startsWith("/account"))}
+          {!viewing && (
+            <button
+              type="button"
+              className="af-link"
+              onClick={async () => {
+                await createClient().auth.signOut();
+                router.push("/login");
+              }}
+            >
+              <Icon name="signout" />
+              {es ? "Cerrar sesión" : "Sign out"}
+            </button>
+          )}
         </div>
       </aside>
 

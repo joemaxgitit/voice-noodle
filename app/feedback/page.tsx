@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { readViewAs } from "@/lib/viewAs";
 import { useLang } from "@/lib/lang";
 import type { RepFeedback } from "@/lib/repFeedback";
 
@@ -23,13 +24,13 @@ export default function MyFeedback() {
       const { data } = await supabase
         .from("rep_feedback")
         .select("id, created_at, seen_at, sent_by_name, call_date, script_title, content")
-        .eq("rep_id", session.user.id)
+        .eq("rep_id", readViewAs()?.id ?? session.user.id)
         .order("created_at", { ascending: false })
         .limit(50);
       const list = (data || []) as RepFeedback[];
       setRows(list);
       // Opening the page counts as seen.
-      for (const f of list) if (!f.seen_at) void supabase.rpc("mark_feedback_seen", { p_id: f.id });
+      if (!readViewAs()) for (const f of list) if (!f.seen_at) void supabase.rpc("mark_feedback_seen", { p_id: f.id });
     })();
   }, [supabase]);
 

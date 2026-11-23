@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { readViewAs } from "@/lib/viewAs";
 import { createClient } from "@/lib/supabase/client";
 import {
   addDays,
@@ -68,6 +69,7 @@ export default function MyTraining() {
   const [askNote, setAskNote] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [viewingAs, setViewingAs] = useState(false);
 
   const load = useCallback(async () => {
     const {
@@ -77,9 +79,12 @@ export default function MyTraining() {
       router.replace("/login");
       return;
     }
-    const uid = session.user.id;
+    // Viewing as a rep: their training, read only.
+    const va = readViewAs();
+    setViewingAs(!!va);
+    const uid = va?.id ?? session.user.id;
     // Script-practice and practice-call assignments complete from what was done.
-    await supabase.rpc("training_sync_links");
+    if (!va) await supabase.rpc("training_sync_links");
     const thu = addDays(week, 3);
     const [prof, ppl, ev, mw, reg, mv, mt, mats, prog, rq] = await Promise.all([
       supabase.from("profiles").select("id, org_id, team, created_at").eq("id", uid).single(),
@@ -186,7 +191,7 @@ export default function MyTraining() {
   const byId = new Map(materials.map((m) => [m.id, m]));
 
   async function requestDay() {
-    if (!me) return;
+    if (!me || viewingAs) return;
     const { error } = await supabase.from("mastery_requests").insert({
       org_id: me.org_id,
       week_start: week,
@@ -219,7 +224,7 @@ export default function MyTraining() {
         </Link>
       </div>
 
-      <MyCards supabase={supabase} />
+      <MyCards supabase={supabase} repId={viewingAs ? me?.id : undefined} />
 
       <div className="eyebrow" style={{ marginTop: 28 }}>My training</div>
       <h1>{next ? "Up next" : "You're all caught up"}</h1>

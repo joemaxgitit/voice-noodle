@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Material } from "@/lib/training";
+import { readViewAs } from "@/lib/viewAs";
 
 type Q = { id: string; qpos: number; prompt: string; options: string[] };
 type Result = { id: string; chosen: number | null; correct: number; right: boolean; explain: string | null };
@@ -33,6 +34,7 @@ export function QuizTaker({ supabase, m, onDone }: { supabase: SupabaseClient; m
   }, [supabase, m.id]);
 
   async function submit() {
+    if (readViewAs()) return setError("Viewing as a rep: answers aren't sent.");
     setBusy(true);
     setError("");
     const { data, error } = await supabase.rpc("training_quiz_submit", { p_material: m.id, p_answers: answers });
