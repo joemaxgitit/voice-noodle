@@ -39,7 +39,14 @@ export default function PhoneCalls({ supabase, callId }: { supabase: ReturnType<
   return (
     <div style={{ marginTop: 10 }}>
       <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-        Phone {pretty} &middot; {rows.length ? `${rows.length} other call${rows.length === 1 ? "" : "s"} with this number, in any department:` : "no other calls with this number yet."}
+        Phone <Link href={`/admin/calls/phone/${phone}`}>{pretty}</Link> &middot;{" "}
+        {rows.length ? (
+          <>
+            {rows.length} other call{rows.length === 1 ? "" : "s"} with this number, in any department &middot; <Link href={`/admin/calls/phone/${phone}`}>See the full journey</Link>
+          </>
+        ) : (
+          "no other calls with this number yet."
+        )}
       </p>
       {rows.length > 0 && (
         <ul style={{ margin: "6px 0 0", paddingLeft: 18, display: "grid", gap: 4 }}>
