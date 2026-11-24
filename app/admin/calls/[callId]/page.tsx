@@ -62,6 +62,7 @@ import { isApprovedScoreTalk } from "@/lib/approvedWording";
 import AnswerKeyBox from "./AnswerKeyBox";
 import SendToRep from "./SendToRep";
 import PhoneCalls from "./PhoneCalls";
+import PhoneField from "./PhoneField";
 import CoachThis from "./CoachThis";
 import "../calls.css";
 import "../../reps/reps.css";
@@ -445,6 +446,7 @@ export default function CallDetail() {
   const [scripts, setScripts] = useState<{ id: string; title: string; team?: string | null }[]>([]);
   const [people, setPeople] = useState<{ id: string; name: string }[]>([]);
   const [repDraft, setRepDraft] = useState<string | null>(null); // typed name being edited
+  const [phoneV, setPhoneV] = useState(0); // bumps the phone-linked calls list after the phone is edited
   const [audioUrl, setAudioUrl] = useState("");
   const [now, setNow] = useState(0);
   const [error, setError] = useState("");
@@ -2132,7 +2134,7 @@ export default function CallDetail() {
         />
       )}
       <JourneyBox supabase={supabase} callId={call.id} clientLabel={call.client_label} source={call.source} onChanged={() => void load()} version={`${call.status}|${call.updated_at ?? ""}`} />
-      {call.source !== "roleplay" && <PhoneCalls supabase={supabase} callId={call.id} />}
+      {call.source !== "roleplay" && <PhoneCalls key={phoneV} supabase={supabase} callId={call.id} />}
 
       <h2>Settings</h2>
       {call.audio_path && call.audio_redact_state === "done" && call.audio_redact_note && (
@@ -2205,6 +2207,7 @@ export default function CallDetail() {
       <p className="muted" style={{ marginTop: -6 }}>
         When a typed-in rep gets an account, pick them here to link this call to it. Re-grade after changing the rep.
       </p>
+      {call.source !== "roleplay" && <PhoneField supabase={supabase} callId={call.id} onSaved={() => setPhoneV((v) => v + 1)} />}
       <label className="field" style={{ maxWidth: 360 }}>
         <span>Grade against</span>
         <select value={call.script_id || ""} onChange={(e) => setScript(e.target.value)}>
